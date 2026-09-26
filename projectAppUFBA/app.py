@@ -1,6 +1,10 @@
 import streamlit as st
 from modules.database import criar_tabelas
-from modules.login import render_login, obter_chave_professor_diaria
+from modules.login import (
+    render_login,
+    obter_chave_professor_diaria,
+    segredo_da_chave_configurado,
+)
 
 # Configuração global
 st.set_page_config(page_title="Plataforma EduStream", page_icon="🎓", layout="wide")
@@ -56,6 +60,22 @@ else:
         # Exibe em um bloco clicável para fácil cópia
         st.code(obter_chave_professor_diaria(), language="text")
         st.caption("Esta chave expira automaticamente às 23:59:59 de hoje.")
+
+        # Aviso de configuração. Fica aqui e não em st.secrets porque quem
+        # precisa saber é a coordenação, e é a coordenação quem usa o painel —
+        # não quem programa o sistema. Fora do alcance dessa pessoa, o aviso é
+        # ruído.
+        if not segredo_da_chave_configurado():
+            st.warning(
+                "⚠️ Esta chave está sendo derivada do segredo padrão que vem no "
+                "código-fonte. Ela tem 12 caracteres e é muito difícil de adivinhar, "
+                "mas qualquer pessoa com uma cópia do repositório consegue calcular "
+                "a chave do dia. Para fechar isso, crie "
+                "`.streamlit/secrets.toml` com `CHAVE_SEGREDO = \"...\"` "
+                "(esse caminho já está no .gitignore) e reinicie o app. "
+                "Esta mensagem some sozinha quando o segredo estiver configurado.",
+                icon="⚠️",
+            )
 
     elif pagina == "Painel Geral":
         st.title("📋 Painel Geral")

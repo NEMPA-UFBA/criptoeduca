@@ -1,9 +1,20 @@
 import streamlit as st
 import re
-import random
+import hmac
+import hashlib
 from datetime import datetime
 from modules.database import verificar_login, cadastrar_usuario
 from modules import ratelimit
+
+# Alfabeto da chave do Professor: 36 símbolos, 10 dígitos e 26 letras.
+#
+# Só maiúsculas, de propósito. A chave é digitada por uma pessoa que copiou de
+# um quadro ou leu em voz alta, e maiúscula/minúscula não se distinguem no
+# papel nem na fala. Com 12 posições são 36^12 = 4.738.381.338.321.616.896
+# combinações, contra as 900 mil da chave numérica de 6 dígitos.
+ALFABETO_CHAVE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+TAMANHO_CHAVE = 12
 
 def validar_email_formato(email):
     """Valida se o e-mail tem um formato padrão (ex: usuario@dominio.com)."""
@@ -18,19 +29,104 @@ def validar_forca_senha(senha):
     
     return tem_maiuscula and tem_minuscula and tem_numero
 
-def obter_chave_professor_diaria(segredo_sistema="chaveDev2026"):
+
+def segredo_da_chave_padrao():
+    return "chaveDev2026"
+
+
+def _segredo_da_chave():
+    """Lê o segredo que deriva a chave do dia, preferindo o gerenciador.
+
+    Se o .streamlit/secrets.toml existir com CHAVE_SEGREDO, usa ele. Sem o
+    arquivo, cai no padrão do código — e o app continua funcionando, que é o
+    que importa para a escola não ter que configurar nada.
+
+    A diferença é de segurança, não de funcionamento: com o segredo no arquivo
+    a chave deixa de ser derivável de quem tem o repositório. Sem ele, a chave
+    de 12 caracteres continua muito mais difícil de adivinhar que a de 6, mas
+    ainda é calculável por qualquer pessoa que leia o código.
     """
-    Gera uma chave numérica aleatória de 6 dígitos válida por 24h.
-    Usa a data atual (YYYY-MM-DD) + segredo do sistema como semente.
+    try:
+        return st.secrets["CHAVE_SEGREDO"]
+    except Exception:
+        return segredo_da_chave_padrao()
+
+
+def segredo_da_chave_configurado():
+    """Diz se a chave está sendo derivada de um segredo de verdade."""
+    try:
+        return st.secrets["CHAVE_SEGREDO"] != segredo_da_chave_padrao()
+    except Exception:
+        return False
+
+
+def obter_chave_professor_diaria(segredo_sistema=None, data_referencia=None):
+    """Devolve a chave do Professor válida para o dia, com 12 caracteres.
+
+    A chave é determinística: mesma data e mesmo segredo dão a mesma chave
+    para toda a escola, que é o que permite a coordenação distribuí-la pelo
+    Painel e o formulário de cadastro conferi-la.
+
+    A derivação é por HMAC-SHA256 e não por `random.Random(semente)`, que era o
+    que existia antes. A diferença não é sorteio melhor: `random` é um
+    Mersenne Twister, um gerador que não foi desenhado para segurança, e semeá-lo
+    com um texto conhecido torna a sequência totalmente previsível para quem
+    conhece a semente. Aqui o segredo é a chave do HMAC, e quem não tem o
+    segredo não consegue nem recomeçar o cálculo.
     """
-    data_hoje = datetime.now().strftime("%Y-%m-%d")
-    semente = f"{segredo_sistema}_{data_hoje}"
-    
-    # Instancia um gerador aleatório isolado com a semente do dia
-    gerador = random.Random(semente)
-    
-    # Gera um número fixo de 6 dígitos para o dia de hoje
-    return str(gerador.randint(100000, 999999))
+    if segredo_sistema is None:
+        segredo_sistema = _segredo_da_chave()
+    if data_referencia is None:
+        data_referencia = datetime.now()
+
+    dia = data_referencia.strftime("%Y-%m-%d")
+    segredo = segredo_sistema.encode("utf-8")
+    marca = dia.encode("utf-8")
+
+    tamanho_alfabeto = len(ALFABETO_CHAVE)
+    # 256 não é múltiplo de 36, e o resto sobraria favorecendo os primeiros
+    # símbolos do alfabeto. O corte em múltiplo de 36 descarta esse resto.
+    teto = (256 // tamanho_alfabeto) * tamanho_alfabeto
+
+    caracteres = []
+    rodada = 0
+    while len(caracteres) < TAMANHO_CHAVE:
+        resumo = hmac.new(segredo, marca + (b"|%d" % rodada), hashlib.sha256).digest()
+        for octeto in resumo:
+            if octeto >= teto:
+                continue
+            caracteres.append(ALFABETO_CHAVE[octeto % tamanho_alfabeto])
+            if len(caracteres) == TAMANHO_CHAVE:
+                break
+        rodada += 1
+
+    return "".join(caracteres)
+
+
+def chave_equivale(digitada, valida):
+    """Compara a chave que a pessoa digitou com a do dia.
+
+    Maiúsculas e espaços à toa não contam como erro. A chave tem 12 caracteres
+    e vai ser copiada de um quadro; exigir caixa exata só queima uma das 5
+    tentativas com um erro que a pessoa não consegue nem ver, porque o campo é
+    mascarado.
+    """
+    return (digitada or "").strip().upper() == (valida or "").strip().upper()
+
+
+# Onde o resultado do último envio do cadastro fica guardado entre as passadas
+# do fragmento. Ver _formulario_cadastro para o porquê.
+_CHAVE_DO_RESULTADO = "_cadastro_resultado"
+_CHAVE_DO_PERFIL = "_cadastro_resultado_perfil"
+
+
+def _guardar_resultado(nivel, texto):
+    """Guarda (nivel, texto) do último envio, para sobreviver ao tique de 5s.
+
+    `nivel` é o nome do método de st: "error", "warning" ou "success".
+    """
+    st.session_state[_CHAVE_DO_RESULTADO] = (nivel, texto)
+
 
 def render_admin():
     """APAGADA de propósito.
@@ -174,6 +270,228 @@ def _formulario_login():
                         )
                     )
 
+# Mesmo motivo do fragmento do login, e ainda mais visível aqui.
+#
+# Sem ele, o botão do cadastro ficava habilitado depois da 5ª chave errada: o
+# `disabled` é avaliado quando o formulário é desenhado, e o contador só estoura
+# durante o tratamento do envio, ou seja, um ciclo tarde. Medido antes da
+# correção: na 5ª tentativa o contador já mostrava "Restam 0", mas campo e botão
+# seguiam liberados e só travavam no clique seguinte — exatamente o "mostrar que
+# não tem como digitar" que foi pedido. E, igual ao login, sem fragmento o botão
+# nunca voltava sozinho quando a janela vencia: a tela ficava morta.
+@st.fragment(run_every="5s")
+def _formulario_cadastro():
+    # A chave válida para o dia. Determinística: mesma data e mesmo segredo
+    # devolvem a mesma chave para a coordenação e para o formulário.
+    chave_valida_hoje = obter_chave_professor_diaria()
+
+    # O seletor de perfil fica FORA do formulário, de propósito. Dentro de
+    # st.form o Streamlit agrupa tudo e nada redesenha até o envio, então
+    # condicionar o campo da chave ao perfil só apareceria depois de enviar —
+    # pior que mostrar sempre. Fora do form, cada troca de perfil reroda a tela
+    # na hora.
+    #
+    # Efeito colateral bom: clear_on_submit só limpa widgets dentro do form, o
+    # que o perfil sobrevive ao envio. Antes o perfil voltava para "Aluno" a
+    # cada tentativa, e era por isso que o aviso de bloqueio precisava ficar
+    # independente do perfil.
+    #
+    # st.radio, e não st.selectbox: nesta versão do Streamlit o selectbox virou
+    # um campo de busca, que aceita digitação livre e filtra a lista enquanto a
+    # pessoa escreve. Medido: digitando "Coordenador" o campo mostra a palavra e
+    # a lista responde "No results", e o valor é descartado na saída, voltando
+    # para "Aluno" sozinho. Ou seja, não quebrava nada — o valor inválido nunca
+    # chegava ao banco — mas a pessoa vê o texto que digitou na tela e ele some
+    # sem explicação. Num campo que decide se a chave aparece ou não, isso é
+    # pior do que deixar a chave sempre visível. Com duas opções, o radio mostra
+    # as duas e resolve em um clique, sem digitação nenhuma.
+    tipo_usuario_input = st.radio(
+        "Perfil de Acesso",
+        ["Aluno", "Professor"],
+        key="perfil_cadastro",
+        horizontal=True,
+    )
+
+    # Só existe quando o perfil é Professor. Precisa do default antes do if
+    # porque a cadeia de validação mais abaixo lê esta variável em todos os
+    # caminhos, e sem o default o perfil Aluno levanta NameError.
+    chave_prof_input = ""
+    chave_bloqueada = False
+
+    if tipo_usuario_input == "Professor":
+        # O bloqueio vale para a CHAVE, não para o cadastro inteiro, e por isso
+        # só este campo e o botão desabilitam: assim um Professor bloqueado
+        # ainda se cadastra como Aluno, e o radio continua vivo para a troca.
+        chave_bloqueada = ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR)
+
+        # Com o seletor fora do form o perfil não reseta mais, então o aviso pode
+        # ficar amarrado a ele: some junto com o campo, que é o esperado. O texto
+        # segue dizendo que vale só para o cadastro com chave, porque o limite
+        # é da chave.
+        #
+        # O aviso fica fora do form de propósito: dentro de st.form nada é
+        # desenhado antes do envio, então a pessoa bloqueio e habilitada não
+        # veria nada.
+        if chave_bloqueada:
+            st.warning(
+                "Chave do Professor bloqueada por excesso de tentativas. "
+                "Vale só para o cadastro com chave, não afeta o Aluno. "
+                f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+            )
+
+    with st.form("form_cadastro", clear_on_submit=True):
+        # O campo da chave fica DENTRO do form, e isso não é um detalhe.
+        #
+        # Ele já esteve fora, e o cadastro de Professor estava quebrado por causa
+        # disso: ao enviar, o servidor recebia o campo da chave sempre vazio e
+        # rejeitava a chave certa. Medido no navegador com a chave do dia na
+        # tela e no log do servidor: `recebido='' valida='B3247UPY2KM8'`. O
+        # AppTest não pegou nada disso porque escreve o estado dos widgets
+        # direto no servidor, sem passar pelo navegador — é a diferença entre
+        # testar a lógica e testar o programa.
+        #
+        # O que precisa ficar fora do form é o SELETOR DE PERFIL, que é o que
+        # dispara o redesenho imediato. O campo da chave só precisa aparecer
+        # quando o perfil é Professor, e isso continua funcionando: o radio está
+        # fora, então trocar o perfil reroda o fragmento e o form inteiro é
+        # redesenhado com o campo dentro.
+        if tipo_usuario_input == "Professor":
+            chave_prof_input = st.text_input(
+                f"Chave de Verificação ({TAMANHO_CHAVE} caracteres)",
+                type="password",
+                # Sem max_chars de propósito. Parece boa ideia — impedir que uma
+                # chave colada com espaço no fim queime uma das 5 tentativas — mas
+                # faz o contrário: o Streamlit CORTA o valor no limite, e o corte
+                # acontece antes do strip() da comparação. Medido: "  b3247upy2km8 "
+                # (16 caracteres) virava "  b3247upy2k" e a chave correta era
+                # rejeitada. Num campo mascarado a pessoa não tem como ver o
+                # erro, então é a pior forma de falha possível. A tolerância a
+                # caixa e a espaço das pontas fica por conta de chave_equivale.
+                help=(
+                    "Bloqueada por excesso de tentativas. Aguarde a janela."
+                    if chave_bloqueada
+                    else "Solicite a chave diária à coordenação. "
+                         "Pode digitar em maiúsculas ou minúsculas."
+                ),
+                disabled=chave_bloqueada,
+            )
+
+        nome_input = st.text_input("Nome Completo")
+        novo_usuario_input = st.text_input("Nome de Usuário")
+
+        email_input = st.text_input("E-mail")
+        email_confirm_input = st.text_input("Confirme o E-mail")
+
+        nova_senha_input = st.text_input(
+            "Nova Senha",
+            type="password",
+            help="Requisitos: 1 maiúscula, 1 minúscula e 1 número."
+        )
+
+        btn_cadastrar = st.form_submit_button("Finalizar Cadastro", disabled=chave_bloqueada)
+
+        if btn_cadastrar:
+            # Nenhum envio começa com o aviso antigo na tela. O perfil vai junto
+            # para o aviso poder ser descartado se a pessoa trocar de cadastro
+            # depois: senão o "Conta criada com sucesso!" do Aluno ficava na tela
+            # ao lado do "Chave bloqueada" do Professor, que são coisas de
+            # contextos diferentes.
+            st.session_state[_CHAVE_DO_RESULTADO] = None
+            st.session_state[_CHAVE_DO_PERFIL] = tipo_usuario_input
+
+            # 1. Bloqueio por excesso de tentativas na chave do Professor. Fica no
+            #    topo da cadeia de propósito: quem está bloqueado não gasta
+            #    validação nem recebe dica sobre os outros campos.
+            if tipo_usuario_input == "Professor" and ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR):
+                _guardar_resultado(
+                    "error",
+                    "Muitas tentativas de chave incorretas. "
+                    f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+                )
+
+            # 2. Preenchimento dos campos básicos
+            elif not (nome_input and novo_usuario_input and email_input and email_confirm_input and nova_senha_input):
+                _guardar_resultado("error", "Por favor, preencha todos os campos do formulário.")
+
+            # 3. Validação da Chave Dinâmica do Professor
+            elif tipo_usuario_input == "Professor" and not chave_equivale(
+                chave_prof_input, chave_valida_hoje
+            ):
+                ratelimit.registrar_falha(ratelimit.CHAVE_PROFESSOR)
+                restantes = ratelimit.restantes(ratelimit.CHAVE_PROFESSOR)
+                _guardar_resultado(
+                    "error",
+                    "Chave de verificação do Professor inválida ou expirada. "
+                    + (
+                        f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+                        if restantes == 0
+                        else f"Restam {restantes} tentativa(s) em "
+                             f"{ratelimit.JANELA_SEGUNDOS // 60} minutos."
+                    )
+                )
+
+            # 4. Validação de e-mail
+            elif email_input != email_confirm_input:
+                _guardar_resultado("error", "Os e-mails digitados não coincidem.")
+            elif not validar_email_formato(email_input):
+                _guardar_resultado("error", "Por favor, informe um e-mail válido.")
+
+            # 5. Validação da força da senha
+            elif not validar_forca_senha(nova_senha_input):
+                _guardar_resultado(
+                    "error",
+                    "A senha deve conter pelo menos uma letra maiúscula, "
+                    "uma minúscula e um número."
+                )
+
+            # 6. Salvar no banco
+            else:
+                motivo = cadastrar_usuario(
+                    username=novo_usuario_input,
+                    nome=nome_input,
+                    email=email_input,
+                    tipo=tipo_usuario_input,
+                    senha_pura=nova_senha_input
+                )
+                if motivo == "ok":
+                    # Só zera no sucesso, e só para Professor: quem cadastra
+                    # Aluno não tem chave para limpar.
+                    if tipo_usuario_input == "Professor":
+                        ratelimit.zerar(ratelimit.CHAVE_PROFESSOR)
+                    _guardar_resultado(
+                        "success", "Conta criada com sucesso! Faça login na aba ao lado."
+                    )
+                elif motivo == "email_duplicado":
+                    _guardar_resultado(
+                        "warning", "Este e-mail já está cadastrado nesta plataforma."
+                    )
+                else:
+                    _guardar_resultado("warning", "Este nome de usuário já está em uso.")
+
+    # O aviso do último envio é redesenhado aqui, fora do formulário.
+    #
+    # Não dá para desenhar dentro: dentro do st.form nada aparece antes do
+    # envio, e o tique do fragmento — que existe para travar e destravar o
+    # campo da chave sozinho — redesenha o formulário inteiro sem reexecutar
+    # o tratamento do envio, levando junto toda mensagem. Medido: a confirmação
+    # "Conta criada com sucesso!" sumia entre 3,0s e 5,2s depois do clique.
+    # Guardar em session_state faz a mensagem sobreviver ao tique e durar até
+    # a próxima tentativa, que é o tempo que a pessoa precisa para ler.
+    #
+    # E some se o perfil mudou desde o envio: um aviso de Professor não tem o
+    # que estar na tela quando a pessoa já passou para o cadastro de Aluno.
+    _resultado = st.session_state.get(_CHAVE_DO_RESULTADO)
+    if _resultado and st.session_state.get(_CHAVE_DO_PERFIL) == tipo_usuario_input:
+        _nivel, _texto = _resultado
+        getattr(st, _nivel)(_texto)
+
+    # NÃO há código de teste da chave aqui. A chave do dia é distribuída apenas
+    # pelo Painel da Coordenação (app.py), que exige login de Administrador.
+    # Enquanto este st.info existiu, a chave estava impressa na aba pública de
+    # cadastro, para qualquer visitante, antes de digitar qualquer coisa — o que
+    # anulava o rate limit da chave, já que não havia o que adivinhar.
+
+
 def render_login():
 
     st.markdown("""
@@ -247,12 +565,31 @@ def render_login():
             font-size: 13px;
             font-weight: 600;
         }
-        /* O seletor antigo usava div[data-baseweb="select"], atributo que não
-           existe nesta versão do Streamlit: a regra nunca casou e o seletor
-           ficava com a cor padrão, destoando dos campos de texto. */
-        [data-testid="stForm"] [data-testid="stSelectbox"] [role="group"] {
+        /* ---------- Seletor de perfil (st.radio) ---------- */
+        /* A regra antiga era para o stSelectbox do perfil. Não há mais nenhum
+           seletor dentro do formulário — o único que existe é o do perfil, e
+           ele foi parar fora do form de propósito (é o que faz o campo da
+           chave reagir na hora). Por isso estas regras não levam
+           [data-testid="stForm"]: alcançariam nada, e o radio ficaria com o
+           claro do tema, destoando dos campos de texto ao lado. */
+        [data-testid="stRadio"] [role="radiogroup"] {
             background-color: #1e2430;
             border-radius: 10px;
+            padding: 0.4rem 0.7rem;
+        }
+        [data-testid="stRadio"] [role="radiogroup"] label {
+            color: #e2e8f0;
+            font-size: 14px;
+            padding: 0.25rem 0;
+        }
+        /* O item marcado precisa ficar claro contra o fundo escuro, senão a
+           escolha some e o usuário não sabe qual perfil está selecionado. */
+        [data-testid="stRadio"] [role="radio"][aria-checked="true"] {
+            color: #ffffff;
+            font-weight: 600;
+        }
+        [data-testid="stRadio"] [role="radio"] svg {
+            fill: #38bdf8;
         }
 
         /* ---------- Botão ---------- */
@@ -368,7 +705,7 @@ def render_login():
 
             /* 16px evita o zoom automático do iOS ao focar o campo */
             [data-testid="stForm"] [data-testid="stTextInputRootElement"] input,
-            [data-testid="stForm"] [data-testid="stSelectbox"] input {
+            [data-testid="stRadio"] label {
                 font-size: 16px !important;
             }
 
@@ -410,127 +747,4 @@ def render_login():
         _formulario_login()
 
     with aba_cadastro:
-            # Obtém a chave válida para o dia de hoje
-       chave_valida_hoje = obter_chave_professor_diaria()
-
-       # O selectbox fica FORA do formulário, de propósito. Dentro de st.form o
-       # Streamlit agrupa tudo e nada redesenha até o envio, então condicionar o
-       # campo da chave ao perfil só apareceria depois de enviar — pior que
-       # mostrar sempre. Fora do form, cada troca de perfil reroda a tela na hora.
-       #
-       # Efeito colateral bom: clear_on_submit só limpa widgets dentro do form, o
-       # que o perfil sobrevive ao envio. Antes o perfil voltava para "Aluno" a
-       # cada tentativa, e era por isso que o aviso de bloqueio precisava ficar
-       # independente do perfil.
-       tipo_usuario_input = st.selectbox("Perfil de Acesso", ["Aluno", "Professor"], key="perfil_cadastro")
-
-       # Só existe quando o perfil é Professor. Precisa do default antes do if
-       # porque a cadeia de validação mais abaixo lê esta variável em todos os
-       # caminhos, e sem o default o perfil Aluno levanta NameError.
-       chave_prof_input = ""
-
-       if tipo_usuario_input == "Professor":
-                # O bloqueio vale para a CHAVE, não para o cadastro inteiro, e
-                # por isso só este campo e o botão desabilitam: assim um Professor
-                # bloqueado ainda se cadastra como Aluno, e o selectbox continua
-                # vivo para permitir a troca.
-                chave_bloqueada = ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR)
-
-                # Com o selectbox fora do form o perfil não reseta mais, então o
-                # aviso pode ficar amarrado a ele: some junto com o campo, que é
-                # o comportamento esperado. O texto segue dizendo que vale só
-                # para o cadastro com chave, porque o limite é da chave.
-                if chave_bloqueada:
-                    st.warning(
-                        "Chave do Professor bloqueada por excesso de tentativas. "
-                        "Vale só para o cadastro com chave, não afeta o Aluno. "
-                        f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
-                    )
-
-                chave_prof_input = st.text_input(
-                    "Chave de Verificação de 6 dígitos",
-                    type="password",
-                    help=(
-                        "Bloqueada por excesso de tentativas. Aguarde a janela."
-                        if chave_bloqueada
-                        else "Solicite a chave diária à coordenação."
-                    ),
-                    disabled=chave_bloqueada,
-                )
-       else:
-                chave_bloqueada = False
-
-       with st.form("form_cadastro", clear_on_submit=True):
-                nome_input = st.text_input("Nome Completo")
-                novo_usuario_input = st.text_input("Nome de Usuário")
-
-                email_input = st.text_input("E-mail")
-                email_confirm_input = st.text_input("Confirme o E-mail")
-                
-                nova_senha_input = st.text_input(
-                    "Nova Senha", 
-                    type="password", 
-                    help="Requisitos: 1 maiúscula, 1 minúscula e 1 número."
-                )
-                
-                btn_cadastrar = st.form_submit_button("Finalizar Cadastro", disabled=chave_bloqueada)
-
-                if btn_cadastrar:
-                    # 1. Bloqueio por excesso de tentativas na chave do Professor.
-                    #    Fica no topo da cadeia de propósito: quem está bloqueado
-                    #    não gasta validação nem recebe dica sobre os outros campos.
-                    if tipo_usuario_input == "Professor" and ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR):
-                        st.error(
-                            "Muitas tentativas de chave incorretas. "
-                            f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
-                        )
-
-                    # 2. Preenchimento dos campos básicos
-                    elif not (nome_input and novo_usuario_input and email_input and email_confirm_input and nova_senha_input):
-                        st.error("Por favor, preencha todos os campos do formulário.")
-
-                    # 3. Validação da Chave Dinâmica do Professor
-                    elif tipo_usuario_input == "Professor" and chave_prof_input != chave_valida_hoje:
-                        ratelimit.registrar_falha(ratelimit.CHAVE_PROFESSOR)
-                        st.error(
-                            "Chave de verificação do Professor inválida ou expirada. "
-                            f"Restam {ratelimit.restantes(ratelimit.CHAVE_PROFESSOR)} "
-                            f"tentativa(s) em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
-                        )
-
-                    # 4. Validação de e-mail
-                    elif email_input != email_confirm_input:
-                        st.error("Os e-mails digitados não coincidem.")
-                    elif not validar_email_formato(email_input):
-                        st.error("Por favor, informe um e-mail válido.")
-
-                    # 5. Validação da força da senha
-                    elif not validar_forca_senha(nova_senha_input):
-                        st.error("A senha deve conter pelo menos uma letra maiúscula, uma minúscula e um número.")
-
-                    # 6. Salvar no banco
-                    else:
-                        motivo = cadastrar_usuario(
-                            username=novo_usuario_input,
-                            nome=nome_input,
-                            email=email_input,
-                            tipo=tipo_usuario_input,
-                            senha_pura=nova_senha_input
-                        )
-                        if motivo == "ok":
-                            # Só zera no sucesso, e só para Professor: quem
-                            # cadastro de Aluno não tem chave para limpar.
-                            if tipo_usuario_input == "Professor":
-                                ratelimit.zerar(ratelimit.CHAVE_PROFESSOR)
-                            st.success("Conta criada com sucesso! Faça login na aba ao lado.")
-                        elif motivo == "email_duplicado":
-                            st.warning("Este e-mail já está cadastrado nesta plataforma.")
-                        else:
-                            st.warning("Este nome de usuário já está em uso.")
-
-            # NÃO há código de teste da chave aqui. A chave do dia é distribuída
-            # apenas pelo Painel da Coordenação (app.py), que exige login de
-            # Administrador. Enquanto este st.info existiu, a chave estava
-            # impressa na aba pública de cadastro, para qualquer visitante, antes
-            # de digitar qualquer coisa — o que anulava o rate limit da chave,
-            # já que não há o que adivinhar.
+        _formulario_cadastro()

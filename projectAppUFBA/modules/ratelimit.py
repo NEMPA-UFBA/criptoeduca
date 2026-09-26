@@ -13,6 +13,7 @@ O estado vive na memoria do processo, entao some quando o servidor reinicia e
 nao e compartilhado entre replicas. Em uma maquina so, que e o caso do
 projeto hoje, isso nao faz diferenca.
 """
+import ipaddress
 import threading
 import time
 from collections import deque
@@ -43,6 +44,29 @@ _tentativas = {}
 _tranca = threading.Lock()
 
 
+def _ip_aceitavel(ip):
+    """Diz se o valor de st.context.ip_address serve como identificador.
+
+    Precisa ser str E parsear como IP. Sem essa checagem, qualquer objeto
+    truthy vira chave do limite, e o str() dele pode mudar a cada requisicao.
+
+    Medido: sob AppTest, st.context.ip_address devolve um MagicMock, que e
+    truthy e tem um id() proprio. A chave virava `ip:<MagicMock name=... id=...>`
+    e mudava a cada rerun, entao cada tentativa contava como um cliente novo e
+    o limite nunca disparava -- sete tentativas, sete orcamentos novos de cinco.
+    O limitador falhava ABERTO, que e a direcao errada para um controle de
+    seguranca. Validando o tipo, o teste cai no proximo identificador e o
+    limite volta a valer.
+    """
+    if not isinstance(ip, str):
+        return False
+    try:
+        ipaddress.ip_address(ip.strip())
+    except ValueError:
+        return False
+    return True
+
+
 def _identificar_cliente():
     """
     Devolve o melhor identificador de cliente que o Streamlit expoe.
@@ -57,13 +81,16 @@ def _identificar_cliente():
     sem precisar mudar nada aqui.
     """
     ip = getattr(st.context, "ip_address", None)
-    if ip:
-        return f"ip:{ip}"
+    if _ip_aceitavel(ip):
+        return f"ip:{ip.strip()}"
 
     cabecalhos = getattr(st.context, "headers", None) or {}
     encaminhado = cabecalhos.get("X-Forwarded-For")
     if encaminhado:
-        return f"proxy:{encaminhado.split(',')[0].strip()}"
+        # Mesmo cuidado com o cabecalho: so aceita se for um IP de verdade.
+        primeiro = encaminhado.split(",")[0].strip()
+        if _ip_aceitavel(primeiro):
+            return f"proxy:{primeiro}"
 
     for parte in (cabecalhos.get("Cookie") or "").split(";"):
         parte = parte.strip()

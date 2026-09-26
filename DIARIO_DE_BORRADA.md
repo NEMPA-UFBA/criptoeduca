@@ -931,3 +931,345 @@ O `selectbox` e o campo da chave estao **fora** do `stForm`. Era o objetivo.
   versao longa de uma sessao anterior nao estava no disco). A linha 2 deixa
   de dizer "via Aritmetica Modular", porque o codigo nao usa Aritmetica
   Modular em lugar nenhum.
+
+---
+
+# Rodada 3 — a chave de 12 caracteres, o seletor de perfil, e um bug de cadastro
+
+Dois pedidos: o seletor de perfil aceitava texto que nao era Aluno nem
+Professor, e a chave queria mais segura, com 12 caracteres de numeros e
+letras. No meio disso apareceu um bug que tinha mais Valor que os dois pedidos.
+
+## 1. O seletor de perfil: `st.selectbox` virou campo de busca
+
+O sintoma: no campo "Perfil de Acesso" da aba de cadastro dava para digitar
+qualquer coisa. Medido antes de mexer, com o campo preenchido de verdade:
+
+```
+digitado "P"               -> opcoes filtradas: ["Professor"]
+digitado "Coordenador"     -> opcoes filtradas: ["No results"]
+digitado "zzz"             -> opcoes filtradas: ["No results"]
+digitado "ADMINISTRADOR"   -> opcoes filtradas: ["No results"]
+```
+
+Ou seja, nesta versao do Streamlit (1.64) o `selectbox` **e** um campo de
+busca: aceita digitacao livre e filtra a lista enquanto a pessoa escreve. Nao
+era bug de validacao — testei e o valor invalido nunca chegava ao banco, o
+campo voltava sozinho para "Aluno". Era defeito de usabilidade: a pessoa ve o
+que digitou na tela e ele some sem explicacao, num campo que decide se a chave
+aparece.
+
+Tambem testei se o texto digitado em minuscula era aceito como valor cru, o
+que seria um bug de verdade: nao. Digitar "professor" filtrado e escolhido
+commita "Professor", o valor da lista, nao o texto.
+
+**Troca por `st.radio`.** Com duas opcoes, o radio mostra as duas e resolve em
+um clique, sem digitacao nenhuma. Medido depois: zero `input type=text` dentro
+do seletor, e `readOnly` deixou de existir porque nao ha texto a digitar. O CSS
+do `selectbox` ficou para tras, porque estava preso a `[data-testid="stForm"]` e
+o radio nao esta dentro do form; as regras novas corem o fundo escuro e o item
+marcado, senao a escolha some contra o fundo.
+
+## 2. A chave: 6 digitos para 12 caracteres
+
+O que mudou, e por que cada parte:
+
+| | Antes | Agora |
+|---|---|---|
+| Tamanho | 6 digitos | 12 caracteres |
+| Alfabeto | `0-9` | `0-9A-Z` |
+| Combinacoes | 900.000 | 4.738.381.338.321.616.896 |
+| Gerador | `random.Random(semente).randint()` | HMAC-SHA256 com amostragem por rejeicao |
+
+Medido: 5.264.868.153.690 vezes mais combinacoes.
+
+**Por que trocar o gerador, e nao so o tamanho.** `random` e um Mersenne
+Twister, que nao foi desenhado para segurar segredo. Semear com um texto
+conhecido torna a sequencia previsivel para quem conhece a semente — e a
+semente estava no codigo. No HMAC o segredo e a propria chave da funcao: quem
+nao tem o segredo nao consegue nem recomecar o calculo.
+
+**Por que amostragem por rejeicao.** 256 nao e multiplo de 36, e o resto
+sobraria favorecendo os primeiros simbolos do alfabeto. O codigo descarta os
+bytes acima de 252. Medido em 3.000 dias: 36 simbolos usados, contagens entre
+906 e 1.075 para 1.000 esperadas. Com n = 36.000 e p = 1/36, o desvio padrao
+e 29,5, entao +/-3 sigma vai de 88 a 112 — a faixa observada esta dentro. Sem
+vioz de modulo.
+
+**Por que so maiusculas.** A chave e digitada por quem copiou de um quadro ou
+leu em voz alta. Maiuscula de minuscula nao se distingue no papel nem na fala.
+E a comparacao ignora caixa, entao digitar minusculo funciona.
+
+**Sobre o segredo.** A semente foi lida do `st.secrets`, com o valor do codigo
+como reserva. Isso e uma mudanca que a equipe **nao pediu** e que precisa ficar
+marcada como tal: a justificativa registrada antes ("a semente nao e segredo
+de ninguem") era verdade para 6 digitos e parou de valer com 12. O que decide
+nao e o tamanho da semente, e o da chave. Mantive a reserva para o app subir
+sem o arquivo, e o Painel da Coordenacao avisa na tela quando esta usando a
+reserva, com o caminho do `secrets.toml` no aviso. O exemplo versionado
+ganhou a linha `CHAVE_SEGREDO`.
+
+## 3. O `max_chars` que eu mesmo criei e removi
+
+Primeiro coloquei `max_chars=12` no campo da chave, achando que evitava uma
+chave colada com trailing space de queimar uma tentativa. **Fez o contrario**,
+e o teste 6 da suite pegou:
+
+```
+"  b3247upy2km8 " (16 caracteres)  ->  Streamlit corta em 12  ->  "  b3247upy2k"
+```
+
+O corte acontece antes do `strip()` da comparacao, entao a chave **certa** vira
+errada. Num campo mascarado a pessoa nao tem como ver o erro. Removido: e o
+pior modo de falha possivel para um limite de tentativas.
+
+## 4. O bug que estava la desde o item 2: cadastro de Professor quebrado
+
+O `AppTest` passou em todas as rodadas anteriores dizendo que o cadastro de
+Professor funcionava. No navegador, nao funcionava. **Nenhuma chave era aceita,
+nem a correta.**
+
+Instrumentando o servidor:
+
+```
+recebido='' | valida='B3247UPY2KM8' | perfil='Professor'
+```
+
+O campo da chave estava **fora** do `st.form`, e no envio o servidor recebia o
+campo **sempre vazio**. Confirmei que era pre-existente, olhando o commit
+`0e42114`: campo da chave na linha 450, `st.form` na linha 463.
+
+Por que o `AppTest` nunca pegou: ele escreve o estado dos widgets direto no
+servidor, sem passar pelo navegador. Testei a logica, nao o programa. O
+`st.form` no cliente manda os widgets **do form**; um campo de fora nao vem
+junto.
+
+**Conserto: o campo da chave foi para dentro do form.** O que precisa ficar
+fora e o **seletor de perfil**, que e o que dispara o redesenho imediato — e
+isso continua funcionando, porque o radio fora do form reroda o fragmento e o
+form inteiro e redesenhado com o campo dentro. Medido depois: chave dentro do
+form, radio fora, cadastro com a chave do dia cria a conta, e o banco confirma
+`Professor | mariacorreta | mariacorreta@escola.br | Maria Souza`.
+
+Duas regras que saiu disso, para nao repetir:
+
+1. **`AppTest` serve para logica. Navegador para programa.** `clear_on_submit`,
+   `disabled`, `run_every`, valor de campo no envio: nada disso o `AppTest` ve.
+2. **Nenhum campo cujo valor a validacao leia pode ficar fora do `st.form`.**
+
+## 5. O fragmento do cadastro, e o defeito que ele trouxe
+
+O login ja tinha `@st.fragment(run_every="5s")` para o botao nao ficar cinza
+para sempre. O cadastro nao tinha, e o defeito era o mesmo: apos a 5a chave
+errada o botao seguia habilitado, porque o `disabled` e avaliado quando o form
+e desenhado e o contador so estoura durante o tratamento do envio — um ciclo
+atras. Medido antes: 5a tentativa com "Restam 0" e o botao ainda clicavel.
+
+Com o fragmento, medido no navegador, por marco de tempo depois do 5o clique:
+
+```
+  324 ms  campo liberado | botao liberado | msg "Tente de novo em 5 minutos"
+ 1652 ms  campo liberado | botao liberado
+ 2618 ms  campo liberado | botao liberado
+ 4261 ms  campo TRAVADO | botao TRAVADO | aviso de bloqueio
+```
+
+Um tique do ciclo de 5 s, sem clique extra. Custo: **9 redesenhos em 21 s**
+parado (antes 4, com um fragmento so), porque agora sao dois fragmentos ticando
+em 5 s, defasados meio ciclo.
+
+**O defeito que o fragmento trouxe:** ele redesenha o formulario inteiro a cada
+ciclo, e o tratamento do envio nao roda junto, entao **toda mensagem de retorno
+sumia**:
+
+```
+erro:      1254 ms visivel | 3011 ms visivel | 5217 ms SUMIU
+sucesso:   1263 ms visivel | 3002 ms visivel | 5206 ms SUMIU
+```
+
+"Conta criada com sucesso!" sumindo em 4 segundos e ruim — a pessoa clica, le
+e olha de novo e a prova já foi. **Conserto:** o resultado do ultimo envio passa
+a ser guardado em `session_state` e redesenhado fora do form a cada passada,
+ate a proxima tentativa. Medido depois: erro e sucesso visiveis em 1,2 s, 3,0 s,
+5,2 s, 8,0 s e 11,6 s. O aviso tambem some sozinho se a pessoa trocar de perfil
+no meio, senao o "sucesso" do Aluno ficava ao lado do "bloqueada" do Professor.
+
+Esse detalhe valeu um susto honesto: no meio da verificacao eu achei que a
+6a tentativa estava sendo aceita, porque a mensagem era a da chave e nao a de
+"muitas tentativas". Nao era bug do rate limit — era a mensagem da 5a tentativa
+preservada pelo `session_state` novo, e o botao ja estava travado. Uma leitura
+errada minha, anotada porque o mesmo erro pode se repetir.
+
+## 6. O travamento visual nao e o que barra
+
+O atributo `disabled` chega ate um ciclo depois do contador estourar. Quem
+clicar nessa janela e barrado pela **logica**, no topo da cadeia de validacao,
+antes de a chave ser olhada. Para medir isso sem esperar a janela, desliguei a
+verificacao de "widget desabilitado" do proprio `AppTest`, simulando o clique
+que escapa:
+
+```
+5 chaves erradas                    -> contador cru: 5
+mais 10 cliques que escaparam        -> contador cru: 5   (nenhum contou)
+com a chave CERTA, durante o bloqueio -> recusada, contador cru: 5
+```
+
+O contador nao sobe, a chave nunca e comparada, e nem a chave correta passa
+enquanto a janela estiver aberta. E o Aluno do mesmo cliente bloqueado se
+cadastra normalmente, porque o limite e da chave, nao do cadastro.
+
+## 7. Tabela de verificacao
+
+Tudo medido, sem atalho. Logica com `AppTest`; DOM, `disabled`,
+`clear_on_submit` e `run_every` no navegador.
+
+| O que | Onde | Resultado |
+|---|---|---|
+| Seletor so oferece Aluno/Professor | navegador | 0 `input type=text`, 2 `input type=radio` |
+| Texto invalido no perfil | navegador | "No results"; valor volta a "Aluno" |
+| Chave so aparece no perfil Professor | navegador | Aluno nao tem o campo; Professor tem |
+| Chave correta cria conta | navegador | "Conta criada com sucesso!", banco confirma |
+| Chave em minusculas / espacada / mista | `AppTest` | as 4 aceitas |
+| Chave antiga de 6 digitos | `AppTest` | recusada, e conta como tentativa |
+| Chave com espaco e `max_chars` | `AppTest` | `max_chars` removido: espaco tolerado |
+| 5 chaves erradas travam o campo | navegador | travado no ciclo de 5 s, sem clique extra |
+| 10 cliques escapando do `disabled` | `AppTest` | contador parado em 5 |
+| Chave correta durante o bloqueio | `AppTest` | recusada |
+| Aluno do cliente bloqueado | navegador | cadastra normal |
+| Janela vencendo libera | `AppTest` | 3 falhas vencidas -> `excedeu: False` |
+| Acerto zera o contador | `AppTest` | 5 falhas -> acerto -> contador 0 |
+| Erro e sucesso duram mais de 11 s | navegador | visiveis em todos os marcos |
+| Perfil sobrevive ao envio | navegador | campo da chave continua visivel |
+| Formulario limpa depois do envio | navegador | todos os campos vazios, inclusive a chave |
+| Chave some ao voltar para Aluno | navegador | campo desaparece |
+| Painel mostra a chave de 12 | navegador | `B3247UPY2KM8`, 12 caracteres, maiusculas |
+| Aviso de segredo padrao no painel | navegador | presente (nao ha `secrets.toml`) |
+| Professor nao ve o Painel da Coordenacao | navegador | menu sem o item |
+| Desempenho dos fragmentos | navegador | 9 redesenhos em 21 s parado |
+| Tique nao apaga o que esta digitando | navegador | 15 s sem tocar, tudo preservado |
+| Criacao das tabelas do banco | `AppTest` | `CREATE UNIQUE INDEX` presente |
+| E-mail e usuario repetidos | `AppTest` | as duas mensagens distintas |
+
+## 8. O rate limit falhava aberto, e a suite de teste que o revelou
+
+Ate aqui eu tratava o rate limit como encerrado, porque o navegador travava
+certo: 5 chaves erradas, aviso, campo travado no ciclo seguinte. So que na
+rodada 3 eu reescrevi os testes como arquivo, para poderem rodar de novo, e
+o cenario do limite passou a dar "nenhuma falha" em 7 tentativas. O navegador
+travava, o teste nao. Alguma das duas medidas estava errada.
+
+Primeira tentativa de explicar: artefato do `AppTest`. Cada `AppTest` ganha um
+`Cookie` proprio, o `_streamlit_xsrf` gira, e o limitador identifica o cliente
+por ele -- entao 7 testes novos seriam 7 clientes, cada um com 5 tentativas
+inteiras, e o bloqueio nunca viria. Isso e verdade, mas nao era a causa
+inteira, porque o mesmo teste dando erro **num unico** `AppTest`, com 7 envios
+seguidos no mesmo objeto, tambem nao travava.
+
+A causa estava no `ratelimit.py`, e e um furo de seguranca real:
+
+```python
+ip = getattr(st.context, "ip_address", None)
+if ip:                        # <- qualquer objeto truthy passa
+    return f"ip:{ip}"         # <- e o str() dele entra na chave do limite
+```
+
+Sob `AppTest`, `st.context.ip_address` nao e `None`: e um `MagicMock`, que e
+truthy e tem um `id()` proprio. Entao a chave do limite virava
+
+```
+ip:<MagicMock name='mock.get_client().client_context.remote_ip' id='2172739928480'>
+```
+
+e o `id` era **novo a cada rerun**. Medido, as sete tentativas:
+
+| Envio | Entradas em `_tentativas` | Mensagem na tela |
+|---|---|---|
+| 1 | 1, com 1 falha | "Restam 4 tentativas" |
+| 2 | 2, com 1 falha cada | "Restam 4 tentativas" |
+| ... | ... | ... |
+| 7 | 7, com 1 falha cada | "Restam 4 tentativas" |
+
+Sete clientes diferentes, seteancas de cinco, e o limite nunca fecha. O
+limitador estava **falhando aberto**: onde deveria barrar, deixava passar. Para
+um controle de seguranca, falhar aberto e a direcao errada -- e o codigo
+parecia correto, porque a logica de contagem estava correta. O defeito estava
+no identificador, tres linhas acima.
+
+Corrigi com `_ip_aceitavel()`, que so aceita `str` que parseia como IP, e
+appliquei a mesma checagem no ramo do `X-Forwarded-For`:
+
+```python
+def _ip_aceitavel(ip):
+    if not isinstance(ip, str):
+        return False
+    try:
+        ipaddress.ip_address(ip.strip())
+    except ValueError:
+        return False
+    return True
+```
+
+Depois da correcao o `AppTest` cai em `anonimo`, que e estavel, e o contador
+volta a contar: 1, 2, 3, 4, 5. Na 5a o aviso muda para "Tente de novo em 5
+minutos" e o campo desabilita no redesenho seguinte.
+
+Duas lições que ficaram, e que valem mais que o conserto:
+
+1. **Um teste que diz "passou" num controle de seguranca e cheiro de problema.**
+   Aqui o `AppTest` achava que 7 tentativas erradas eram 7 clientes
+   legitimos. Se eu tivesse lido "0 falhas" como "o limite funciona, teste
+   coerente", o furo ficava no codigo. O que destapou foi a unica coisa que
+   nao batia: o numero "Restam 4" parado em 7 envios seguidos.
+2. **Rate limit que falha aberto e pior do que rate limit quebrado.** Um
+   limite que barra todo mundo por engano e um incmodo. Um que nao barra
+   ninguem nao e incmodo, e falsa garantia.
+
+Verificacao da correcao:
+
+| O que | Onde | Resultado |
+|---|---|---|
+| `_ip_aceitavel` aceita IP v4, v6 e espaco | 12 casos | 12 ok |
+| `_ip_aceitavel` recusa `MagicMock`, `None`, `12345`, `[]`, `{}` | 12 casos | 12 ok |
+| Contador acumula no mesmo cliente | `AppTest` | 1, 2, 3, 4, 5 |
+| Aviso de bloqueio | `AppTest` | 5a tentativa |
+| Campo desabilita no redesenho seguinte | `AppTest` | 7a rodada |
+| Limite no navegador, depois da correcao | navegador | aviso + `disabled=true` no campo e no botao |
+| Painel mostra a chave de 12 | navegador | `B3247UPY2KM8` |
+| Login do admin no navegador | navegador | entra, menu sem o Painel para Professor |
+
+Fica registrado tambem que **cada `AppTest` e um cliente diferente**. Cenario
+que precisa de acumulamento tem que reusar um unico `AppTest` e enviar varias
+vezes; senao o teste mede o limitador errado. E o `AppTest` nao ve
+`run_every`, entao o destravamento automatico por tique de 5 s continua sendo
+coisa de navegador.
+
+## 9. O que continua aberto
+
+- **A suite de teste ficou fora do repositorio.** Esta rodada escreveu
+  `suite_rodada3.py` com 49 verificacoes, todas passando, e ele foi parar em
+  pasta temporaria. Roda sozinha contra copia do banco e leva dois segundos.
+  Deixa-la fora e o trabalho se perde no proximo `limpar temporaria`; o certo
+  e `tests/` no repositorio, com `requirements-dev.txt`. Nao fiz porque nao
+  estava no que a equipe pediu, e arquivos de teste opinam sobre layout.
+- **`requirements.txt` continua faltando.** `streamlit` e `bcrypt` nao estao
+  declarados em lugar nenhum. Isso bloqueia deploy fora desta maquina, e e o
+  item mais concreto da lista.
+- **A negacao de servico contra a conta continua real.** Qualquer um tranca o
+  login de um colega que sabe existir, de 5 em 5 minutos, sem nunca saber a
+  senha. Mitigacao exigiria IP, que nao existe localmente.
+- **O `plataforma.db` continua versionado com e-mails de alunos.** Maior
+  exposicao de dado pessoal que a senha hardcoded, e intocado por instrucao.
+- **O cadastro confirma quais usuarios existem.** Piorou com o item 3.
+- **O rate limit da chave ainda perde para F5.** Agora isso custa pouco, porque
+  4,7 quintilhoes nao se adivinha em 5 nem em 500 tentativas. Mas se o
+  `CHAVE_SEGREDO` continuar sendo o do codigo, a chave e calculada em vez de
+  adivinhada, e ai o limite e mesmo decorativo. O aviso esta no Painel da
+  Coordenacao justamente para isso nao passar despercebido.
+- **A mascara da chave penaliza erro de digitacao.** 12 caracteres com letras
+  sao mais facil de errar que 6 digitos, e a pessoa nao ve o que digitou. A
+  comparacao tolera caixa e espaco, o que cobre o erro mais comum, mas nao
+  troca dois caracteres. Deixei mascarado por coherencia com a intencao de
+  segurar; se a coordenacao preferir ler em voz alta na frente do turma,
+  tirar o `type="password"` e uma linha.
+- **Dois modulos continuam com 0 byte:** `introducaoCriptografia.py` e
+  `mainmenu.py`. Nenhum `import` os usa.
