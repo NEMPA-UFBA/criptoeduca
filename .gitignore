@@ -215,4 +215,10 @@ marimo/_lsp/
 __marimo__/
 
 # Streamlit
-.streamlit/secrets.toml
+# O ** no comeco e obrigatorio: um padrao com barra no meio e ancorado na raiz
+# do repositorio, e o .streamlit daqui fica em projectAppUFBA/, nao na raiz.
+# Sem o **, este padrao nao casava com nada e a senha do admin em
+# secrets.toml entraria no commit. Conferido com git check-ignore.
+**/.streamlit/secrets.toml
+# O modelo de secrets.example.toml continua versionado de proposito: e a
+# documentacao do que o app espera encontrar, e nao tem valor secreto.
