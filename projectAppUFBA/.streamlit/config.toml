@@ -1,0 +1,25 @@
+# Configuração do Streamlit para o EduStream.
+#
+# browser.gatherUsageStats = false desliga o envio de estatísticas de uso para
+# a Streamlit. A máquina é da escola e o app é de demonstração: não há
+# autorização de ninguém para dados de uso saindo da rede da instituição.
+#
+# Não há tema aqui de propósito. O CSS do app mora em modules/login.py, e
+# deixar o tema em dois lugares foi o que produziu o overridden/hover
+# inconsistente que o CSS precisa corrigir.
+
+[server]
+# Evita o pedido de e-mail de onboarding na primeira execução, que bloqueia o
+# boot esperando alguém digitar. Verificado: sem --server.headless, o
+# processo para nesse prompt e nunca sobe.
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Esconde a barra de ferramentas de cima (o "Deploy", o "Rerun", o menu).
+# O app é de teste local; um botão de Deploy visível convida alguém a subir
+# uma coisa por engano, e esse clique não tem volta.
+# "minimal" deixa a barra só com o que é útil para quem está testando.
+toolbarMode = "minimal"
