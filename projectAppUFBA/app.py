@@ -7,7 +7,7 @@ from modules.login import (
 )
 
 # Configuração global
-st.set_page_config(page_title="Plataforma EduStream", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
 
 # Inicializa as tabelas no SQLite
 criar_tabelas()
@@ -25,7 +25,7 @@ else:
     tipo = st.session_state["tipo_usuario"]
 
     # Barra lateral
-    st.sidebar.title("🎓 EduStream")
+    st.sidebar.title("Criptoeduca")
     st.sidebar.write(f"Usuário: **{st.session_state['nome_usuario']}**")
     st.sidebar.write(f"Perfil: **{tipo}**")
 
