@@ -519,12 +519,16 @@ def render_login():
            classe: o elemento precisa ser emitido com p.login-title. */
         div.stMarkdown p.login-title {
             text-align: center;
-            /* 24px e não 30px: a Press Start 2P é monoespaçada com Advance
-               de exatamente 1 em por caractere, então os 29 caracteres do
-               título medem 696px. A 30px dariam 870px contra os 900px do
-               .block-container, e nessa margem de 30px o título quebrava e
-               não quebrava conforme o tamanho da janela. 696px cabe em uma
-               linha tanto com o padding padrão do Streamlit quanto sem ele. */
+            /* A Press Start 2P é monoespaçada com advance de exatamente 1 em
+               por caractere, então a largura do título dá para calcular em
+               vez de medir: "Acesso ao CriptoEduca" tem 21 caracteres, e a
+               24px isso dá 504px (medido: 504,0px, ou 24,000px por caractere).
+               O título era maior (30px) até o texto encolher de "Acesso à
+               Plataforma Educativa" para o atual. Com os 29 caracteres
+               antigos, 30px dava 870px contra os 900px do .block-container:
+               uma sobra de 30px, e nessa margem o título quebrava e não
+               quebrava conforme o tamanho da janela. A 21 caracteres não há
+               mais aperto: a 30px seriam 630px contra 768px de espaço útil. */
             font-size: 24px !important;
             /* A Press Start 2P só tem o peso 400. Deixar 700 aqui fazia o
                navegador inventar um negrito falso, que borra os pixels. */
@@ -566,10 +570,23 @@ def render_login():
             color: #94a3b8;
             font-weight: 600;
             border-radius: 8px;
-            min-height: 40px;
+            /* O flex:1 é o que tira as abas do canto. Sem ele cada aba mede
+               só o próprio texto: medido, a tablist tem 768px e as duas abas
+               ocupavam 102px somadas (36px e 66px), com 666px vazios à
+               direita. Com flex:1 as duas dividem a faixa inteira, e a aba
+               selecionada passa a ler como um bloco e não como um rótulo
+               solto grudado na esquerda. */
+            flex: 1;
+            /* O padding segura o rótulo longe da borda da aba. O vertical só
+               passou a valer porque veio junto com o min-height: a 40px de
+               altura e conteúdo de uns 19px, o min-height absorveria o
+               padding e nada mudaria na tela. */
+            padding: 0.6rem 1rem;
+            min-height: 46px;
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         [data-testid="stTabs"] [aria-selected="true"] {
             background-color: #4F46E5;
@@ -642,7 +659,7 @@ def render_login():
             border: none;
             min-height: 48px;
             padding: 0.5rem 1rem;
-            transition: background-color 0.2s, transform 0.1s;
+            transition: background-color 0.3s ease, transform 0.1s ease;
         }
         [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:hover {
             background-color: #4338CA;
@@ -683,11 +700,13 @@ def render_login():
         }
 
         /* ---------- Interatividade: hover e pressionado ---------- */
-        /* Só o estado, sem transition e sem keyframes. O único lugar do app
-           com transição é o botão de enviar; espalhar movimento por todo lado
-           seria mais barulho do que retorno. O "afundar" de 1px no :active é
-           o mesmo idioma que o botão de enviar já usa (acima), então o
-           pressionado fica igual nos dois controles. */
+        /* As transições ficam aqui, junto dos estados que elas animam, e não
+           na regra base de cada controle lá em cima: assim o par
+           transition/estado aparece no mesmo lugar, em vez de a transition
+           estar a duzentas linhas do :hover que ela faz existir.
+           0.3s ease em tudo, menos o "afundar" do :active, que continua em
+           0.1s. Um pressionar lento lê como lentidão e não como retorno; é a
+           cor que precisa de 0.3s para não piscar. */
         /* Em todos os pares abaixo, a regra do item selecionado precisa ser
            separada da do não selecionado. Sem o :not(), passar o mouse sobre
            a aba que já está aberta apagaria a única pista de qual aba é a
@@ -709,6 +728,12 @@ def render_login():
             background-color: #3730A3;
         }
 
+        /* Perfil (Aluno/Professor). O transform entra na lista porque este é
+           um dos controles que afunda no :active. */
+        [data-testid="stRadio"] [data-testid="stRadioOption"] {
+            transition: background-color 0.3s ease, color 0.3s ease,
+                        transform 0.1s ease;
+        }
         /* Perfil (Aluno/Professor). O realce usa o azul #38bdf8, que era a cor
            do círculo na marcação antiga; aqui ela volta no fundo, já que não
            há mais círculo para pintar. Os seletores seguem a mesma correção
@@ -726,6 +751,9 @@ def render_login():
             transform: translateY(1px);
         }
 
+        [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+            transition: box-shadow 0.3s ease;
+        }
         /* Campo de texto. Não é border-color: o comentário em "Foco" acima já
            registra que a cor da borda não surte efeito aqui, porque a borda é
            do elemento pai. O halo é o mesmo mecanismo do :focus-within, só
@@ -741,6 +769,9 @@ def render_login():
         /* Botão de mostrar a senha. filter em vez de color: o ícone é um
            Material Symbols que herda a cor do campo, e brightness funciona
            sem precisar saber qual é essa cor. */
+        [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
+            transition: filter 0.3s ease;
+        }
         [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"]:hover {
             filter: brightness(1.35);
         }
@@ -758,7 +789,9 @@ def render_login():
                 padding: 1.5rem;
             }
             div.stMarkdown p.login-title {
-                /* 580px de largura: cabe em uma linha até uns 620px de tela */
+                /* 21 caracteres a 20px = 420px, contra uns 736px de espaço
+                   útil nesta faixa. Não é mais medida contra quebra: o
+                   título já cabe em uma linha nesta altura de tela. */
                 font-size: 20px !important;
             }
             /* Tablet: alvo de toque confortável, sem ser o do celular */
@@ -780,8 +813,11 @@ def render_login():
                 box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.9);
             }
             div.stMarkdown p.login-title {
-                /* 464px: a partir daqui o título passa a duas linhas, o que
-                   nesta fonte continua parecendo título de jogo. */
+                /* 21 caracteres a 16px = 336px, contra uns 456px de espaço
+                   útil com o padding de 0.75rem de cada lado. Mesmo assim o
+                   título não quebra em nenhuma das faixas: desde que o texto
+                   encolheu, a escada 20/16/14 é escala, e não é mais o que
+                   segura o título em uma linha. */
                 font-size: 16px !important;
                 margin-bottom: 0.35rem;
             }
@@ -825,11 +861,19 @@ def render_login():
         }
 
         /* Quem pede menos animação não recebe transição */
+        /* A lista cresceu quando as transições de 0.3s entraram. Com só a do
+           botão aqui, quem tem prefers-reduced-motion ligado continuava
+           recebendo 0.3s de transição em todo o resto. */
         @media (prefers-reduced-motion: reduce) {
-            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
+            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button,
+            [data-testid="stTabs"] [role="tab"],
+            [data-testid="stRadio"] [data-testid="stRadioOption"],
+            [data-testid="stForm"] [data-testid="stTextInputRootElement"],
+            [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
                 transition: none;
             }
-            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:active {
+            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:active,
+            [data-testid="stRadio"] [data-testid="stRadioOption"]:active {
                 transform: none;
             }
         }
@@ -837,7 +881,7 @@ def render_login():
     """, unsafe_allow_html=True)
 
     st.markdown(
-        '<p class="login-title">Acesso à Plataforma Educativa</p>'
+        '<p class="login-title">Acesso ao CriptoEduca</p>'
         '<p class="login-subtitle">Entre com suas credenciais ou crie sua conta para continuar</p>',
         unsafe_allow_html=True,
     )
