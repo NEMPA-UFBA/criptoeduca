@@ -682,6 +682,72 @@ def render_login():
             border: 1px solid rgba(99, 102, 241, 0.3);
         }
 
+        /* ---------- Interatividade: hover e pressionado ---------- */
+        /* Só o estado, sem transition e sem keyframes. O único lugar do app
+           com transição é o botão de enviar; espalhar movimento por todo lado
+           seria mais barulho do que retorno. O "afundar" de 1px no :active é
+           o mesmo idioma que o botão de enviar já usa (acima), então o
+           pressionado fica igual nos dois controles. */
+        /* Em todos os pares abaixo, a regra do item selecionado precisa ser
+           separada da do não selecionado. Sem o :not(), passar o mouse sobre
+           a aba que já está aberta apagaria a única pista de qual aba é a
+           que está aberta. */
+
+        /* Abas. O não selecionado ganha um fundo indigo fraco; o selecionado
+           escurece, na mesma direção do botão (#4F46E5 -> #4338CA). */
+        [data-testid="stTabs"] [role="tab"]:not([aria-selected="true"]):hover {
+            background-color: rgba(79, 70, 229, 0.16);
+            color: #e2e8f0;
+        }
+        [data-testid="stTabs"] [role="tab"]:not([aria-selected="true"]):active {
+            background-color: rgba(79, 70, 229, 0.30);
+        }
+        [data-testid="stTabs"] [role="tab"][aria-selected="true"]:hover {
+            background-color: #4338CA;
+        }
+        [data-testid="stTabs"] [role="tab"][aria-selected="true"]:active {
+            background-color: #3730A3;
+        }
+
+        /* Perfil (Aluno/Professor). O realce usa o azul #38bdf8, que era a cor
+           do círculo na marcação antiga; aqui ela volta no fundo, já que não
+           há mais círculo para pintar. Os seletores seguem a mesma correção
+           do bloco acima: stRadioOption e data-selected, nunca [role="radio"]
+           nem [aria-checked]. */
+        [data-testid="stRadio"] [data-testid="stRadioOption"]:not([data-selected="true"]):hover {
+            background-color: rgba(56, 189, 248, 0.10);
+            color: #ffffff;
+            border-radius: 6px;
+        }
+        [data-testid="stRadio"] [data-testid="stRadioOption"]:not([data-selected="true"]):active {
+            background-color: rgba(56, 189, 248, 0.20);
+        }
+        [data-testid="stRadio"] [data-testid="stRadioOption"]:active {
+            transform: translateY(1px);
+        }
+
+        /* Campo de texto. Não é border-color: o comentário em "Foco" acima já
+           registra que a cor da borda não surte efeito aqui, porque a borda é
+           do elemento pai. O halo é o mesmo mecanismo do :focus-within, só
+           mais fraco.
+           O :not(:focus-within) é obrigatório. Esta regra e a de "Foco" têm a
+           mesma especificidade, e como esta vem depois, um :hover sem o :not
+           venceria o foco e trocaria o halo grosso pelo fino toda vez que o
+           mouse passasse sobre o campo em foco. */
+        [data-testid="stForm"] [data-testid="stTextInputRootElement"]:not(:focus-within):hover {
+            box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25);
+        }
+
+        /* Botão de mostrar a senha. filter em vez de color: o ícone é um
+           Material Symbols que herda a cor do campo, e brightness funciona
+           sem precisar saber qual é essa cor. */
+        [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"]:hover {
+            filter: brightness(1.35);
+        }
+        [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"]:active {
+            filter: brightness(0.85);
+        }
+
         /* ---------- Responsividade ---------- */
         @media (max-width: 768px) {
             .block-container {
