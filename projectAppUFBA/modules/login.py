@@ -605,14 +605,22 @@ def render_login():
             padding: 0.25rem 0;
         }
         /* O item marcado precisa ficar claro contra o fundo escuro, senão a
-           escolha some e o usuário não sabe qual perfil está selecionado. */
-        [data-testid="stRadio"] [role="radio"][aria-checked="true"] {
+           escolha some e o usuário não sabe qual perfil está selecionado.
+
+           Atenção ao seletor. O Streamlit 1.64 migrou o radio para React Aria
+           e a marcação mudou: não existe mais [role="radio"] nem
+           [aria-checked]. O estado vem em data-selected="true" e a opção é
+           label[data-testid="stRadioOption"]. As duas regras que usavam
+           [role="radio"] casavam com zero elementos, ou seja, o perfil
+           selecionado nunca chegou a ser destacado -- os dois itens
+           computavam exatamente a mesma cor e o mesmo peso. */
+        [data-testid="stRadio"] [data-testid="stRadioOption"][data-selected="true"] {
             color: #ffffff;
             font-weight: 600;
         }
-        [data-testid="stRadio"] [role="radio"] svg {
-            fill: #38bdf8;
-        }
+        /* A regra do svg foi removida junto: o radio novo não tem svg nenhum.
+           O que se vê hoje é só o texto dentro de um div, então a cor do
+           círculo que ela pintava não tem mais onde ser aplicada. */
 
         /* ---------- Botão ---------- */
         /* O seletor original (div.stButton > button) estilizava todos os
