@@ -4,15 +4,45 @@
 # a Streamlit. A máquina é da escola e o app é de demonstração: não há
 # autorização de ninguém para dados de uso saindo da rede da instituição.
 #
-# Não há tema aqui de propósito. O CSS do app mora em modules/login.py, e
-# deixar o tema em dois lugares foi o que produziu o overridden/hover
-# inconsistente que o CSS precisa corrigir.
+# Não há cor de tema aqui de propósito. O CSS do app mora em modules/login.py,
+# e deixar a paleta em dois lugares foi o que produziu o overridden/hover
+# inconsistente que o CSS precisa corrigir. A única coisa de tema que aparece
+# abaixo é o registro da fonte, que não tem equivalente em CSS: o @font-face
+# precisa de uma URL que o Streamlit resolve, e o CSS não tem como pedir isso.
 
 [server]
 # Evita o pedido de e-mail de onboarding na primeira execução, que bloqueia o
 # boot esperando alguém digitar. Verificado: sem --server.headless, o
 # processo para nesse prompt e nunca sobe.
 headless = true
+
+# Necessário para o app servir a fonte de static/fonts. Sem isso o url() do
+# fontFaces não resolve e a fonte não carrega.
+enableStaticServing = true
+
+[theme]
+# O base precisa ser explícito. O Streamlit só deixa de mandar tema quando
+# TODAS as opções de theme são None (app_session.py, _populate_theme_msg);
+# a partir do momento que uma delas está preenchida -- no caso, o fontFaces
+# logo abaixo -- o base cai no valor zero do enum, que é LIGHT, e o app abre
+# claro. O CSS inteiro foi escrito em cima de valores escuros, então isso
+# quebraria a leitura da tela.
+#
+# Antes o app ficava escuro por acidente: só porque a máquina de quem abria
+# preferia dark. Na máquina da coordenação, ou no celular de um aluno com o
+# sistema claro, abriria com o texto ilegível.
+#
+# Consequência: com um tema customizado, o menu do Streamlit deixa de oferecer
+# a troca entre claro e escuro. É o desejado aqui, porque nada do CSS foi feito
+# para funcionar em claro.
+base = "dark"
+
+# Press Start 2P, usada só no título da tela de login. ...
+[[theme.fontFaces]]
+family = "PressStart2P"
+url = "app/static/fonts/pressstart2p-latin.woff2"
+weight = "400"
+style = "normal"
 
 [browser]
 gatherUsageStats = false

@@ -519,11 +519,33 @@ def render_login():
            classe: o elemento precisa ser emitido com p.login-title. */
         div.stMarkdown p.login-title {
             text-align: center;
-            font-size: 30px !important;
-            font-weight: 700;
+            /* 24px e não 30px: a Press Start 2P é monoespaçada com Advance
+               de exatamente 1 em por caractere, então os 29 caracteres do
+               título medem 696px. A 30px dariam 870px contra os 900px do
+               .block-container, e nessa margem de 30px o título quebrava e
+               não quebrava conforme o tamanho da janela. 696px cabe em uma
+               linha tanto com o padding padrão do Streamlit quanto sem ele. */
+            font-size: 24px !important;
+            /* A Press Start 2P só tem o peso 400. Deixar 700 aqui fazia o
+               navegador inventar um negrito falso, que borra os pixels. */
+            font-weight: 400;
+            /* O nome tem que ser "PressStart2P", sem espaços, e é o mesmo nome
+               usado em [[theme.fontFaces]] na config.toml. Não é o nome real
+               da fonte: é um apelido. O Streamlit monta a regra do @font-face
+               sem aspas, e um nome com espaço geraria CSS inválido. */
+            font-family: "PressStart2P", monospace;
+            /* 1.4 e não 1.2: a caixa dos glyphs desta fonte é alta, e a 1.2
+               as linhas de pixels se encostam. */
+            line-height: 1.4;
+            /* Streamlit aplica tracking negativo em alguns textos. Em fonte
+               monoespaçada isso fecha a distância entre os glyphs e quebra
+               a grade. */
+            letter-spacing: 0;
+            /* Sem isto o Chrome suaviza as bordas dos pixels e o resultado
+               fica desfocado, que é justamente o oposto do pretendido. */
+            -webkit-font-smoothing: none;
             color: #f1f5f9;
             margin-bottom: 0.4rem;
-            line-height: 1.2;
         }
         div.stMarkdown p.login-subtitle {
             text-align: center;
@@ -662,7 +684,8 @@ def render_login():
                 padding: 1.5rem;
             }
             div.stMarkdown p.login-title {
-                font-size: 26px !important;
+                /* 580px de largura: cabe em uma linha até uns 620px de tela */
+                font-size: 20px !important;
             }
             /* Tablet: alvo de toque confortável, sem ser o do celular */
             [data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
@@ -683,7 +706,9 @@ def render_login():
                 box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.9);
             }
             div.stMarkdown p.login-title {
-                font-size: 22px !important;
+                /* 464px: a partir daqui o título passa a duas linhas, o que
+                   nesta fonte continua parecendo título de jogo. */
+                font-size: 16px !important;
                 margin-bottom: 0.35rem;
             }
             div.stMarkdown p.login-subtitle {
@@ -717,7 +742,7 @@ def render_login():
 
         @media (max-width: 360px) {
             div.stMarkdown p.login-title {
-                font-size: 20px !important;
+                font-size: 14px !important;
             }
             [data-testid="stTabs"] [role="tab"] {
                 font-size: 13px;
