@@ -12,6 +12,28 @@ st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
 # Inicializa as tabelas no SQLite
 criar_tabelas()
 
+# Confirmação de saída.
+#
+# Fica aqui, antes do if/else, porque o st.dialog precisa ser chamado no fluxo
+# principal do script — dentro de um if do Streamlit ele não abre.
+#
+# Sem esta pergunta, um toque errado no "Sair" derrubava a sessão na hora e a
+# pessoa perdia a página em que estava.
+@st.dialog("Sair da conta?", width="small")
+def _confirmar_saida():
+    st.write("Você vai voltar para a tela de login.")
+    st.caption(
+        f"**{st.session_state['nome_usuario']}** "
+        f"({st.session_state['tipo_usuario']})"
+    )
+    confirmar, cancelar = st.columns(2)
+    if confirmar.button("Sair", type="primary", width="stretch"):
+        st.session_state["usuario_logado"] = False
+        st.rerun()
+    if cancelar.button("Cancelar", width="stretch"):
+        st.rerun()
+
+
 if "usuario_logado" not in st.session_state:
     st.session_state["usuario_logado"] = False
 if "nome_usuario" not in st.session_state:
@@ -22,6 +44,88 @@ if "tipo_usuario" not in st.session_state:
 if not st.session_state["usuario_logado"]:
     render_login()
 else:
+    # ---------- CSS da tela logada ----------
+    # Este bloco mora aqui, e não em modules/login.py, porque o <style> de lá
+    # está dentro de render_login() e o app só chama render_login() quando
+    # ninguém está logado. Ou seja: até agora a tela logada não tinha uma
+    # linha de CSS próprio, e a sidebar ficava com a cara do tema padrão.
+    #
+    # Os seletores usam .st-key-*, a classe que o app mesmo dá pelo key= do
+    # widget. Ela é estável: o frontend monta "st-key-" + o nome do key,
+    # trocando o que não for letra, número, hífen ou underscore. Já o
+    # stBaseButton-secondary do botão não serviria — ele não aparece
+    # literalmente em nenhum arquivo do bundle do frontend, é montado em
+    # runtime, e pode mudar na próxima versão do Streamlit.
+    #
+    # Efeito colateral útil do key=: .st-key-botao_sair só envolve o botão do
+    # logout, então o botão de recolher a barra fica de fora sem precisar de
+    # nenhuma regra que o exclua.
+    st.markdown(
+        """
+        <style>
+        /* ---------- Menu da barra lateral ---------- */
+        /* O item ativo precisa ficar claro. Sem isto o item escolhido e o não
+           escolhido são idênticos — o mesmo defeito que o seletor de perfil
+           teve na tela de login, por causa do mesmo [role="radio"] que o
+           Streamlit 1.64 trocou por data-selected. */
+        .st-key-menu [data-testid="stRadioOption"] {
+            padding: 0.55rem 0.75rem;
+            margin-bottom: 0.15rem;
+            border-radius: 8px;
+            /* A barra da esquerda é o indicador de "você está aqui". Ela é
+               transparente no estado normal para não existir quando não há
+               nada selecionado. */
+            border-left: 3px solid transparent;
+            color: #e2e8f0;
+            transition: background-color 0.3s ease, color 0.3s ease,
+                        border-color 0.3s ease;
+        }
+        .st-key-menu [data-testid="stRadioOption"]:hover {
+            background-color: rgba(79, 70, 229, 0.16);
+        }
+        .st-key-menu [data-testid="stRadioOption"][data-selected="true"] {
+            background-color: rgba(79, 70, 229, 0.28);
+            border-left-color: #4F46E5;
+            color: #ffffff;
+            font-weight: 600;
+        }
+        .st-key-menu [data-testid="stRadioOption"][data-selected="true"]:hover {
+            background-color: rgba(79, 70, 229, 0.36);
+        }
+        .st-key-menu [data-testid="stRadioOption"]:active {
+            background-color: rgba(79, 70, 229, 0.42);
+        }
+
+        /* ---------- Botão de sair ---------- */
+        /* Vermelho, que é o sinal convencional para sair. E o hover muda a cor
+           do texto, não só o fundo: sem isso a pessoa precisa ler o rótulo
+           para saber qual botão é. */
+        .st-key-botao_sair button {
+            border-radius: 8px;
+            transition: background-color 0.3s ease, color 0.3s ease,
+                        border-color 0.3s ease;
+        }
+        .st-key-botao_sair button:hover {
+            background-color: rgba(239, 68, 68, 0.16);
+            border-color: rgba(239, 68, 68, 0.45);
+            color: #fca5a5;
+        }
+        .st-key-botao_sair button:active {
+            background-color: rgba(239, 68, 68, 0.28);
+        }
+
+        /* Quem pede menos animação não recebe transição */
+        @media (prefers-reduced-motion: reduce) {
+            .st-key-menu [data-testid="stRadioOption"],
+            .st-key-botao_sair button {
+                transition: none;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     tipo = st.session_state["tipo_usuario"]
 
     # Barra lateral
@@ -39,12 +143,11 @@ else:
     else:
         opcoes = ["Painel Principal", "Sessões Interativas", "Meu Progresso"]
 
-    pagina = st.sidebar.radio("Navegação", opcoes)
+    pagina = st.sidebar.radio("Navegação", opcoes, key="menu")
 
     st.sidebar.divider()
-    if st.sidebar.button("🚪 Sair / Logout"):
-        st.session_state["usuario_logado"] = False
-        st.rerun()
+    if st.sidebar.button("🚪 Sair / Logout", key="botao_sair"):
+        _confirmar_saida()
 
     # Conteudo condicional.
     # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
