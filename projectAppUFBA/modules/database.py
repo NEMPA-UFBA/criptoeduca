@@ -38,7 +38,8 @@ def criar_tabelas():
             nome TEXT NOT NULL,
             email TEXT NOT NULL,
             tipo TEXT NOT NULL,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            primeiro_acesso INTEGER DEFAULT 1
         )
     ''')
 
@@ -47,6 +48,9 @@ def criar_tabelas():
     colunas_existentes = [coluna[1] for coluna in c.fetchall()]
 
     # 3. Adiciona as colunas faltantes sem apagar dados
+    if "primeiro_acesso" not in colunas_existentes:
+        c.execute("ALTER TABLE usuarios ADD COLUMN primeiro_acesso INTEGER DEFAULT 1")
+
     if "email" not in colunas_existentes:
         c.execute("ALTER TABLE usuarios ADD COLUMN email TEXT DEFAULT ''")
 
@@ -67,6 +71,24 @@ def criar_tabelas():
     except sqlite3.IntegrityError:
         pass
 
+    # Tabela para o Mural Criptografado
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS mural (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ativo INTEGER DEFAULT 1,
+            username TEXT,
+            mensagem_criptografada TEXT,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    c.execute("PRAGMA table_info(mural)")
+    colunas_mural = [coluna[1] for coluna in c.fetchall()]
+    if "username" not in colunas_mural:
+        c.execute("ALTER TABLE mural ADD COLUMN username TEXT DEFAULT ''")
+    if "ativo" not in colunas_mural:
+        c.execute("ALTER TABLE mural ADD COLUMN ativo INTEGER DEFAULT 1")
+
     # --- ADMIN PADRÃO, SÓ SE O BANCO AINDA NÃO TIVER UM ---
     # A senha não está no código: vem de st.secrets, e só é lida neste ramo.
     # Como o banco do repositório já tem o admin, esta linha não executa, e a
@@ -81,6 +103,44 @@ def criar_tabelas():
             "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (?, ?, ?, ?, ?)",
             ("admin", "Coordenador Geral", "admin@escola.com", "Administrador", hash_str)
         )
+    conn.commit()
+    conn.close()
+
+#Funções Novas adicionadas
+
+def atualizar_primeiro_acesso(username):
+    """Atualiza o status de primeiro acesso do aluno para 0 após o primeiro envio ao mural."""
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = ?", (username,))
+    conn.commit()
+    conn.close()
+
+def salvar_mensagem_mural(username, mensagem_criptografada):
+    """Salva a mensagem associada ao usuário que a enviou"""
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO mural (username, mensagem_criptografada, ativo) VALUES (?, ?, 1)",
+        (username, mensagem_criptografada)
+    )
+    conn.commit()
+    conn.close()
+
+def carregar_mural():
+    """Carrega todas as mensagens ativas para exibição pública"""
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("SELECT id, username, mensagem_criptografada, data FROM mural WHERE ativo = 1 ORDER BY id DESC")
+    dados = c.fetchall()
+    conn.close()
+    return dados
+
+def inativar_mensagem_mural(msg_id):
+    """Inativa qualquer mensagem (Apenas para Professores e Admins)"""
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("UPDATE mural SET ativo = 0 WHERE id = ?", (msg_id,))
     conn.commit()
     conn.close()
 

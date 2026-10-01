@@ -1,5 +1,7 @@
 import streamlit as st
-from modules.database import criar_tabelas
+from modules.database import criar_tabelas, conectar
+from modules.sessaoInterativa import render_sessao_interativa
+from modules.introducaoCriptografia import render_introducao_criptografia
 from modules.login import (
     render_login,
     obter_chave_professor_diaria,
@@ -125,8 +127,27 @@ else:
         """,
         unsafe_allow_html=True,
     )
-
+    
     tipo = st.session_state["tipo_usuario"]
+
+    # Sincroniza o status de primeiro acesso do banco de dados para o session_state caso seja aluno
+    if "username" in st.session_state and tipo == "Aluno":
+        conn = conectar()
+        c = conn.cursor()
+        c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = ?", (st.session_state["username"],))
+        res = c.fetchone()
+        conn.close()
+        if res:
+            st.session_state["primeiro_acesso"] = res[0]
+
+    # --- FLUXO OBRIGATÓRIO DO PRIMEIRO LOGIN (APENAS PARA ALUNOS) ---
+    if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
+            render_sessao_interativa(modo_voluntario=False)
+    else:
+        # Barra lateral normal para professores, admin e alunos veteranos
+        st.sidebar.title("Criptoeduca")
+        st.sidebar.write(f"Usuário: **{st.session_state['nome_usuario']}**")
+        st.sidebar.write(f"Perfil: **{tipo}**")
 
     # Barra lateral
     st.sidebar.title("Criptoeduca")
@@ -137,11 +158,11 @@ else:
     # O Administrador precisa da propria lista: antes ele caia no else e
     # recebia o menu do Aluno, porque so o Professor era distinguido.
     if tipo == "Administrador":
-        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Notas dos Alunos"]
+        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Notas dos Alunos", "Sessões Interativas", "Módulos de Aprendizado"]
     elif tipo == "Professor":
-        opcoes = ["Painel Geral", "Gerenciar Aulas", "Notas dos Alunos"]
+        opcoes = ["Painel Geral", "Gerenciar Aulas", "Notas dos Alunos", "Sessões Interativas", "Módulos de Aprendizado"]
     else:
-        opcoes = ["Painel Principal", "Sessões Interativas", "Meu Progresso"]
+        opcoes = ["Painel Principal", "Sessões Interativas", "Meu Progresso", "Módulos de Aprendizado"]
 
     pagina = st.sidebar.radio("Navegação", opcoes, key="menu")
 
@@ -196,9 +217,15 @@ else:
         st.title(f"Bem-vindo(a) de volta, {st.session_state['nome_usuario']}! 👋")
         st.write("Aqui fica o painel da plataforma de estudos.")
 
+    elif pagina == "Módulos de Aprendizado":
+        render_introducao_criptografia()
+        st.title("📚 Módulos de Aprendizado: Introdução à Criptografia")
+        st.write("Explore as videoaulas teóricas e teste seus conhecimentos com os quizzes interativos.")
+
     elif pagina == "Sessões Interativas":
-        st.title("🎯 Sessões Interativas")
-        st.write("Aulas e quizzes gravados.")
+        st.title("🎯 Sessão do Mural")
+        # Chama a função que renderiza o mural e o painel de moderação para gestores
+        render_sessao_interativa(modo_voluntario=True)
 
     elif pagina == "Meu Progresso":
         st.title("📊 Desempenho")
