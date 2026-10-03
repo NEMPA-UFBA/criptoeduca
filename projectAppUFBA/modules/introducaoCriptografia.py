@@ -8,8 +8,19 @@ def render_introducao_criptografia():
     with aba_aula:
         st.subheader("Módulo 1: Fundamentos de Segurança e Criptografia")
         
-        # Exemplo de videoaula (você pode substituir pelo link do YouTube da aula)
-        st.video("")#URL AQUI
+        # A URL da videoaula entra aqui quando o conteudo estiver pronto.
+        #
+        # Ela nao pode ser passada vazia para o st.video: ele trata o argumento
+        # como caminho de arquivo, tenta abrir "" e levanta
+        # MediaFileStorageError. Como o st.tabs roda as duas abas na mesma
+        # passada, essa excecao nao derrubava so a aba da aula -- derrubava a
+        # pagina inteira, incluindo o quiz e o titulo. O if mantem o campo
+        # seguro para quem preencher a URL depois.
+        url_aula = ""
+        if url_aula.strip():
+            st.video(url_aula)
+        else:
+            st.info("Videoaula ainda não disponível.")
         
         st.markdown("""
             ### 📝 Anotações e Resumo da Aula:
@@ -35,7 +46,5 @@ def render_introducao_criptografia():
             if btn_quiz:
                 if resp == "Garantir a confidencialidade, integridade e segurança dos dados":
                     st.success("Resposta correta! 🎉 Parabéns pelo avanço.")
-                    # Atualiza a pontuação do aluno na sessão se desejar
-                    st.session_state["pontuacao"] = st.session_state.get("pontuacao", 0) + 10
                 else:
                     st.error("Incorreto. Reveja o conteúdo da videoaula e tente novamente!")

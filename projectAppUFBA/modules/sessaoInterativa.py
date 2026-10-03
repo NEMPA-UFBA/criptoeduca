@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import html
 from modules.database import atualizar_primeiro_acesso, salvar_mensagem_mural, carregar_mural, inativar_mensagem_mural
 def gerar_cifra_usuario(username):
     """Gera um dicionário de substituição único e fixo baseado no username do usuário"""
@@ -90,7 +91,10 @@ def render_sessao_interativa(modo_voluntario=False):
         if btn_enviar:
             if mensagem.strip():
                 msg_cifrada = criptografar_texto(mensagem, username_atual)
-                salvar_mensagem_mural(msg_cifrada)
+                # A funcao pede dois argumentos: quem mandou e o que mandou.
+                # Sem o username o INSERT fica sem autor e a mural nunca
+                # guardou nada, porque o TypeError matava o script aqui.
+                salvar_mensagem_mural(username_atual, msg_cifrada)
                 
                 if st.session_state.get("primeiro_acesso") == 1:
                     atualizar_primeiro_acesso(username_atual)
@@ -113,10 +117,16 @@ def render_sessao_interativa(modo_voluntario=False):
             col_msg, col_botoes = st.columns([4, 1])
             
             with col_msg:
+                # A mensagem entra em HTML cru, entao precisa de escape. A
+                # cifra nao cobre "<" nem ">": o alfabeto dela e so letras,
+                # numeros e " .,!?", e o mapa usa mapa.get(char, char), que
+                # devolve qualquer caractere fora do alfabeto sem trocar.
+                # Como a cifra e uma permutacao, da para digitar as letras
+                # pre-imagem e forjar uma tag no meio do mural.
                 st.markdown(f"""
                     <div class="mural-item">
                         <span style="color: #94a3b8; font-size: 0.85rem;">🕒 {data}</span><br>
-                        <span style="color: #38bdf8; font-size: 1.1rem; font-weight: bold;">{msg}</span>
+                        <span style="color: #38bdf8; font-size: 1.1rem; font-weight: bold;">{html.escape(msg)}</span>
                     </div>
                 """, unsafe_allow_html=True)
                 

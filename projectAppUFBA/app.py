@@ -268,9 +268,13 @@ else:
         st.write("Aqui fica o painel da plataforma de estudos.")
 
     elif pagina == "Módulos de Aprendizado":
-        render_introducao_criptografia()
+        # O titulo vem antes do render. Antes era o contrario, e como a pagina
+        # desenhava o conteudo primeiro, o titulo aparecia embaixo de tudo --
+        # o que so ficava visivel porque o st.video vazio derrubava a pagina
+        # antes do titulo chegar a ser desenhado.
         st.title("📚 Módulos de Aprendizado: Introdução à Criptografia")
         st.write("Explore as videoaulas teóricas e teste seus conhecimentos com os quizzes interativos.")
+        render_introducao_criptografia()
 
     elif pagina == "Sessões Interativas":
         st.title("🎯 Sessão do Mural")
