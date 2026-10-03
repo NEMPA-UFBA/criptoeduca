@@ -31,3 +31,4 @@ Tipos permitidos:
 - `refactor:` Refatoração de código que não adiciona recurso nem corrige bug (ex: refactor: reorganiza as rotas de autenticacao).
 - `test:` Adição ou correção de testes (ex: test: adiciona teste unitario para o bcrypt).
 - `chore:` Tarefas de manutenção ou configuração de ambiente (ex: chore: adiciona biblioteca fastapi no requirements).
+- `visual:` para mudanças no visual da plataforma (ex: visual: mudança de fonte e cor).

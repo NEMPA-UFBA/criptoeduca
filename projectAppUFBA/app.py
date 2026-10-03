@@ -116,6 +116,53 @@ else:
             background-color: rgba(239, 68, 68, 0.28);
         }
 
+        /* ---------- Press Start 2P nos títulos ---------- */
+        /* A fonte vem de [[theme.fontFaces]] na config.toml e é a mesma que o
+           login já usa, com o mesmo apelido sem espaços. O tamanho é pequeno
+           de propósito: o advance da Press Start 2P é 1em por caractere e a
+           largura útil da sidebar é 260px, medidos no navegador. A 18px o
+           título "Criptoeduca" ocupa 198px e sobra folga; a 24px, que é o
+           padrão do Streamlit na sidebar, daria 264px e estouraria.
+           Nos títulos de página a conta é a mesma, mas eles são longos: os
+           maiores passam de 50 caracteres e quebram em duas linhas. Uma fonte
+           pixelada aguenta a quebra com line-height 1.4. */
+        [data-testid="stSidebar"] h1 {
+            font-family: "PressStart2P", monospace;
+            font-size: 18px !important;
+            /* A Press Start 2P só tem o peso 400. Deixar 700 aqui faria o
+               navegador inventar um negrito falso, que borra os pixels. */
+            font-weight: 400;
+            line-height: 1.4;
+            /* Streamlit aplica tracking negativo em alguns textos; em fonte
+               monoespaçada isso fecha os glyphs e quebra a grade. */
+            letter-spacing: 0;
+            /* Sem isto o Chrome suaviza a borda dos pixels e o resultado fica
+               desfocado, que é o oposto do pretendido. */
+            -webkit-font-smoothing: none;
+            color: #f1f5f9;
+        }
+        [data-testid="stMain"] h1 {
+            font-family: "PressStart2P", monospace;
+            font-size: 18px !important;
+            font-weight: 400;
+            line-height: 1.4;
+            letter-spacing: 0;
+            -webkit-font-smoothing: none;
+            color: #f1f5f9;
+        }
+
+        /* "Usuário:" e "Perfil:" são contexto de quem está logado, não conteúdo.
+           O <strong> é o que os separa dos outros <p> da sidebar: é o único
+           detalhe que eles carregam e que nenhum outro parágrafo da barra
+           lateral tem. Os itens do menu, o rótulo "Navegação" e o texto do
+           botão de sair não usam negrito, então este seletor casa com
+           exatamente dois elementos. Fixar o tamanho aqui também evita que, ao
+           trocar de perfil, as duas linhas mudem de largura e a barra "pule". */
+        [data-testid="stSidebar"] p:has(strong) {
+            opacity: 0.6;
+            font-size: 0.85rem;
+        }
+
         /* Quem pede menos animação não recebe transição */
         @media (prefers-reduced-motion: reduce) {
             .st-key-menu [data-testid="stRadioOption"],
@@ -143,11 +190,6 @@ else:
     # --- FLUXO OBRIGATÓRIO DO PRIMEIRO LOGIN (APENAS PARA ALUNOS) ---
     if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
             render_sessao_interativa(modo_voluntario=False)
-    else:
-        # Barra lateral normal para professores, admin e alunos veteranos
-        st.sidebar.title("Criptoeduca")
-        st.sidebar.write(f"Usuário: **{st.session_state['nome_usuario']}**")
-        st.sidebar.write(f"Perfil: **{tipo}**")
 
     # Barra lateral
     st.sidebar.title("Criptoeduca")
@@ -163,6 +205,14 @@ else:
         opcoes = ["Painel Geral", "Gerenciar Aulas", "Notas dos Alunos", "Sessões Interativas", "Módulos de Aprendizado"]
     else:
         opcoes = ["Painel Principal", "Sessões Interativas", "Meu Progresso", "Módulos de Aprendizado"]
+
+    # O botão "Voltar para o Menu Principal" mora na página do mural, que é
+    # desenhada depois do radio. Gravar st.session_state["menu"] de lá levanta
+    # StreamlitAPIException: a chave já foi consumida pelo widget neste run. O
+    # pedido chega por outra chave e é aplicado aqui, antes do radio existir.
+    if st.session_state.get("voltar_para_menu", False):
+        st.session_state["menu"] = opcoes[0]
+        del st.session_state["voltar_para_menu"]
 
     pagina = st.sidebar.radio("Navegação", opcoes, key="menu")
 

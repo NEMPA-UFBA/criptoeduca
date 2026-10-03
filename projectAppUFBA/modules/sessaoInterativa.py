@@ -56,7 +56,7 @@ def render_sessao_interativa(modo_voluntario=False):
     
     if modo_voluntario:
         if st.button("⬅️ Voltar para o Menu Principal"):
-            st.session_state["pagina_atual"] = "Menu Principal"
+            st.session_state["voltar_para_menu"] = True
             st.rerun()
 
     st.title("🎯 Sessão Interativa: Mural Criptografado e Anônimo")
