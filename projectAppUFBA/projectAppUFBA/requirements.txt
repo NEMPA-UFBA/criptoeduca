@@ -1,0 +1,20 @@
+# Dependências do EduStream.
+#
+# Só duas, e as duas são de verdade. Todo o resto do projeto (sqlite3, hmac,
+# hashlib, ipaddress, re, threading, time, datetime, collections) é da
+# biblioteca padrão do Python.
+#
+# Versões fixadas, não ">=", porque este arquivo existe para resolver um
+# problema prático: o app só rodava na máquina onde foi testado, porque nada
+# declarava o que instalar. Fixar garante que quem rodar obtenha o mesmo
+# ambiente que foi verificado. O custo é que uma correção de segurança do
+# Streamlit ou do bcrypt exige editar este arquivo — o que é uma linha.
+#
+#   python -m pip install -r requirements.txt
+#   python -m streamlit run app.py
+#
+# Detalhe de versão: streamlit 1.64 exige Python >= 3.10. O ambiente em que
+# isto foi verificado usa Python 3.14.
+
+streamlit==1.64.0
+bcrypt==5.0.0
