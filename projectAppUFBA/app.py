@@ -1,5 +1,11 @@
 import streamlit as st
-from modules.database import criar_tabelas, conectar
+from modules.database import (
+    criar_tabelas,
+    conectar,
+    salvar_conteudo,
+    carregar_conteudos,
+    inativar_conteudo,
+)
 from modules.sessaoInterativa import render_sessao_interativa
 from modules.introducaoCriptografia import render_introducao_criptografia
 from modules.login import (
@@ -187,10 +193,6 @@ else:
         if res:
             st.session_state["primeiro_acesso"] = res[0]
 
-    # --- FLUXO OBRIGATÓRIO DO PRIMEIRO LOGIN (APENAS PARA ALUNOS) ---
-    if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
-            render_sessao_interativa(modo_voluntario=False)
-
     # Barra lateral
     st.sidebar.title("Criptoeduca")
     st.sidebar.write(f"Usuário: **{st.session_state['nome_usuario']}**")
@@ -204,7 +206,7 @@ else:
     elif tipo == "Professor":
         opcoes = ["Painel Geral", "Gerenciar Aulas", "Notas dos Alunos", "Sessões Interativas", "Módulos de Aprendizado"]
     else:
-        opcoes = ["Painel Principal", "Sessões Interativas", "Meu Progresso", "Módulos de Aprendizado"]
+        opcoes = ["Painel Principal", "Conteúdos", "Sessões Interativas", "Meu Progresso", "Módulos de Aprendizado"]
 
     # O botão "Voltar para o Menu Principal" mora na página do mural, que é
     # desenhada depois do radio. Gravar st.session_state["menu"] de lá levanta
@@ -219,6 +221,15 @@ else:
     st.sidebar.divider()
     if st.sidebar.button("🚪 Sair / Logout", key="botao_sair"):
         _confirmar_saida()
+
+    # --- FLUXO OBRIGATÓRIO DO PRIMEIRO LOGIN (APENAS PARA ALUNOS) ---
+    # Fica depois da barra lateral de proposito: assim o botao de Sair continua
+    # acessivel. O st.stop() e o que faltava -- sem ele o mural era desenhado e
+    # a pagina normal aparecia logo abaixo, na mesma tela, e o aluno pulava a
+    # etapa obrigatoria sem publicar nada.
+    if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
+        render_sessao_interativa(modo_voluntario=False)
+        st.stop()
 
     # Conteudo condicional.
     # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
@@ -241,7 +252,7 @@ else:
         # ruído.
         if not segredo_da_chave_configurado():
             st.warning(
-                "⚠️ Esta chave está sendo derivada do segredo padrão que vem no "
+                "Esta chave está sendo derivada do segredo padrão que vem no "
                 "código-fonte. Ela tem 12 caracteres e é muito difícil de adivinhar, "
                 "mas qualquer pessoa com uma cópia do repositório consegue calcular "
                 "a chave do dia. Para fechar isso, crie "
@@ -257,7 +268,43 @@ else:
 
     elif pagina == "Gerenciar Aulas":
         st.title("📚 Gerenciar Aulas")
-        st.write("Criar, editar e publicar aulas.")
+        st.write("Publique conteúdos e materiais para os alunos lerem no painel deles.")
+
+        # Formulario de publicacao. Serve para Administrador e Professor, que
+        # sao os perfis que tem este item no menu.
+        with st.form("form_novo_conteudo", clear_on_submit=True):
+            titulo_novo = st.text_input("Título do conteúdo")
+            corpo_novo = st.text_area("Conteúdo", height=180)
+            publicar = st.form_submit_button("Publicar para os alunos", type="primary")
+
+            if publicar:
+                if titulo_novo.strip() and corpo_novo.strip():
+                    salvar_conteudo(
+                        titulo_novo.strip(),
+                        corpo_novo.strip(),
+                        st.session_state["username"],
+                    )
+                    st.success("Conteúdo publicado para os alunos!")
+                    st.rerun()
+                else:
+                    st.error("Preencha o título e o conteúdo antes de publicar.")
+
+        st.divider()
+        st.subheader("Conteúdos publicados")
+        conteudos_publicados = carregar_conteudos()
+        if conteudos_publicados:
+            for cid, c_titulo, c_corpo, c_autor, c_data in conteudos_publicados:
+                with st.expander(c_titulo, expanded=False):
+                    st.caption(f"Publicado por {c_autor} em {c_data}")
+                    # st.write escapa o HTML por padrao; o conteudo e escrito
+                    # por um gestor, mas nao custa nao abrir a porta.
+                    st.write(c_corpo)
+                    if st.button("Inativar", key=f"inativar_conteudo_{cid}"):
+                        inativar_conteudo(cid)
+                        st.warning(f"Conteúdo {cid} inativado.")
+                        st.rerun()
+        else:
+            st.info("Nenhum conteúdo publicado ainda. Use o formulário acima.")
 
     elif pagina == "Notas dos Alunos":
         st.title("🧮 Notas dos Alunos")
@@ -277,9 +324,22 @@ else:
         render_introducao_criptografia()
 
     elif pagina == "Sessões Interativas":
-        st.title("🎯 Sessão do Mural")
-        # Chama a função que renderiza o mural e o painel de moderação para gestores
+        # O título desta página fica no próprio módulo do mural. Antes o app
+        # desenhava um "Sessão do Mural" aqui e o módulo desenhava o dele logo
+        # em seguida, então apareciam dois títulos seguidos.
         render_sessao_interativa(modo_voluntario=True)
+
+    elif pagina == "Conteúdos":
+        st.title("📖 Conteúdos da Coordenação")
+        st.write("Materiais e avisos publicados pelos professores e pela coordenação.")
+        conteudos_do_aluno = carregar_conteudos()
+        if conteudos_do_aluno:
+            for cid, c_titulo, c_corpo, c_autor, c_data in conteudos_do_aluno:
+                with st.expander(c_titulo, expanded=False):
+                    st.caption(f"Publicado em {c_data}")
+                    st.write(c_corpo)
+        else:
+            st.info("Nenhum conteúdo publicado ainda. Volte mais tarde!")
 
     elif pagina == "Meu Progresso":
         st.title("📊 Desempenho")

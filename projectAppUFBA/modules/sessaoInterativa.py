@@ -82,7 +82,7 @@ def render_sessao_interativa(modo_voluntario=False):
                     sub_itens = itens[i * chunk_size : (i + 1) * chunk_size]
                     for orig, cif in sub_itens:
                         exibir_orig = "Espaço" if orig == " " else orig
-                        st.markdown(f"`{exibir_orig}` ➔ **`{cif}`**")
+                        st.markdown(f"`{exibir_orig}` → **`{cif}`**")
 
     with st.form("form_mural_interativo"):
         mensagem = st.text_area("Digite sua mensagem secreta para o mural:")
@@ -99,8 +99,7 @@ def render_sessao_interativa(modo_voluntario=False):
                 if st.session_state.get("primeiro_acesso") == 1:
                     atualizar_primeiro_acesso(username_atual)
                     st.session_state["primeiro_acesso"] = 0
-                
-                st.session_state["mostrar_explicacao"] = True
+
                 st.rerun()
             else:
                 st.error("Escreva alguma mensagem antes de enviar.")

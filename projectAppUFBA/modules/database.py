@@ -89,6 +89,28 @@ def criar_tabelas():
     if "ativo" not in colunas_mural:
         c.execute("ALTER TABLE mural ADD COLUMN ativo INTEGER DEFAULT 1")
 
+    # Tabela dos Conteudos da Coordenacao.
+    # E o caminho pelo qual o Administrador (e o Professor) publicam material
+    # para os alunos. Segue o mesmo padrao do mural: nada e apagado, a linha
+    # so muda ativo para 0, entao o historico do que foi publicado fica.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS conteudos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            corpo TEXT NOT NULL,
+            autor TEXT,
+            ativo INTEGER DEFAULT 1,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    c.execute("PRAGMA table_info(conteudos)")
+    colunas_conteudos = [coluna[1] for coluna in c.fetchall()]
+    if "autor" not in colunas_conteudos:
+        c.execute("ALTER TABLE conteudos ADD COLUMN autor TEXT DEFAULT ''")
+    if "ativo" not in colunas_conteudos:
+        c.execute("ALTER TABLE conteudos ADD COLUMN ativo INTEGER DEFAULT 1")
+
     # --- ADMIN PADRÃO, SÓ SE O BANCO AINDA NÃO TIVER UM ---
     # A senha não está no código: vem de st.secrets, e só é lida neste ramo.
     # Como o banco do repositório já tem o admin, esta linha não executa, e a
@@ -141,6 +163,41 @@ def inativar_mensagem_mural(msg_id):
     conn = conectar()
     c = conn.cursor()
     c.execute("UPDATE mural SET ativo = 0 WHERE id = ?", (msg_id,))
+    conn.commit()
+    conn.close()
+
+
+def salvar_conteudo(titulo, corpo, autor):
+    """Grava um conteudo publicado pela coordenacao para os alunos.
+
+    O autor e o username de quem publicou, do mesmo jeito que no mural: serve
+    para a lista mostrar quem foi, sem precisar do nome completo.
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO conteudos (titulo, corpo, autor, ativo) VALUES (?, ?, ?, 1)",
+        (titulo, corpo, autor)
+    )
+    conn.commit()
+    conn.close()
+
+
+def carregar_conteudos():
+    """Carrega todos os conteudos ativos, do mais novo para o mais antigo."""
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("SELECT id, titulo, corpo, autor, data FROM conteudos WHERE ativo = 1 ORDER BY id DESC")
+    dados = c.fetchall()
+    conn.close()
+    return dados
+
+
+def inativar_conteudo(conteudo_id):
+    """Inativa um conteudo (Apenas para Professores e Admins)."""
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("UPDATE conteudos SET ativo = 0 WHERE id = ?", (conteudo_id,))
     conn.commit()
     conn.close()
 
