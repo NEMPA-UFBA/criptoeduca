@@ -7,7 +7,8 @@ from modules.database import (
     inativar_conteudo,
 )
 from modules.sessaoInterativa import render_sessao_interativa
-from modules.introducaoCriptografia import render_introducao_criptografia
+from modules.mainmenu import render_modulos
+from modules.paginaModulo import render_pagina_modulo
 from modules.login import (
     render_login,
     obter_chave_professor_diaria,
@@ -315,13 +316,15 @@ else:
         st.write("Aqui fica o painel da plataforma de estudos.")
 
     elif pagina == "Módulos de Aprendizado":
-        # O titulo vem antes do render. Antes era o contrario, e como a pagina
-        # desenhava o conteudo primeiro, o titulo aparecia embaixo de tudo --
-        # o que so ficava visivel porque o st.video vazio derrubava a pagina
-        # antes do titulo chegar a ser desenhado.
-        st.title("📚 Módulos de Aprendizado: Introdução à Criptografia")
-        st.write("Explore as videoaulas teóricas e teste seus conhecimentos com os quizzes interativos.")
-        render_introducao_criptografia()
+        # A home dos módulos é o mapa de missões (modules/mainmenu.py).
+        # A página do módulo individual é a mesma rota, só que com um módulo
+        # escolhido: o slug fica na sessão e a página volta para o mapa
+        # quando o slug some.
+        slug_modulo = st.session_state.get("modulo_selecionado")
+        if slug_modulo:
+            render_pagina_modulo(slug_modulo)
+        else:
+            render_modulos()
 
     elif pagina == "Sessões Interativas":
         # O título desta página fica no próprio módulo do mural. Antes o app

@@ -111,6 +111,30 @@ def criar_tabelas():
     if "ativo" not in colunas_conteudos:
         c.execute("ALTER TABLE conteudos ADD COLUMN ativo INTEGER DEFAULT 1")
 
+    # Tabela do progresso de cada modulo de aprendizagem.
+    #
+    # Uma linha por tentativa de quiz. Nao apaga a anterior: o historico fica
+    # para a equipe ver a evolucao, e o que a tela mostra e a melhor nota de
+    # cada modulo. Este registro e autoavaliacao do aluno -- nao e nota nem
+    # avaliacao formal de professor.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS progresso_modulos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            modulo TEXT NOT NULL,
+            acertos INTEGER NOT NULL,
+            total INTEGER NOT NULL,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    c.execute("PRAGMA table_info(progresso_modulos)")
+    colunas_progresso = [coluna[1] for coluna in c.fetchall()]
+    if "modulo" not in colunas_progresso:
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN modulo TEXT DEFAULT ''")
+    if "username" not in colunas_progresso:
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN username TEXT DEFAULT ''")
+
     # --- ADMIN PADRÃO, SÓ SE O BANCO AINDA NÃO TIVER UM ---
     # A senha não está no código: vem de st.secrets, e só é lida neste ramo.
     # Como o banco do repositório já tem o admin, esta linha não executa, e a
@@ -200,6 +224,58 @@ def inativar_conteudo(conteudo_id):
     c.execute("UPDATE conteudos SET ativo = 0 WHERE id = ?", (conteudo_id,))
     conn.commit()
     conn.close()
+
+
+def salvar_progresso_modulo(username, modulo, acertos, total):
+    """Registra uma tentativa de quiz de um modulo.
+
+    Guarda uma linha por tentativa e nao apaga as anteriores: o historico
+    fica para a equipe ver a evolucao do aluno. O que a tela usa e a melhor
+    nota de cada modulo, calculada em carregar_progresso_modulos.
+
+    Este e um registro de autoavaliacao -- nao e nota nem avaliacao formal
+    de professor.
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO progresso_modulos (username, modulo, acertos, total) "
+        "VALUES (?, ?, ?, ?)",
+        (username, modulo, acertos, total),
+    )
+    conn.commit()
+    conn.close()
+
+
+def carregar_progresso_modulos(username):
+    """Devolve {slug_do_modulo: melhor resultado} do usuario.
+
+    "Melhor resultado" e o que tem mais acertos -- e nao a ultima tentativa.
+    Refazer o quiz depois de errar nao deve apagar o quanto a pessoa ja
+    tinha acertado.
+
+    Devolve dicionario vazio, e nao None, quando o usuario ainda nao fez
+    nenhum quiz: quem chama so precisa do .get().
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "SELECT modulo, acertos, total, data FROM progresso_modulos "
+        "WHERE username = ? ORDER BY id",
+        (username,),
+    )
+    linhas = c.fetchall()
+    conn.close()
+
+    progresso = {}
+    for modulo, acertos, total, data in linhas:
+        if modulo not in progresso or acertos > progresso[modulo]["acertos"]:
+            progresso[modulo] = {
+                "acertos": acertos,
+                "total": total,
+                "data": data,
+            }
+    return progresso
 
 
 def verificar_login(username_digitado, senha_digitada):

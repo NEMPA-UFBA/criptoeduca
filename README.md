@@ -79,13 +79,99 @@ projectAppUFBA/
 ├── plataforma.db              # SQLite (versionado)
 ├── .streamlit/
 │   └── secrets.example.toml   # modelo do gerenciador de segredos
+├── dados/
+│   ├── modulos.json           # OS MÓDULOS — quem escreve o curso mexe aqui
+│   └── README.md              # como editar o JSON, passo a passo
+├── static/
+│   └── modulos/               # PDFs do material de cada módulo
 └── modules/
     ├── login.py               # login, cadastro, validações, chave do dia
     ├── database.py            # conexão, tabelas, hash, verificação
     ├── ratelimit.py           # limitador de tentativas em memória
-    ├── introducaoCriptografia.py   # vazio, reservado
-    └── mainmenu.py            # vazio, reservado
+    ├── modulos.py             # leitor do JSON (dados, não layout)
+    ├── mainmenu.py            # home dos módulos: o "Mapa de Missões"
+    ├── paginaModulo.py        # página individual do módulo
+    ├── estilo.py              # folha de estilo da identidade visual
+    └── sessaoInterativa.py    # mural criptografado
 ```
+
+### `dados/modulos.json`
+
+**O manifesto dos módulos é um JSON, não um arquivo Python.** Quem escreve o
+conteúdo do curso não precisa programar: abre o arquivo num editor de
+texto, altera e salva. O arquivo vem comentado, com a explicação de cada
+campo, e a documentação completa está em
+[`dados/README.md`](projectAppUFBA/dados/README.md).
+
+Cada módulo tem `slug`, `titulo`, `resumo`, `icone`, `nivel`,
+`dificuldade`, `duracao`, `cor`, `pdf` e `quiz`. O `slug` serve para três
+coisas ao mesmo tempo: chave do botão na tela, identificador na página e
+nome do arquivo de PDF (`static/modulos/<slug>.pdf`).
+
+O campo `certa` do quiz aceita o **número** da alternativa (contando a
+partir de 1) ou o **texto** dela — o número é mais seguro para quem digita
+à mão.
+
+O quiz fica **fora** de `static/` de propósito: `static/` é servida
+publicamente pelo Streamlit, e as respostas certas ficariam legíveis na URL.
+
+**Erro no JSON não derruba o app.** O arquivo é lido a cada execução, os
+comentários de linha inteira (`//`) são aceitos, e o que estiver errado
+aparece na tela em português — com linha e coluna, no caso de erro de
+sintaxe. Os módulos válidos continuam aparecendo normalmente.
+
+Duas armadilhas do editor de texto já são tratadas pelo leitor, porque
+atingem justamente quem edita o arquivo:
+
+- **BOM** — o Bloco de Notas do Windows 11 grava três bytes invisíveis no
+  começo do arquivo, e o `json.loads` recusaria o arquivo inteiro. O leitor
+  usa `utf-8-sig`, que aceita com BOM e sem BOM.
+- **ANSI / Windows-1252** — o Bloco de Notas antigo salva assim. O leitor
+  tenta UTF-8 primeiro e, se falhar, lê em Windows-1252 e avisa na tela que o
+  ideal é salvar em UTF-8.
+
+### `modules/modulos.py`
+
+Só o leitor: tira os comentários, faz o `json.loads`, valida cada módulo e
+cada pergunta, e traduz os problemas para frases que a pessoa que editou o
+arquivo entende. Devolve sempre duas coisas: a lista de módulos que puderam
+ser lidos e a lista de problemas.
+
+Um módulo quebrado é descartado, e os outros continuam aparecendo.
+
+### `modules/mainmenu.py` e `modules/paginaModulo.py`
+
+A home é o **Mapa de Missões**: cards em grade, com ícone, nível,
+dificuldade, tempo estimado, e uma caixa de progresso ("X de Y módulos
+concluídos"). O botão "Iniciar módulo" grava o `slug` em `st.session_state` e
+a mesma rota da sidebar passa a desenhar a página do módulo; o botão "Voltar
+ao mapa" apaga o `slug` e a home volta. Não é uma segunda página no menu: é
+a mesma rota com um estado.
+
+A página do módulo já tem o cabeçalho (título, resumo, badges), a seção de
+material e a seção de quiz. **O PDF e o quiz ainda não estão integrados** —
+são os próximos itens da lista de implementação.
+
+Quem escreve o conteúdo do curso edita `dados/modulos.json` e coloca os
+PDFs em `static/modulos/`. Nenhuma mudança de código é necessária para
+adicionar, remover ou reescrever um módulo.
+
+### `modules/estilo.py`
+
+A paleta e as regras de identidade do CriptoEduca num lugar só: fundo
+`#0f172a`, painel `#1e293b`, roxo `#4F46E5`, ciano `#38bdf8`, âmbar
+`#f59e0b`. A Press Start 2P fica restrita aos títulos — em texto corrido
+ela é pixelada demais para ler.
+
+Duas armadilhas do `st.markdown` com HTML, ambas medidas no navegador:
+
+- linha começando com 4 espaços vira **bloco de código** (a indentação do
+  próprio Python conta);
+- linha em branco no meio do HTML **encerra o bloco HTML**, e o resto volta
+  a ser Markdown — sobrando um `</div>` escrito na tela.
+
+Por isso `estilo.html_bruto()` tira a indentação e remove as linhas em
+branco de todo HTML montado pelo app.
 
 ### `modules/database.py`
 
@@ -348,9 +434,13 @@ todas passando, e o arquivo foi parar em pasta temporária. Ele precisa de
 `tests/` e de um `requirements-dev.txt` para valer alguma coisa; deixar fora
 significa que o próximo "limpar temporária" apaga o trabalho.
 
-**Dois módulos estão vazios, com 0 byte:** `modules/introducaoCriptografia.py`
-e `modules/mainmenu.py`. Nenhum `import` os usa. Estão reservados para a
-continuidade do projeto.
+**A página de módulos foi redesenhada** (item 1 da lista de implementação da
+missão). A home virou o "Mapa de Missões", com cards em grade, identidade
+visual própria e caixa de progresso; a página individual do módulo, a
+visualização do PDF e o quiz dentro dela são os próximos itens. Os PDFs
+esperados e o lugar de cada arquivo estão descritos em
+`projectAppUFBA/static/modulos/README.md` — enquanto eles não existirem, a
+página avisa que o material está em preparação em vez de quebrar.
 
 **Conta de demonstração.** O `plataforma.db` versionado tem um usuário
 `admin`. A senha inicial não está no repositório — quem precisar recriar o
