@@ -197,6 +197,15 @@ CSS_IDENTIDADE = """
     border-color: rgba(34, 197, 94, 0.35);
     color: #86efac;
 }
+/* Selo de material lido. E diferente do "Concluído" de proposito: o
+   primeiro diz que o aluno terminou de ler (e por isso o quiz
+   destravou), o segundo diz que ele respondeu o quiz. Sao duas etapas
+   diferentes, e o aluno precisa ver que as duas existem. */
+.ce-badge-lido {
+    background: rgba(56, 189, 248, 0.14);
+    border-color: rgba(56, 189, 248, 0.35);
+    color: #7dd3fc;
+}
 
 /* ---------- Barra de progresso ---------- */
 .ce-progresso-caixa {
@@ -259,6 +268,18 @@ CSS_IDENTIDADE = """
 }
 .ce-modulo-cabecalho .ce-tags {
     margin-top: 0.7rem;
+}
+
+/* ---------- Enunciado do quiz ---------- */
+/* A pergunta do quiz. Fica com o numero em destaque, e a fonte do
+   app (nao a Press Start 2P, que e para titulo e deixaria a pergunta
+   ilegivel em duas linhas). */
+.stMarkdown p.ce-quiz-enunciado {
+    color: #f1f5f9;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.55;
+    margin: 0.9rem 0 0.35rem 0;
 }
 
 /* ---------- Utilidades ---------- */

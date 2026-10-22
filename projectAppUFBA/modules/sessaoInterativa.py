@@ -60,7 +60,11 @@ def render_sessao_interativa(modo_voluntario=False):
             st.session_state["voltar_para_menu"] = True
             st.rerun()
 
-    st.title("🎯 Sessão Interativa: Mural Criptografado e Anônimo")
+    # O item do menu que abre esta pagina se chama "Mural de Criptografia",
+    # e o titulo acompanha: o nome antigo ("Sessao Interativa") prometia
+    # varias sessoes de conteudo, que nunca existiram. O que existe aqui e
+    # o mural.
+    st.title("🔐 Mural de Criptografia")
     
     # EXIBE A CIFRA DO USUÁRIO QUANDO ACESSADO DO SEGUNDO LOGIN EM DIANTE (OU VOLUNTARIAMENTE)
     if modo_voluntario or st.session_state.get("primeiro_acesso") == 0:

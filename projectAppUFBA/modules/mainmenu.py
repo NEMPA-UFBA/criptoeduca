@@ -15,6 +15,7 @@ import html
 import streamlit as st
 
 from modules.database import carregar_progresso_modulos
+from modules.database import modulos_lidos as modulos_lidos_no_banco
 from modules.estilo import aplicar_estilo, html_bruto
 from modules.modulos import carregar_modulos
 
@@ -46,6 +47,22 @@ def _progresso_do_aluno():
         return {}
 
 
+def _modulos_lidos():
+    """Conjunto de slugs cujo material o aluno ja terminou de ler.
+
+    E o que libera o quiz. Vem do banco (modules/leitura.py), e nao da
+    sessao, porque a leitura precisa sobreviver ao fechamento do
+    navegador.
+    """
+    username = st.session_state.get("username")
+    if not username:
+        return set()
+    try:
+        return modulos_lidos_no_banco(username)
+    except Exception:
+        return set()
+
+
 def _caixa_progresso(concluidos, total):
     """Barra de progresso dos modulos, em HTML."""
     if total <= 0:
@@ -66,13 +83,18 @@ def _caixa_progresso(concluidos, total):
     )
 
 
-def _card_html(modulo, concluido):
+def _card_html(modulo, concluido, lido=False):
     """Markdown do card de um modulo.
 
     O conteudo vem do manifesto (modules/modulos.py), e nao de digitacao
     solta no HTML. Ainda assim ele passa por html.escape: o titulo e o
     resumo entram no HTML cru, e um texto com "<" no meio abriria tag sem
     querer.
+
+    Os dois selos sao coisas diferentes:
+
+      "Lido"       -> o aluno terminou o material. E o que libera o quiz.
+      "Concluído" -> o aluno respondeu o quiz e teve acerto.
     """
     icone = html.escape(modulo.get("icone", "📘"))
     titulo = html.escape(modulo.get("titulo", ""))
@@ -84,6 +106,9 @@ def _card_html(modulo, concluido):
 
     badge_ok = (
         '<span class="ce-badge ce-badge-ok">✔ Concluído</span>' if concluido else ""
+    )
+    badge_lido = (
+        '<span class="ce-badge ce-badge-lido">📖 Lido</span>' if lido else ""
     )
 
     return _html(
@@ -98,6 +123,7 @@ def _card_html(modulo, concluido):
           <div class="ce-tags">
             <span class="ce-badge">📖 {dificuldade}</span>
             <span class="ce-badge">⏱️ {duracao}</span>
+            {badge_lido}
             {badge_ok}
           </div>
         </div>
@@ -147,6 +173,7 @@ def render_modulos():
         return
 
     progresso = _progresso_do_aluno()
+    lidos = _modulos_lidos()
     concluidos = sum(1 for m in modulos if m["slug"] in progresso)
     st.markdown(
         _caixa_progresso(concluidos, len(modulos)), unsafe_allow_html=True
@@ -171,7 +198,7 @@ def render_modulos():
                 # esticar o conteúdo na largura da coluna.
                 with st.container(key=f"card_{slug}"):
                     st.markdown(
-                        _card_html(modulo, slug in progresso),
+                        _card_html(modulo, slug in progresso, slug in lidos),
                         unsafe_allow_html=True,
                     )
                     if st.button(
@@ -182,3 +209,58 @@ def render_modulos():
                     ):
                         st.session_state["modulo_selecionado"] = slug
                         st.rerun()
+
+
+def render_progresso_aluno():
+    """Desenha a pagina "Meu Progresso".
+
+    Mostra o que o aluno ja fez de verdade: quais materiais ele
+    terminou de ler (o que libera o quiz) e qual foi a melhor nota de
+    cada quiz. Tudo sai do banco, e nao de um texto de exemplo.
+
+    A pagina esta numa funcao e nao no app.py porque o app.py e um
+    script do Streamlit, rodado no nivel do modulo: um "return" la
+    dentro quebra o script inteiro (SyntaxError: 'return' outside
+    function), e o app inteiro sai do ar.
+    """
+    aplicar_estilo()
+
+    st.title("📊 Desempenho")
+    st.write("O que você já leu e as suas notas nos quizzes.")
+
+    username = st.session_state.get("username", "")
+    lidos = _modulos_lidos()
+    progresso = _progresso_do_aluno()
+
+    modulos, _erros = carregar_modulos()
+    if not modulos:
+        st.info("Nenhum módulo cadastrado ainda.")
+        return
+
+    if not lidos and not progresso:
+        st.info(
+            "Você ainda não começou nenhum módulo. Abra "
+            "**Módulos de Aprendizado** no menu ao lado para começar."
+        )
+
+    for modulo in modulos:
+        slug = modulo["slug"]
+        lido = slug in lidos
+        nota = progresso.get(slug)
+
+        with st.expander(
+            "%s %s" % (modulo.get("icone", "📘"), modulo.get("titulo", "")),
+            expanded=False,
+        ):
+            if lido:
+                st.success("✅ Leitura concluída — quiz liberado.")
+            else:
+                st.info("🔒 Leitura pendente — o quiz ainda está bloqueado.")
+
+            if nota:
+                st.write(
+                    "**Melhor nota:** %d de %d (%s)."
+                    % (nota["acertos"], nota["total"], nota["data"])
+                )
+            else:
+                st.caption("Nenhuma tentativa de quiz ainda.")

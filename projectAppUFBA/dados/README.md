@@ -4,6 +4,13 @@ Esta pasta é o **único lugar** que a pessoa responsável pelo conteúdo do
 curso precisa mexer. Não é preciso saber Python, não é preciso rodar
 nenhum comando: é abrir o arquivo `modulos.json`, alterar e salvar.
 
+Há dois arquivos aqui, e os dois seguem a mesma regra:
+
+| Arquivo | O que é |
+|---|---|
+| `modulos.json` | Os módulos de aprendizagem, com o material e o quiz. |
+| `exemplos_crime.json` | Os exemplos de crimes digitais, os pergaminhos. |
+
 ## Como adicionar um módulo
 
 1. Abra `modulos.json` com o Bloco de Notas, o VS Code, o Notepad++, o que
@@ -75,3 +82,56 @@ O arquivo `modulos.json` fica **fora** de `static/` de propósito: a pasta
 `static/` é servida publicamente pelo Streamlit. Se as respostas do quiz
 estivessem lá, qualquer aluno abriria a URL e leria as respostas antes de
 responder. Não mova o arquivo para lá.
+
+---
+
+# Os exemplos de crimes digitais (os pergaminhos)
+
+`exemplos_crime.json` é a lista dos exemplos de golpe que aparecem na
+página **Exemplos de Crimes Digitais**, cada um como um pergaminho que a
+pessoa abre e fecha.
+
+## O texto que vem no arquivo é um molde
+
+Os exemplos que já vêm prontos têm o texto em **lorem ipsum** de
+propósito: é um placeholder, não conteúdo de segurança. O que o
+Professor e a Coordenação fazem é trocar esse texto pelo material real
+da escola, pela página **Gerenciar Aulas**, sem precisar mexer em
+nenhum arquivo.
+
+Ou seja: **editar o JSON é opcional**. Quem prefere escrever direto na
+tela do app (e é o caminho mais comum, porque dá para publicar na hora)
+não precisa abrir este arquivo nunca.
+
+## Como o app usa este arquivo
+
+Na primeira vez que o app roda, os exemplos deste arquivo entram no banco
+como pergaminhos. A partir daí:
+
+- um exemplo cujo `chave` já existe **não é recriado** — o que o
+  Professor editou na tela vale mais do que o que está no arquivo, e não
+  é sobrescrito;
+- o que o Professor publica pela tela entra **depois** dos pré-colocados,
+  na mesma lista de pergaminhos.
+
+## Cada campo
+
+| Campo | O que é |
+|---|---|
+| `chave` | Identificador fixo do exemplo. Só letra minúscula, número e hífen. É o que impede o app de criar o mesmo exemplo duas vezes. |
+| `titulo` | O nome do golpe, que aparece na roleta do pergaminho. |
+| `icone` | Um emoji. |
+| `categoria` | Agrupamento: "Financeiro", "Engenharia Social", "Roubo de Identidade". |
+| `corpo` | O que é o golpe, em 2 ou 3 frases. |
+| `exemplo` | A mensagem falsa, como a pessoa receberia de verdade. |
+| `sinais` | Lista de sinais de alerta. |
+| `protecao` | Lista do que fazer para se proteger. |
+
+O formato é o mesmo do `modulos.json`: aspas duplas, vírgula depois de
+cada item menos no último, e comentários com `//` em linhas inteiras.
+
+## Os mesmos cuidados de codificação
+
+BOM, ANSI/Windows-1252 e UTF-8: o app trata os três, exatamente como
+faz com o `modulos.json`. Salve em **UTF-8** e use o **VS Code** se o
+Bloco de Notas mostrar o arquivo todo numa linha só.

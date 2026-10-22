@@ -1,0 +1,189 @@
+{
+  // ============================================================
+  //  EXEMPLOS DE CRIMES DIGITAIS -- EXEMPLOS PRÉ-COLOCADOS
+  // ============================================================
+  //
+  //  Este arquivo é o ponto de partida da página "Exemplos de
+  //  Crimes Digitais" (os pergaminhos). Os itens aqui entram no
+  //  app como pergaminhos na primeira vez que ele roda, e cada
+  //  professor pode editar o texto pela página "Gerenciar Aulas".
+  //
+  //  O texto dos itens é LOREM IPSUM de propósito: é um molde.
+  //  Nada aqui é conteúdo real de segurança -- é o texto que o
+  //  professor troca pelo material verdadeiro da escola. O que
+  //  importa agora é que a página já abra, já mostre os
+  //  pergaminhos, e já aceite a edição sem nenhum código.
+  //
+  //  COMO EDITAR:
+  //
+  //  - Aspas duplas em todo texto.
+  //  - Virgula depois de cada item, MENOS no ultimo da lista.
+  //  - Comentarios com "//" no inicio da linha sao permitidos
+  //    (apenas linhas inteiras).
+  //  - Salve e recarregue a página do app (F5).
+  //
+  //  ------------------------------------------------------------
+  //  CADA EXEMPLO:
+  //
+  //  "chave"    -> identificador unico e fixo do exemplo. Serve
+  //                para o app saber que este item ja foi semeado
+  //                e nao criar outro igual. Sem acento, minuscula,
+  //                com hifen.
+  //  "titulo"   -> nome do golpe, que aparece no pergaminho.
+  //  "icone"    -> um emoji.
+  //  "categoria"-> agrupamento (ex.: "Financeiro", "Roubo de
+  //                identidade").
+  //  "corpo"    -> o que e o golpe, em 2 ou 3 frases.
+  //  "exemplo"  -> uma mensagem falsa, como a que a pessoa
+  //                receberia de verdade.
+  //  "sinais"   -> lista de sinais de alerta.
+  //  "protecao" -> lista do que fazer para se proteger.
+  // ============================================================
+
+  "exemplos": [
+    {
+      "chave": "golpe-pix-falso",
+      "titulo": "Golpe do Pix Falso",
+      "icone": "💸",
+      "categoria": "Financeiro",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet.",
+        "Consectetur adipiscing elit sed do eiusmod.",
+        "Tempor incididunt ut labore et dolore magna aliqua."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur.",
+        "Adipiscing elit, sed do eiusmod tempor.",
+        "Incididunt ut labore et dolore."
+      ]
+    },
+    {
+      "chave": "phishing-bancario",
+      "titulo": "Phishing Bancário",
+      "icone": "🎣",
+      "categoria": "Financeiro",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.",
+      "exemplo": "Lorem ipsum dolor sit amet: noticeus aliquam ut enim ad minim veniam quis nostrud.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
+        "Elit, sed do eiusmod tempor incididunt.",
+        "Ut labore et dolore magna aliqua enim."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+        "Sed do eiusmod tempor incididunt ut labore.",
+        "Et dolore magna aliqua veniam quis."
+      ]
+    },
+    {
+      "chave": "falsa-central-atendimento",
+      "titulo": "Falsa Central de Atendimento",
+      "icone": "☎️",
+      "categoria": "Financeiro",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor ut labore.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet, consectetur.",
+        "Adipiscing elit, sed do eiusmod tempor.",
+        "Incididunt ut labore et dolore magna."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
+        "Sed do eiusmod tempor incididunt.",
+        "Ut labore et dolore magna aliqua."
+      ]
+    },
+    {
+      "chave": "golpe-melhor-amigo",
+      "titulo": "Golpe do Melhor Amigo",
+      "icone": "🧑‍🤝‍🧑",
+      "categoria": "Engenharia Social",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate velit esse.",
+      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure in voluptate.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
+        "Elit, sed do eiusmod tempor incididunt.",
+        "Ut labore et dolore magna aliqua."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
+        "Sed do eiusmod tempor incididunt ut labore.",
+        "Et dolore magna aliqua veniam."
+      ]
+    },
+    {
+      "chave": "conta-invadida",
+      "titulo": "Conta de Rede Social Invadida",
+      "icone": "📱",
+      "categoria": "Roubo de Identidade",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do eiusmod tempor.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet, consectetur.",
+        "Adipiscing elit, sed do eiusmod tempor.",
+        "Incididunt ut labore et dolore magna aliqua."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+        "Sed do eiusmod tempor incididunt ut labore.",
+        "Et dolore magna aliqua veniam quis."
+      ]
+    },
+    {
+      "chave": "golpe-emprego-falso",
+      "titulo": "Golpe do Emprego Falso",
+      "icone": "💼",
+      "categoria": "Engenharia Social",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.",
+      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor ut labore.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
+        "Elit, sed do eiusmod tempor incididunt.",
+        "Ut labore et dolore magna aliqua."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+        "Sed do eiusmod tempor incididunt ut labore.",
+        "Et dolore magna aliqua veniam quis."
+      ]
+    },
+    {
+      "chave": "golpe-link-whatsapp",
+      "titulo": "Golpe do Link no WhatsApp",
+      "icone": "🔗",
+      "categoria": "Engenharia Social",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate velit esse.",
+      "exemplo": "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet, consectetur.",
+        "Adipiscing elit, sed do eiusmod tempor.",
+        "Incididunt ut labore et dolore magna aliqua."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
+        "Sed do eiusmod tempor incididunt ut labore.",
+        "Et dolore magna aliqua veniam."
+      ]
+    },
+    {
+      "chave": "golpe-emprestimo-falso",
+      "titulo": "Golpe do Empréstimo Falso",
+      "icone": "🏦",
+      "categoria": "Financeiro",
+      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      "exemplo": "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt.",
+      "sinais": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
+        "Elit, sed do eiusmod tempor incididunt.",
+        "Ut labore et dolore magna aliqua."
+      ],
+      "protecao": [
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+        "Sed do eiusmod tempor incididunt ut labore.",
+        "Et dolore magna aliqua veniam quis."
+      ]
+    }
+  ]
+}

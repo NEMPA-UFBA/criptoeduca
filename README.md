@@ -19,9 +19,9 @@ Franca, com três perfis de acesso:
 
 | Perfil | O que enxerga |
 |---|---|
-| **Aluno** | Painel principal, sessões interativas, progresso |
-| **Professor** | Painel geral, gerenciamento de aulas, notas |
-| **Administrador** | Painel da coordenação, gerenciamento de aulas, notas |
+| **Aluno** | Painel principal, exemplos de crimes digitais (os pergaminhos), mural de criptografia, progresso, módulos |
+| **Professor** | Painel geral, gerenciamento de aulas (publicação dos exemplos de crime), notas, mural, módulos |
+| **Administrador** | Painel da coordenação, gerenciamento de aulas, notas, mural, módulos |
 
 O cadastro de Professor exige uma **chave de 12 caracteres válida para o dia**,
 distribuída pela coordenação dentro do sistema. Aluno se cadastra sem chave.
@@ -81,6 +81,7 @@ projectAppUFBA/
 │   └── secrets.example.toml   # modelo do gerenciador de segredos
 ├── dados/
 │   ├── modulos.json           # OS MÓDULOS — quem escreve o curso mexe aqui
+│   ├── exemplos_crime.json    # OS EXEMPLOS DE CRIMES (os pergaminhos)
 │   └── README.md              # como editar o JSON, passo a passo
 ├── static/
 │   └── modulos/               # PDFs do material de cada módulo
@@ -89,8 +90,12 @@ projectAppUFBA/
     ├── database.py            # conexão, tabelas, hash, verificação
     ├── ratelimit.py           # limitador de tentativas em memória
     ├── modulos.py             # leitor do JSON (dados, não layout)
+    ├── exemplos_crime.py      # leitor dos exemplos de crime
     ├── mainmenu.py            # home dos módulos: o "Mapa de Missões"
     ├── paginaModulo.py        # página individual do módulo
+    ├── leitura.py             # página de leitura: o botão que libera o quiz
+    ├── quiz.py                # o quiz do módulo, com gabarito
+    ├── pergaminhos.py         # os pergaminhos: exemplos de crimes digitais
     ├── estilo.py              # folha de estilo da identidade visual
     └── sessaoInterativa.py    # mural criptografado
 ```
@@ -149,12 +154,115 @@ ao mapa" apaga o `slug` e a home volta. Não é uma segunda página no menu: é
 a mesma rota com um estado.
 
 A página do módulo já tem o cabeçalho (título, resumo, badges), a seção de
-material e a seção de quiz. **O PDF e o quiz ainda não estão integrados** —
-são os próximos itens da lista de implementação.
+material e a seção de quiz. **O PDF não aparece na página do módulo** —
+ele fica na **página de leitura**, que é onde o aluno lê e aperta
+"Concluir a leitura". Mostrar o PDF nos dois lugares dava duas saídas
+para o mesmo material, e o aluno lia o PDF na página do módulo achando
+que já tinha lido, que é justamente o que a leitura existe para
+impedir. O **quiz já funciona**, e só aparece depois que o aluno
+conclui a leitura (ver `modules/leitura.py` e `modules/quiz.py`).
 
 Quem escreve o conteúdo do curso edita `dados/modulos.json` e coloca os
 PDFs em `static/modulos/`. Nenhuma mudança de código é necessária para
 adicionar, remover ou reescrever um módulo.
+
+Os quatro PDFs de teste já estão em `static/modulos/`, com o nome igual ao
+`slug` de cada módulo. Substituir o arquivo pelo PDF verdadeiro, com o
+**mesmo nome**, já resolve: a página passa a mostrar o novo conteúdo.
+
+### `modules/pergaminhos.py` e `dados/exemplos_crime.json`
+
+A página **Exemplos de Crimes Digitais** mostra os golpes como
+**pergaminhos**: rolinhas de papel que a pessoa clica para abrir. Ao
+clicar em outro, o anterior fecha — só um fica aberto por vez.
+
+O visual tem três peças, todas em CSS (nenhuma imagem):
+
+- **A roleta** — o botão do Streamlit pintado de papel enrolado, com
+  gradiente vertical que imita o cilindro e duas varas de madeira nas
+  pontas (os pseudo-elementos `::before` e `::after`).
+- **A folha** — o papel aberto, com manchas de idade (vários
+  gradientes radiais), borda rasgada (o `clip-path` serra o contorno em
+  dentes irregulares) e a sombra projetada por `drop-shadow`, que
+  respeita o recorte — por isso a sombra fica no *wrapper*
+  (`.ce-pergaminho-sombra`) e não na folha, que o `clip-path` cortaria.
+- **A tinta** — Georgia, em sépia, com os rótulos das seções em caixa
+  alta e filete, como no documento antigo.
+
+O acordeão **não** é o `st.expander` do Streamlit, porque o expander
+deixa dois abertos ao mesmo tempo. Quem controla é
+`st.session_state["pergaminho_aberto"]`, que guarda o id do pergaminho
+aberto: clicar no que já está aberto fecha, clicar em outro troca. O
+`key` do botão muda conforme o estado (`pergaminho_3` /
+`pergaminho_aberto_3`), e é daí que o CSS distingue a roleta fechada da
+aberta — o seletor é por atributo (`[class*="st-key-pergaminho_"]`),
+porque a classe real inclui o id.
+
+O conteúdo dos pergaminhos vem de dois lugares, e os dois são a mesma
+coisa na tela:
+
+- **`dados/exemplos_crime.json`** — os exemplos pré-colocados, semeados no
+  primeiro boot. O texto que vem no arquivo é **lorem ipsum** de propósito:
+  é um molde, e o que o Professor escreve vale mais do que o que está no
+  arquivo. A semeadura é idempotente pela `chave`: um exemplo que já
+  existe não é recriado, então a edição feita na tela **não é
+  sobrescrita** no próximo boot.
+- **A publicação em "Gerenciar Aulas"** — o que o Professor e a
+  Coordenação publicam ali vira pergaminho, na mesma lista.
+
+A página antiga "Conteúdos" do Aluno **não existe mais**: ela virou a
+página dos pergaminhos. E o item de menu "Sessões Interativas" virou
+**"Mural de Criptografia"**, que é o que a página sempre foi.
+
+### `modules/leitura.py` e `modules/quiz.py`
+
+O caminho do aluno em um módulo é: **página do módulo → página de leitura
+→ botão "Concluir a leitura" → página do módulo, agora com o quiz
+liberado.**
+
+A **página de leitura** (`modules/leitura.py`) mostra o material do
+módulo com o botão que libera o quiz. Não há scroll, não há progresso,
+não há "você já leu o suficiente": o aluno lê e aperta. É um botão, do
+começo ao fim.
+
+A leitura é registrada na tabela `leituras` (uma linha por aluno e
+módulo), e não só na sessão — assim a liberação sobrevive ao fechamento
+do navegador. O `INSERT OR REPLACE` faz o registro ser idempotente:
+reler o mesmo módulo não duplica a linha.
+
+O **quiz** (`modules/quiz.py`) só aparece para quem já concluiu a
+leitura. Quem não concluiu vê o aviso de bloqueado, que diz o que
+fazer. As perguntas vêm do manifesto (`dados/modulos.json`), e cada
+tentativa vira uma linha em `progresso_modulos` — o histórico fica, e a
+tela usa a melhor nota.
+
+**O resultado substitui o formulário, e não aparece abaixo dele.** São
+dois estados que não coexistem: sem resultado, as perguntas e o botão
+"Ver meu resultado"; com resultado, a nota, o gabarito e o botão
+"Tentar de novo". Isso é o que garante que o gabarito **não aparece
+antes de o aluno terminar de responder** — na primeira versão, as
+perguntas e o gabarito ficavam na mesma tela, e o aluno via a resposta
+certa de uma pergunta que ainda não tinha respondido.
+
+Por isso o quiz **não usa `st.form`**: dentro de um form, marcar uma
+alternativa não re-executa o script, e o estado do widget ficava velho.
+E cada alternativa começa **desmarcada** (`index=None`) — sem isso o
+Streamlit marcava a primeira opção como resposta antes de o aluno
+escolher qualquer coisa.
+
+**O PDF fica só na página de leitura, e é somente-leitura.** A URL do
+`<iframe>` leva `#toolbar=0`, que esconde a barra de ferramentas do
+visualizador nativo do navegador — e com ela a **caneta de anotação**,
+com que o aluno "editava" o material do professor desenhando por cima.
+Medido: sem o parâmetro, a barra (`1000x56`) e a caneta (`32x32`) ficam
+visíveis; com ele, nenhum dos dois aparece. Não há botão de baixar o
+arquivo: ele entregava o material do professor na mão do aluno.
+
+**Por que a leitura é uma página do app e não um arquivo solto em
+`static/`:** porque a sessão do Streamlit morre quando o navegador sai
+do app e volta. Com uma página estática, o aluno voltaria deslogado e
+teria que entrar de novo — medido no navegador, não é teoria. Dentro do
+app, a sessão vive e o botão "Voltar" leva ao mesmo módulo.
 
 ### `modules/estilo.py`
 
@@ -436,15 +544,18 @@ significa que o próximo "limpar temporária" apaga o trabalho.
 
 **A página de módulos foi redesenhada** (item 1 da lista de implementação da
 missão). A home virou o "Mapa de Missões", com cards em grade, identidade
-visual própria e caixa de progresso; a página individual do módulo, a
-visualização do PDF e o quiz dentro dela são os próximos itens. Os PDFs
-esperados e o lugar de cada arquivo estão descritos em
-`projectAppUFBA/static/modulos/README.md` — enquanto eles não existirem, a
-página avisa que o material está em preparação em vez de quebrar.
+visual própria e caixa de progresso; a página individual do módulo existe,
+**a visualização do PDF dentro dela já funciona** — os quatro PDFs de teste
+estão em `projectAppUFBA/static/modulos/`, com o nome igual ao `slug` de
+cada módulo — e **o quiz já está integrado**, protegido pela leitura: o
+aluno abre a "página de leitura", lê o material, aperta "Concluir a
+leitura" e o quiz destrava. O lugar de cada arquivo está descrito em
+`projectAppUFBA/static/modulos/README.md` — e, enquanto um PDF não estiver
+lá, a página avisa que o material está em preparação em vez de quebrar.
+
+**A página de crimes digitais substituiu a de Conteúdos**, e o item
+"Sessões Interativas" do menu virou "Mural de Criptografia".
 
 **Conta de demonstração.** O `plataforma.db` versionado tem um usuário
 `admin`. A senha inicial não está no repositório — quem precisar recriar o
 banco deve definir `ADMIN_SENHA` no `secrets.toml`.
-
-O registro de decisões, medições e correções está em
-[`DIARIO_DE_BORRADA.md`](DIARIO_DE_BORRADA.md).

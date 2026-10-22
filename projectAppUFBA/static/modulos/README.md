@@ -23,6 +23,13 @@ O `slug` serve para três coisas ao mesmo tempo: chave do botão na tela,
 identificador na rota da página e nome do arquivo. Por isso ele não pode ter
 acento, espaço nem caractere especial.
 
+**Os quatro PDFs já estão nesta pasta**, como material de teste: são
+versões geradas automaticamente, com o texto real do tema, para que a
+exibição dentro do app possa ser conferida antes de o material definitivo
+ser escrito. Substitua cada arquivo pelo PDF verdadeiro, com o **mesmo
+nome**, e nada mais precisa ser feito — a página do módulo passa a
+mostrar o novo conteúdo na hora.
+
 ## Onde isso é usado
 
 O nome do arquivo fica no campo `pdf` de cada módulo em

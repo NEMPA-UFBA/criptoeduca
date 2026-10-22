@@ -2,13 +2,16 @@ import streamlit as st
 from modules.database import (
     criar_tabelas,
     conectar,
-    salvar_conteudo,
-    carregar_conteudos,
-    inativar_conteudo,
+    modulos_lidos,
+    carregar_progresso_modulos,
 )
 from modules.sessaoInterativa import render_sessao_interativa
 from modules.mainmenu import render_modulos
 from modules.paginaModulo import render_pagina_modulo
+from modules.pergaminhos import render_pergaminhos, render_gerenciar_crime
+from modules.leitura import CHAVE_LEITURA, render_pagina_leitura
+from modules.modulos import carregar_modulos
+from modules.mainmenu import render_progresso_aluno
 from modules.login import (
     render_login,
     obter_chave_professor_diaria,
@@ -202,12 +205,23 @@ else:
     # Menus condicionais baseados no perfil do usuário.
     # O Administrador precisa da propria lista: antes ele caia no else e
     # recebia o menu do Aluno, porque so o Professor era distinguido.
+    # Os nomes dos itens do menu.
+    #
+    # "Sessões Interativas" virou "Mural de Criptografia": o que a página
+    # faz é o mural, e o nome antigo prometia uma coisa que não existe
+    # (sessões plural, de conteúdo, que nunca foram feitas).
+    #
+    # "Conteúdos" do Aluno virou "Exemplos de Crimes Digitais": os
+    # pergaminhos. O material que a coordenação publica em "Gerenciar
+    # Aulas" não disappeared -- ele virou o miolo dos pergaminhos. Por
+    # isso o Aluno não tem mais uma página de avisos: tem a página dos
+    # golpes, e o que a coordenação escreveu aparece lá dentro.
     if tipo == "Administrador":
-        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Notas dos Alunos", "Sessões Interativas", "Módulos de Aprendizado"]
+        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     elif tipo == "Professor":
-        opcoes = ["Painel Geral", "Gerenciar Aulas", "Notas dos Alunos", "Sessões Interativas", "Módulos de Aprendizado"]
+        opcoes = ["Painel Geral", "Gerenciar Aulas", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     else:
-        opcoes = ["Painel Principal", "Conteúdos", "Sessões Interativas", "Meu Progresso", "Módulos de Aprendizado"]
+        opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado"]
 
     # O botão "Voltar para o Menu Principal" mora na página do mural, que é
     # desenhada depois do radio. Gravar st.session_state["menu"] de lá levanta
@@ -268,44 +282,12 @@ else:
         st.write("Aulas, quizzes e materiais do professor.")
 
     elif pagina == "Gerenciar Aulas":
-        st.title("📚 Gerenciar Aulas")
-        st.write("Publique conteúdos e materiais para os alunos lerem no painel deles.")
-
-        # Formulario de publicacao. Serve para Administrador e Professor, que
-        # sao os perfis que tem este item no menu.
-        with st.form("form_novo_conteudo", clear_on_submit=True):
-            titulo_novo = st.text_input("Título do conteúdo")
-            corpo_novo = st.text_area("Conteúdo", height=180)
-            publicar = st.form_submit_button("Publicar para os alunos", type="primary")
-
-            if publicar:
-                if titulo_novo.strip() and corpo_novo.strip():
-                    salvar_conteudo(
-                        titulo_novo.strip(),
-                        corpo_novo.strip(),
-                        st.session_state["username"],
-                    )
-                    st.success("Conteúdo publicado para os alunos!")
-                    st.rerun()
-                else:
-                    st.error("Preencha o título e o conteúdo antes de publicar.")
-
-        st.divider()
-        st.subheader("Conteúdos publicados")
-        conteudos_publicados = carregar_conteudos()
-        if conteudos_publicados:
-            for cid, c_titulo, c_corpo, c_autor, c_data in conteudos_publicados:
-                with st.expander(c_titulo, expanded=False):
-                    st.caption(f"Publicado por {c_autor} em {c_data}")
-                    # st.write escapa o HTML por padrao; o conteudo e escrito
-                    # por um gestor, mas nao custa nao abrir a porta.
-                    st.write(c_corpo)
-                    if st.button("Inativar", key=f"inativar_conteudo_{cid}"):
-                        inativar_conteudo(cid)
-                        st.warning(f"Conteúdo {cid} inativado.")
-                        st.rerun()
-        else:
-            st.info("Nenhum conteúdo publicado ainda. Use o formulário acima.")
+        # A publicacao da coordenacao virou a publicacao dos exemplos de
+        # crime: e o que o Professor e o Administrador escrevem aqui que
+        # vira pergaminho na pagina do aluno. O nome do item do menu
+        # continua "Gerenciar Aulas" porque e ele que o pessoal ja
+        # conhece.
+        render_gerenciar_crime()
 
     elif pagina == "Notas dos Alunos":
         st.title("🧮 Notas dos Alunos")
@@ -321,29 +303,34 @@ else:
         # escolhido: o slug fica na sessão e a página volta para o mapa
         # quando o slug some.
         slug_modulo = st.session_state.get("modulo_selecionado")
-        if slug_modulo:
+
+        # A PAGINA DE LEITURA tem prioridade sobre a pagina do modulo.
+        # E a mesma rota com outro estado: enquanto o aluno esta lendo,
+        # o app desenha a leitura; quando ele conclui, a leitura some
+        # da sessao e a pagina do modulo volta, com o quiz liberado.
+        #
+        # Fica dentro do app, e nao em uma pagina solta na pasta static,
+        # porque a sessao do Streamlit morre quando o navegador sai do
+        # app e volta: o aluno voltaria deslogado. Medido no navegador.
+        slug_leitura = st.session_state.get(CHAVE_LEITURA)
+        if slug_leitura:
+            render_pagina_leitura(slug_leitura)
+        elif slug_modulo:
             render_pagina_modulo(slug_modulo)
         else:
             render_modulos()
 
-    elif pagina == "Sessões Interativas":
+    elif pagina == "Mural de Criptografia":
         # O título desta página fica no próprio módulo do mural. Antes o app
         # desenhava um "Sessão do Mural" aqui e o módulo desenhava o dele logo
         # em seguida, então apareciam dois títulos seguidos.
         render_sessao_interativa(modo_voluntario=True)
 
-    elif pagina == "Conteúdos":
-        st.title("📖 Conteúdos da Coordenação")
-        st.write("Materiais e avisos publicados pelos professores e pela coordenação.")
-        conteudos_do_aluno = carregar_conteudos()
-        if conteudos_do_aluno:
-            for cid, c_titulo, c_corpo, c_autor, c_data in conteudos_do_aluno:
-                with st.expander(c_titulo, expanded=False):
-                    st.caption(f"Publicado em {c_data}")
-                    st.write(c_corpo)
-        else:
-            st.info("Nenhum conteúdo publicado ainda. Volte mais tarde!")
+    elif pagina == "Exemplos de Crimes Digitais":
+        # A pagina dos pergaminhos. Substitui a antiga "Conteúdos": o que a
+        # coordenação publica em "Gerenciar Aulas" aparece aqui, dentro de um
+        # pergaminho, em vez de uma lista de avisos.
+        render_pergaminhos()
 
     elif pagina == "Meu Progresso":
-        st.title("📊 Desempenho")
-        st.write("Notas e progresso do aluno.")
+        render_progresso_aluno()
