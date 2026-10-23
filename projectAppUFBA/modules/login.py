@@ -388,6 +388,16 @@ def _formulario_cadastro():
             help="Requisitos: 1 maiúscula, 1 minúscula e 1 número."
         )
 
+        # A senha é digitada duas vezes de propósito. Num campo mascarado não
+        # dá para reler o que foi escrito, então um erro de digitação viraria
+        # uma conta com uma senha que ninguém sabe qual é — e não há
+        # "esqueci minha senha" nesta plataforma para consertar isso depois.
+        # Segue o mesmo padrão do campo de e-mail, que já confirma.
+        nova_senha_confirm_input = st.text_input(
+            "Confirme a Nova Senha",
+            type="password",
+        )
+
         btn_cadastrar = st.form_submit_button("Finalizar Cadastro", disabled=chave_bloqueada)
 
         if btn_cadastrar:
@@ -410,7 +420,7 @@ def _formulario_cadastro():
                 )
 
             # 2. Preenchimento dos campos básicos
-            elif not (nome_input and novo_usuario_input and email_input and email_confirm_input and nova_senha_input):
+            elif not (nome_input and novo_usuario_input and email_input and email_confirm_input and nova_senha_input and nova_senha_confirm_input):
                 _guardar_resultado("error", "Por favor, preencha todos os campos do formulário.")
 
             # 3. Validação da Chave Dinâmica do Professor
@@ -436,7 +446,13 @@ def _formulario_cadastro():
             elif not validar_email_formato(email_input):
                 _guardar_resultado("error", "Por favor, informe um e-mail válido.")
 
-            # 5. Validação da força da senha
+            # 5. Confirmação da senha: as duas digitações têm que ser iguais.
+            #    Vem antes da força de propósito: se as duas não batem, dizer
+            #    "falta uma maiúscula" não resolve nada.
+            elif nova_senha_input != nova_senha_confirm_input:
+                _guardar_resultado("error", "As senhas digitadas não coincidem.")
+
+            # 6. Validação da força da senha
             elif not validar_forca_senha(nova_senha_input):
                 _guardar_resultado(
                     "error",
@@ -444,7 +460,7 @@ def _formulario_cadastro():
                     "uma minúscula e um número."
                 )
 
-            # 6. Salvar no banco
+            # 7. Salvar no banco
             else:
                 motivo = cadastrar_usuario(
                     username=novo_usuario_input,
