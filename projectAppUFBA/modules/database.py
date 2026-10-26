@@ -111,6 +111,56 @@ def criar_tabelas():
     if "ativo" not in colunas_conteudos:
         c.execute("ALTER TABLE conteudos ADD COLUMN ativo INTEGER DEFAULT 1")
 
+    # Colunas do exemplo de crime, que e o que o conteudo virou.
+    #
+    # A tabela "conteudos" era uma lista de avisos da coordenacao. Agora cada
+    # linha dela e um PERGAMINHO: um exemplo de golpe, com a mensagem falsa
+    # que a pessoa receberia, os sinais de alerta e o que fazer. Por isso as
+    # colunas novas sao da tabela, e nao uma tabela nova: o que a coordenacao
+    # publica e o que o aluno ve, sem conversao e sem passo extra.
+    #
+    # "chave" e o identificador fixo do exemplo pre-colocado. E ela que
+    # impede a semeadura de criar o mesmo exemplo de novo a cada boot.
+    # "sinais" e "protecao" sao varias linhas, mas o SQLite nao tem lista:
+    # o que existe e um texto com quebras de linha.
+    colunas_crime = (
+        ("chave", "TEXT DEFAULT ''"),
+        ("icone", "TEXT DEFAULT '📜'"),
+        ("categoria", "TEXT DEFAULT ''"),
+        ("exemplo", "TEXT DEFAULT ''"),
+        ("sinais", "TEXT DEFAULT ''"),
+        ("protecao", "TEXT DEFAULT ''"),
+        ("origem", "TEXT DEFAULT 'publicado'"),
+    )
+    for nome_coluna, definicao in colunas_crime:
+        if nome_coluna not in colunas_conteudos:
+            c.execute("ALTER TABLE conteudos ADD COLUMN %s %s"
+                      % (nome_coluna, definicao))
+
+    # Tabela do progresso de cada modulo de aprendizagem.
+    #
+    # Uma linha por tentativa de quiz. Nao apaga a anterior: o historico fica
+    # para a equipe ver a evolucao, e o que a tela mostra e a melhor nota de
+    # cada modulo. Este registro e autoavaliacao do aluno -- nao e nota nem
+    # avaliacao formal de professor.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS progresso_modulos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            modulo TEXT NOT NULL,
+            acertos INTEGER NOT NULL,
+            total INTEGER NOT NULL,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    c.execute("PRAGMA table_info(progresso_modulos)")
+    colunas_progresso = [coluna[1] for coluna in c.fetchall()]
+    if "modulo" not in colunas_progresso:
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN modulo TEXT DEFAULT ''")
+    if "username" not in colunas_progresso:
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN username TEXT DEFAULT ''")
+
     # --- ADMIN PADRÃO, SÓ SE O BANCO AINDA NÃO TIVER UM ---
     # A senha não está no código: vem de st.secrets, e só é lida neste ramo.
     # Como o banco do repositório já tem o admin, esta linha não executa, e a
@@ -125,8 +175,78 @@ def criar_tabelas():
             "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (?, ?, ?, ?, ?)",
             ("admin", "Coordenador Geral", "admin@escola.com", "Administrador", hash_str)
         )
+
+    # --- LEITURAS CONCLUIDAS ---
+    #
+    # Uma linha por (aluno, modulo) que o aluno terminou de ler.
+    #
+    # E o que libera o quiz. A leitura e registrada AQUI, e nao so na
+    # sessao, por um motivo que ja apareceu na pratica: se o registro
+    # fosse so na sessao, o aluno que fechar o navegador perderia a
+    # liberacao e teria que ler de novo. No banco, ela sobrevive.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS leituras (
+            username TEXT NOT NULL,
+            modulo TEXT NOT NULL,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, modulo)
+        )
+    """)
+
+    # --- EXEMPLOS DE CRIMES PRÉ-COLOCADOS ---
+    #
+    # Vem do arquivo dados/exemplos_crime.json, que o professor edita
+    # sem tocar em código. A semeadura é idempotente pela "chave": um
+    # exemplo cuja chave já está na tabela não é criado de novo. É o
+    # mesmo esquema do admin acima -- o que já existe não é reescrito.
+    #
+    # O que o professor edita depois pela página "Gerenciar Aulas" vale
+    # mais do que o que está no arquivo: por isso a semeadura não
+    # sobrescreve uma linha que já existe.
+    _semear_exemplos_crime(c)
+
     conn.commit()
     conn.close()
+
+
+def _semear_exemplos_crime(c):
+    """Insere no banco os exemplos pré-colocados que ainda não existem.
+
+    Recebe o cursor já aberto, porque quem chama é o criar_tabelas, que
+    abre e fecha a conexão uma vez só.
+    """
+    # O import é aqui dentro, e não no topo do arquivo: o módulo dos
+    # exemplos não precisa do banco, e o banco não precisa do módulo de
+    # leitura para nada além disto. Importar aqui evita qualquer
+    # dependência circular entre os dois.
+    from modules.exemplos_crime import (
+        carregar_exemplos,
+        linhas_para_texto,
+    )
+
+    exemplos, _erros = carregar_exemplos()
+    for exemplo in exemplos:
+        c.execute("SELECT id FROM conteudos WHERE chave = ?", (exemplo["chave"],))
+        if c.fetchone():
+            # Já existe. A linha do professor manda: não é reescrita.
+            continue
+
+        c.execute(
+            "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
+            "categoria, exemplo, sinais, protecao, origem) "
+            "VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 'pre_colocado')",
+            (
+                exemplo["titulo"],
+                exemplo["corpo"],
+                "pré-colocado",
+                exemplo["chave"],
+                exemplo["icone"],
+                exemplo["categoria"],
+                exemplo["exemplo"],
+                linhas_para_texto(exemplo["sinais"]),
+                linhas_para_texto(exemplo["protecao"]),
+            ),
+        )
 
 #Funções Novas adicionadas
 
@@ -167,30 +287,105 @@ def inativar_mensagem_mural(msg_id):
     conn.close()
 
 
-def salvar_conteudo(titulo, corpo, autor):
-    """Grava um conteudo publicado pela coordenacao para os alunos.
+def salvar_conteudo(
+    titulo,
+    corpo,
+    autor,
+    icone="📜",
+    categoria="",
+    exemplo="",
+    sinais="",
+    protecao="",
+):
+    """Grava um exemplo de crime publicado pela coordenacao para os alunos.
 
     O autor e o username de quem publicou, do mesmo jeito que no mural: serve
     para a lista mostrar quem foi, sem precisar do nome completo.
+
+    A "chave" fica vazia de proposito: ela so identifica os exemplos
+    pre-colocados que vieram do arquivo dados/exemplos_crime.json. Um
+    conteudo publicado na mao nao tem chave, e por isso a semeadura nunca
+    tenta recria-lo.
     """
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO conteudos (titulo, corpo, autor, ativo) VALUES (?, ?, ?, 1)",
-        (titulo, corpo, autor)
+        "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
+        "categoria, exemplo, sinais, protecao, origem) "
+        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado')",
+        (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
     )
     conn.commit()
     conn.close()
 
 
 def carregar_conteudos():
-    """Carrega todos os conteudos ativos, do mais novo para o mais antigo."""
+    """Carrega todos os conteudos ativos, do mais novo para o mais antigo.
+
+    Devolve tuplas no formato antigo (id, titulo, corpo, autor, data),
+    porque a lista de "Gerenciar Aulas" usa esse formato. A pagina dos
+    pergaminhos usa carregar_pergaminhos(), que traz os campos do crime.
+    """
     conn = conectar()
     c = conn.cursor()
     c.execute("SELECT id, titulo, corpo, autor, data FROM conteudos WHERE ativo = 1 ORDER BY id DESC")
     dados = c.fetchall()
     conn.close()
     return dados
+
+
+def carregar_pergaminhos():
+    """Carrega os exemplos de crime ativos, na ordem em que foram gravados.
+
+    Devolve dicionarios, e nao tuplas, porque a pagina dos pergaminhos
+    usa muitos campos de cada exemplo e a tupla de dez posicoes vira
+    uma lista de indices difficult de ler. A ordem e por id: os
+    pre-colocados vem primeiro, na ordem do arquivo, e o que a
+    coordenacao publica depois entra no fim.
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
+        "sinais, protecao, chave, origem FROM conteudos "
+        "WHERE ativo = 1 ORDER BY id ASC"
+    )
+    linhas = c.fetchall()
+    conn.close()
+
+    chaves = (
+        "id", "titulo", "corpo", "autor", "data", "icone", "categoria",
+        "exemplo", "sinais", "protecao", "chave", "origem",
+    )
+    return [dict(zip(chaves, linha)) for linha in linhas]
+
+
+def atualizar_conteudo(
+    conteudo_id,
+    titulo,
+    corpo,
+    icone,
+    categoria,
+    exemplo,
+    sinais,
+    protecao,
+):
+    """Reescreve um exemplo de crime. Usado pelo Professor e pela Coordenacao.
+
+    A "chave" e a "origem" nao sao tocadas: a chave e o que amarra o
+    exemplo pre-colocado ao arquivo de origem, e mexer nela faria a
+    semeadura criar um exemplar duplicado no proximo boot.
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE conteudos SET titulo = ?, corpo = ?, icone = ?, categoria = ?, "
+        "exemplo = ?, sinais = ?, protecao = ? WHERE id = ?",
+        (titulo, corpo, icone, categoria, exemplo, sinais, protecao,
+         conteudo_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def inativar_conteudo(conteudo_id):
@@ -200,6 +395,107 @@ def inativar_conteudo(conteudo_id):
     c.execute("UPDATE conteudos SET ativo = 0 WHERE id = ?", (conteudo_id,))
     conn.commit()
     conn.close()
+
+
+def registrar_leitura(username, modulo):
+    """Marca que o aluno terminou de ler o material de um modulo.
+
+    Registrar duas vezes nao faz mal: a chave primaria e (username,
+    modulo), entao o INSERT repetido atualiza a data e nao duplica a
+    linha. Por isso a funcao usa INSERT OR REPLACE em vez de checar
+    antes.
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR REPLACE INTO leituras (username, modulo) VALUES (?, ?)",
+        (username, modulo),
+    )
+    conn.commit()
+    conn.close()
+
+
+def modulo_lido(username, modulo):
+    """Diz se o aluno ja terminou de ler o material de um modulo.
+
+    E o que libera o quiz. Devolve True ou False, nunca None: quem
+    chama so precisa da resposta.
+    """
+    if not username:
+        return False
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "SELECT 1 FROM leituras WHERE username = ? AND modulo = ?",
+        (username, modulo),
+    )
+    achou = c.fetchone() is not None
+    conn.close()
+    return achou
+
+
+def modulos_lidos(username):
+    """Devolve o conjunto de modulos que o aluno ja terminou de ler."""
+    if not username:
+        return set()
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("SELECT modulo FROM leituras WHERE username = ?", (username,))
+    modulos = {linha[0] for linha in c.fetchall()}
+    conn.close()
+    return modulos
+
+
+def salvar_progresso_modulo(username, modulo, acertos, total):
+    """Registra uma tentativa de quiz de um modulo.
+
+    Guarda uma linha por tentativa e nao apaga as anteriores: o historico
+    fica para a equipe ver a evolucao do aluno. O que a tela usa e a melhor
+    nota de cada modulo, calculada em carregar_progresso_modulos.
+
+    Este e um registro de autoavaliacao -- nao e nota nem avaliacao formal
+    de professor.
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO progresso_modulos (username, modulo, acertos, total) "
+        "VALUES (?, ?, ?, ?)",
+        (username, modulo, acertos, total),
+    )
+    conn.commit()
+    conn.close()
+
+
+def carregar_progresso_modulos(username):
+    """Devolve {slug_do_modulo: melhor resultado} do usuario.
+
+    "Melhor resultado" e o que tem mais acertos -- e nao a ultima tentativa.
+    Refazer o quiz depois de errar nao deve apagar o quanto a pessoa ja
+    tinha acertado.
+
+    Devolve dicionario vazio, e nao None, quando o usuario ainda nao fez
+    nenhum quiz: quem chama so precisa do .get().
+    """
+    conn = conectar()
+    c = conn.cursor()
+    c.execute(
+        "SELECT modulo, acertos, total, data FROM progresso_modulos "
+        "WHERE username = ? ORDER BY id",
+        (username,),
+    )
+    linhas = c.fetchall()
+    conn.close()
+
+    progresso = {}
+    for modulo, acertos, total, data in linhas:
+        if modulo not in progresso or acertos > progresso[modulo]["acertos"]:
+            progresso[modulo] = {
+                "acertos": acertos,
+                "total": total,
+                "data": data,
+            }
+    return progresso
 
 
 def verificar_login(username_digitado, senha_digitada):

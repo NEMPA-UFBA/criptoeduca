@@ -1,0 +1,94 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 9 0 R /F2 10 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 932 >>
+stream
+0.160 0.120 0.050 rg 0 692 595 150 re f
+BT /F2 26 Tf 60 772 Td (CRIPTOEDUCA) Tj ET
+BT /F1 12 Tf 60 742 Td (FENIC / NEMPA - UFBA) Tj ET
+BT /F1 11 Tf 60 717 Td (MATERIAL DE TESTE) Tj ET
+BT /F2 20 Tf 60 622 Td (Fundamentos de Seguranca e Criptografia) Tj ET
+BT /F1 12 Tf 60 587 Td (O que a criptografia protege, o que sao as cifras classicas e) Tj ET
+BT /F1 12 Tf 60 569 Td (por que a seguranca digital e uma necessidade do dia a dia.) Tj ET
+BT /F2 12 Tf 60 531 Td (Este e um PDF de teste, gerado automaticamente.) Tj ET
+BT /F1 12 Tf 60 511 Td (Serve para conferir se a visualizacao do material funciona) Tj ET
+BT /F1 12 Tf 60 493 Td (dentro do app: se voce esta lendo esta pagina, o PDF esta) Tj ET
+BT /F1 12 Tf 60 475 Td (sendo servido e exibido corretamente. O conteudo definitivo de) Tj ET
+BT /F1 12 Tf 60 457 Td (cada modulo sera escrito pela equipe do projeto.) Tj ET
+BT /F1 10 Tf 60 60 Td (CriptoEduca - material de teste) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 9 0 R /F2 10 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 930 >>
+stream
+BT /F2 18 Tf 60 772 Td (Conteudo) Tj ET
+BT /F1 12 Tf 60 740 Td (A criptografia e a arte de escrever uma mensagem de um jeito que so quem) Tj ET
+BT /F1 12 Tf 60 723 Td (tem a chave consegue ler. Ela nao e magica: e um acordo entre quem) Tj ET
+BT /F1 12 Tf 60 706 Td (escreve e quem lÍ, feito de regras publicas e chaves secretas.) Tj ET
+BT /F1 12 Tf 60 675 Td (Uma cifra de substituicao troca cada caractere por outro, segundo uma) Tj ET
+BT /F1 12 Tf 60 658 Td (chave. E a cifra mais antiga que existe, e e a base de tudo o que veio) Tj ET
+BT /F1 12 Tf 60 641 Td (depois.) Tj ET
+BT /F1 12 Tf 60 610 Td (O que a criptografia resolve: confiderecialidade, integridade e) Tj ET
+BT /F1 12 Tf 60 593 Td (autenticidade. O que ela nao resolve: senha fraca, dispositivo infectado) Tj ET
+BT /F1 12 Tf 60 576 Td (ou pessoa convencida a entregar o proprio dado.) Tj ET
+BT /F1 10 Tf 60 60 Td (CriptoEduca - material de teste  -  pagina 2) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 9 0 R /F2 10 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 905 >>
+stream
+BT /F2 18 Tf 60 772 Td (Como usar este material) Tj ET
+BT /F2 12 Tf 60 740 Td (1.) Tj ET
+BT /F1 12 Tf 86 740 Td (Leia o texto com calma. O objetivo e reconhecer o golpe antes que) Tj ET
+BT /F1 12 Tf 86 723 Td (ele chegue perto de voce.) Tj ET
+BT /F2 12 Tf 60 698 Td (2.) Tj ET
+BT /F1 12 Tf 86 698 Td (Repare no que a mensagem tenta apressar. Urgencia e medo sao as) Tj ET
+BT /F1 12 Tf 86 681 Td (duas ferramentas mais usadas pelo golpe.) Tj ET
+BT /F2 12 Tf 60 656 Td (3.) Tj ET
+BT /F1 12 Tf 86 656 Td (Na duvida, nao responda. Va ate o site oficial pelo atalho, como) Tj ET
+BT /F1 12 Tf 86 639 Td (voce faria se nao tivesse recebido nenhuma mensagem.) Tj ET
+BT /F2 12 Tf 60 614 Td (4.) Tj ET
+BT /F1 12 Tf 86 614 Td (Fale com um adulto de confianca: professor, coordenacao ou um dos) Tj ET
+BT /F1 12 Tf 86 597 Td (seus pais.) Tj ET
+BT /F1 10 Tf 60 60 Td (CriptoEduca - material de teste  -  pagina 3) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+10 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000133 00000 n 
+0000000270 00000 n 
+0000001253 00000 n 
+0000001390 00000 n 
+0000002371 00000 n 
+0000002508 00000 n 
+0000003464 00000 n 
+0000003561 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+3664
+%%EOF
