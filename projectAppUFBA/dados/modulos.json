@@ -1,0 +1,170 @@
+{
+  // ============================================================
+  //  MODULOS DE APRENDIZAGEM DO CRIPTOEDUCA
+  // ============================================================
+  //
+  //  Este arquivo e o unico lugar onde os modulos sao declarados.
+  //  Voce pode editar com o Bloco de Notas, com o VS Code, com
+  //  qualquer editor de texto. NAO precisa mexer em codigo Python.
+  //
+  //  Depois de salvar, volte para a tela do app e recarregue a
+  //  pagina (F5). As mudancas aparecem na hora.
+  //
+  //  COMO ESCREVER AS COISAS:
+  //
+  //  - Aspas duplas em todo texto.
+  //  - Virgula depois de cada item, MENOS no ultimo da lista.
+  //  - Comentarios com "//" no inicio da linha sao permitidos
+  //    (apenas linhas inteiras -- nao da para comentar no fim
+  //    de uma linha de codigo).
+  //
+  //  ------------------------------------------------------------
+  //  CADA MODULO:
+  //
+  //  "slug"        -> nome curto, sem acento, minusculo, com
+  //                   hifen. E o identificador do modulo: e o
+  //                   nome do PDF (static/modulos/<slug>.pdf) e
+  //                   nao pode ter espaco nem acento.
+  //  "titulo"      -> nome que aparece no card e na pagina.
+  //  "resumo"      -> 1 ou 2 frases: o que a pessoa vai aprender.
+  //  "icone"       -> um emoji.
+  //  "nivel"       -> texto do badge, ex.: "Nivel 1".
+  //  "dificuldade"-> "Iniciante", "Intermediario" ou "Avancado".
+  //  "duracao"     -> tempo estimado, ex.: "~15 min".
+  //  "cor"         -> cor do card, em hexadecimal, ex.: "#4F46E5".
+  //  "pdf"         -> nome do arquivo do material, dentro de
+  //                   static/modulos/. Se o arquivo nao estiver
+  //                   la, a pagina avisa que o material esta em
+  //                   preparacao (o app nao quebra).
+  //  "quiz"        -> lista de perguntas. Pode omitir, se o
+  //                   modulo ainda nao tiver quiz.
+  //
+  //  CADA PERGUNTA:
+  //
+  //  "enunciado"     -> a pergunta.
+  //  "alternativas"  -> lista com as opcoes de resposta.
+  //  "certa"         -> qual alternativa e a correta.
+  //                    Escreva o NUMERO da alternativa, contando
+  //                    a partir de 1 (1 = a primeira, 2 = a
+  //                    segunda...). Voce tambem pode escrever o
+  //                    texto exato da alternativa correta.
+  // ============================================================
+
+  "modulos": [
+    {
+      "slug": "fundamentos-seguranca-criptografia",
+      "titulo": "Fundamentos de Segurança e Criptografia",
+      "resumo": "O que a criptografia protege, o que são as cifras clássicas e por que a segurança digital é uma necessidade do dia a dia.",
+      "icone": "🔐",
+      "nivel": "Nível 1",
+      "dificuldade": "Iniciante",
+      "duracao": "~15 min",
+      "cor": "#4F46E5",
+      "pdf": "fundamentos-seguranca-criptografia.pdf",
+      "quiz": [
+        {
+          "enunciado": "Qual é o principal objetivo da criptografia em sistemas de informação?",
+          "alternativas": [
+            "Acelerar o processamento de redes de computadores",
+            "Garantir a confidencialidade, integridade e segurança dos dados",
+            "Compactar arquivos para economizar espaço em disco"
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "O que é uma cifra de substituição?",
+          "alternativas": [
+            "Um tipo de codificação que troca cada caractere por outro, segundo uma chave",
+            "Um programa que apaga arquivos do computador",
+            "Uma rede usada só para transmitir dados de forma anônima"
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "Em que situação a criptografia não resolve o problema?",
+          "alternativas": [
+            "Quando alguém rouba a senha do usuário",
+            "Quando a mensagem precisa ser lida por quem não tem a chave",
+            "Quando o dado trafega pela internet"
+          ],
+          "certa": 1
+        }
+      ]
+    },
+    {
+      "slug": "senhas-e-autenticacao",
+      "titulo": "Senhas Fortes e Autenticação",
+      "resumo": "Como criar senhas que aguentam ataque, por que a mesma senha não pode ser repetida e o que é autenticação em duas etapas.",
+      "icone": "🔑",
+      "nivel": "Nível 2",
+      "dificuldade": "Intermediário",
+      "duracao": "~20 min",
+      "cor": "#38bdf8",
+      "pdf": "senhas-e-autenticacao.pdf",
+      "quiz": [
+        {
+          "enunciado": "Qual das senhas abaixo é a mais segura?",
+          "alternativas": [
+            "ana123456",
+            "Cripto@2026",
+            "Senha#Segura9"
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "O que a autenticação em duas etapas (2FA) acrescenta?",
+          "alternativas": [
+            "Nada: é apenas uma forma mais bonita de digitar a senha",
+            "Um segundo fator, que continua valendo mesmo se a senha vazar",
+            "Uma cópia do e-mail para não perder a conta"
+          ],
+          "certa": 2
+        }
+      ]
+    },
+    {
+      "slug": "phishing-e-engenharia-social",
+      "titulo": "Phishing e Engenharia Social",
+      "resumo": "As mensagens que usam o medo e a urgência para hackear pessoas, e os sinais que denunciam a farsa antes do prejuízo.",
+      "icone": "🎣",
+      "nivel": "Nível 3",
+      "dificuldade": "Intermediário",
+      "duracao": "~25 min",
+      "cor": "#f59e0b",
+      "pdf": "phishing-e-engenharia-social.pdf",
+      "quiz": [
+        {
+          "enunciado": "Qual destes é o sinal mais forte de que uma mensagem é golpe?",
+          "alternativas": [
+            "A mensagem chega fora do horário comercial",
+            "A mensagem cria urgência e pede um dado que o banco nunca pede por mensagem",
+            "A mensagem tem o nome do banco no logotipo"
+          ],
+          "certa": 2
+        }
+      ]
+    },
+    {
+      "slug": "pagamentos-e-pix-seguro",
+      "titulo": "Pagamentos Eletrônicos e Pix Seguro",
+      "resumo": "Como funcionam os golpes do Pix, do QR Code falsificado e da falsa central do banco, e o que fazer quando um golpe acontece.",
+      "icone": "💳",
+      "nivel": "Nível 4",
+      "dificuldade": "Avançado",
+      "duracao": "~20 min",
+      "cor": "#22c55e",
+      "pdf": "pagamentos-e-pix-seguro.pdf",
+      "quiz": [
+        {
+          "enunciado": "Ao receber um Pix falso, o que a pessoa deve fazer primeiro?",
+          "alternativas": [
+            "Falar com o contato por um canal diferente do usado na conversa",
+            "Devolver o valor na hora, para não passar vergonha",
+            "Esperar alguns dias, porque o golpe costuma se desfazer sozinho"
+          ],
+          "certa": 1
+        }
+      ]
+    }
+  ]
+}
