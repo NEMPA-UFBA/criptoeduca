@@ -87,6 +87,20 @@ def render_sessao_interativa(modo_voluntario=False):
                     for orig, cif in sub_itens:
                         exibir_orig = "Espaço" if orig == " " else orig
                         st.markdown(f"`{exibir_orig}` → **`{cif}`**")
+    else:
+        # PRIMEIRO ACESSO (modo obrigatório). Sem este aviso, a tela era
+        # só um título e uma caixa de texto solta: nada dizia que
+        # publicar era o que liberava a plataforma, e o menu lateral
+        # clicável mas morto (st.stop no app.py) dava a sensação de
+        # página travada. O aviso é o que transforma a trava em
+        # instrução.
+        st.info(
+            "👋 **Bem-vindo(a) ao CriptoEduca!** Este é o seu primeiro "
+            "acesso. Para liberar o menu lateral e todas as páginas, "
+            "publique uma mensagem cifrada: escreva algo no campo abaixo "
+            "e aperte **Criptografar com sua Chave e Enviar**. Assim que a "
+            "mensagem aparecer no mural, tudo fica liberado."
+        )
 
     with st.form("form_mural_interativo"):
         mensagem = st.text_area("Digite sua mensagem secreta para o mural:")
