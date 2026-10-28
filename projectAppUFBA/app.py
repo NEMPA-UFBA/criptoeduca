@@ -16,6 +16,7 @@ from modules.login import (
     render_login,
     obter_chave_professor_diaria,
     segredo_da_chave_configurado,
+    limpar_sessao_do_usuario,
 )
 
 # Configuração global
@@ -40,6 +41,13 @@ def _confirmar_saida():
     )
     confirmar, cancelar = st.columns(2)
     if confirmar.button("Sair", type="primary", width="stretch"):
+        # Os dados da pessoa saem junto com ela. Sem isto o próximo a
+        # usar esta aba encontrava o username, o módulo aberto e a
+        # leitura em curso do usuário anterior (ver
+        # limpar_sessao_do_usuario em modules/login.py). Só as chaves
+        # simples são apagadas aqui: o menu lateral está desenhado nesta
+        # tela, e as chaves de widget são varridas no login seguinte.
+        limpar_sessao_do_usuario()
         st.session_state["usuario_logado"] = False
         st.rerun()
     if cancelar.button("Cancelar", width="stretch"):
@@ -196,6 +204,40 @@ else:
         conn.close()
         if res:
             st.session_state["primeiro_acesso"] = res[0]
+
+    # --- PRIMEIRO ACESSO: COERÊNCIA DO MENU ---
+    #
+    # Enquanto primeiro_acesso for 1, todo o roteamento é interrompido
+    # lá embaixo (mural forçado + st.stop) e o único lugar onde o aluno
+    # está é o mural. Mas o radio lateral começava em "Painel Principal"
+    # e continuava aceitando cliques que não levavam a lugar nenhum --
+    # a tela do mural com o menu apontando para outra página, que era a
+    # sensação de "página travada no menu errado".
+    #
+    # Duas correções, as duas AQUI, antes do st.sidebar.radio: a chave
+    # de um widget só pode ser gravada antes do widget existir na tela.
+    #
+    # 1. O item selecionado passa a ser o mural, que é onde a pessoa
+    #    realmente está. Se ela clicar em outro item, o valor volta para
+    #    o mural no tique seguinte -- o menu deixa de mentir.
+    # 2. Os outros itens ficam apagados e inertes (opacity/pointer-events):
+    #    clicar neles não "não faz nada" de forma misteriosa, eles estão
+    #    visivelmente fora de alcance, como um mapa com só um caminho
+    #    aberto. Some quando o primeiro acesso é concluído, porque a
+    #    regra só é emitida enquanto a condição vale.
+    if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
+        st.session_state["menu"] = "Mural de Criptografia"
+        st.markdown(
+            """
+            <style>
+            .st-key-menu [data-testid="stRadioOption"]:not([data-selected="true"]) {
+                opacity: 0.4;
+                pointer-events: none;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Barra lateral
     st.sidebar.title("Criptoeduca")

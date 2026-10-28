@@ -4,6 +4,7 @@ import hmac
 import hashlib
 from datetime import datetime
 from modules.database import verificar_login, cadastrar_usuario
+from modules.leitura import CHAVE_LEITURA
 from modules import ratelimit
 
 # Alfabeto da chave do Professor: 36 símbolos, 10 dígitos e 26 letras.
@@ -195,6 +196,72 @@ def _zerar_login(usuario_digitado):
         ratelimit.zerar(ratelimit.LOGIN, alvo)
 
 
+# ------------------------------------------------------- sessão ----
+#
+# O st.session_state vive na SESSÃO DO NAVEGADOR, não na conta. Quando
+# alguém sai e outra pessoa entra na mesma aba (o computador da escola
+# é exatamente isso), tudo que o usuário anterior deixou de lá continua
+# valendo para o novo: o módulo aberto, o resultado do quiz, a leitura
+# em curso. Medido na prática, o segundo aluno caía direto na página do
+# módulo que o primeiro tinha aberto e via o GABARITO do primeiro no
+# lugar das perguntas do quiz dele -- e não dava para responder, porque
+# a tela de resultado substitui as perguntas.
+#
+# O banco não tem nada a ver com isso: progresso e leituras são por
+# usuário e estão corretos. O vazamento é só da sessão, e é ele que
+# esta limpeza fecha.
+#
+# Chaves que pertencem a quem está logado. "leitura_em_curso" é o
+# CHAVE_LEITURA do módulo de leitura, importado para não virar uma
+# segunda definição do mesmo nome.
+_CHAVES_DO_USUARIO = (
+    "username",
+    "nome_usuario",
+    "tipo_usuario",
+    "primeiro_acesso",
+    "modulo_selecionado",
+    CHAVE_LEITURA,
+    "voltar_para_menu",
+)
+
+
+def limpar_sessao_do_usuario(com_widgets=False):
+    """Apaga da sessão tudo o que pertencia à conta anterior.
+
+    Chamada em dois pontos, de propósito:
+
+      1. No logout confirmado (app.py): a sessão já sai sem nenhum
+         dado da pessoa que foi embora.
+      2. No login com sucesso (aqui): a garantia de que a conta nova
+         não herda nada, mesmo quando o logout é contornado (F5 no
+         meio do caminho, aba que ficou aberta, etc.).
+
+    `com_widgets=True` apaga também as chaves que pertencem a widgets
+    já desenhados na tela: o "menu" do radio lateral e as chaves
+    "quiz_<slug>_<n>" dos rádios do quiz. Essas só podem ser mexidas
+    quando o widget não existe na tela neste momento -- no login isso
+    é verdade (a tela pública não tem nem o menu nem o quiz), mas no
+    logout o menu lateral está desenhado, então ali a chamada é sem
+    widgets e as chaves de widget são varridas no login seguinte, que
+    é quando o menu e o quiz são recriados.
+
+    As chaves "quiz_resultado_*" (a nota da tentativa) não são de
+    widget: são estado puro, apagadas nos dois pontos.
+    """
+    for chave in _CHAVES_DO_USUARIO:
+        st.session_state.pop(chave, None)
+
+    if com_widgets:
+        st.session_state.pop("menu", None)
+
+    for chave in [
+        c for c in list(st.session_state)
+        if c.startswith("quiz_resultado_")
+        or (com_widgets and c.startswith("quiz_"))
+    ]:
+        st.session_state.pop(chave, None)
+
+
 # run_every é o que conserta "esperar não funciona". Medido antes: o app não
 # tinha nenhum rerender automático (só dois st.rerun manuais, e st_autorefresh
 # nem instalado). O Streamlit só redesenha quando o script roda, e o script só
@@ -243,6 +310,11 @@ def _formulario_login():
 
                 if credenciais:
                     nome_usuario, tipo_usuario = credenciais
+                    # Antes de gravar as chaves da conta nova, apaga tudo o
+                    # que a sessão ainda guarda da anterior. Sem isto o
+                    # aluno B caía na página do módulo que o A tinha aberto
+                    # e o quiz dele abria com o resultado e o gabarito do A.
+                    limpar_sessao_do_usuario(com_widgets=True)
                     st.session_state["usuario_logado"] = True
                     st.session_state["nome_usuario"] = nome_usuario
                     # Sem isso o perfil nunca chegava ao menu: app.py decide
