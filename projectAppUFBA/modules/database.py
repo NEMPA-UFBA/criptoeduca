@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import bcrypt
 import streamlit as st
@@ -131,6 +132,13 @@ def criar_tabelas():
         ("sinais", "TEXT DEFAULT ''"),
         ("protecao", "TEXT DEFAULT ''"),
         ("origem", "TEXT DEFAULT 'publicado'"),
+        # O conteudo em blocos: uma lista de {tipo, texto} serializada.
+        # SQLite nao tem tipo lista, entao o que existe e o proprio JSON
+        # dentro de uma coluna de texto. As colunas antigas (exemplo,
+        # sinais, protecao) ficaram aqui porque SQLite nao tem DROP
+        # COLUMN sem recriar a tabela -- elas continuam sendo lidas para
+        # conteudo publicado antes desta mudanca.
+        ("blocos", "TEXT DEFAULT '[]'"),
     )
     for nome_coluna, definicao in colunas_crime:
         if nome_coluna not in colunas_conteudos:
@@ -209,16 +217,69 @@ def criar_tabelas():
     conn.close()
 
 
-def _semear_exemplos_crime(c):
-    """Insere no banco os exemplos pré-colocados que ainda não existem.
+def blocos_para_texto(blocos):
+    """Serializa a lista de blocos para a coluna de texto do banco.
 
-    Recebe o cursor já aberto, porque quem chama é o criar_tabelas, que
-    abre e fecha a conexão uma vez só.
+    ensure_ascii=False de proposito: sem ele o acento vira \u00e1 dentro
+    da coluna, e um banco aberto no DB Browser fica ilegivel para quem
+    for conferir o conteudo depois.
     """
-    # O import é aqui dentro, e não no topo do arquivo: o módulo dos
-    # exemplos não precisa do banco, e o banco não precisa do módulo de
-    # leitura para nada além disto. Importar aqui evita qualquer
-    # dependência circular entre os dois.
+    if not isinstance(blocos, list):
+        blocos = []
+    limpos = []
+    for bloco in blocos:
+        if not isinstance(bloco, dict):
+            continue
+        tipo = str(bloco.get("tipo") or "").strip().lower()
+        texto = str(bloco.get("texto") or "").strip()
+        if not tipo or not texto:
+            continue
+        limpos.append({"tipo": tipo, "texto": texto})
+    return json.dumps(limpos, ensure_ascii=False)
+
+
+def blocos_do_texto(texto):
+    """Le a coluna "blocos" de volta como lista.
+
+    Devolve [] em vez de levantar erro quando a coluna esta vazia ou
+    corrompida: quem chama (a pagina de pergaminhos) so quer desenhar o
+    que ha, e um valor estranho no banco nao pode derrubar a tela.
+    """
+    if not texto:
+        return []
+    try:
+        dados = json.loads(texto)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(dados, list):
+        return []
+    return [bloco for bloco in dados if isinstance(bloco, dict)]
+
+
+def _semear_exemplos_crime(c):
+    """Grava no banco os exemplos do arquivo dados/exemplos_crime.json.
+
+    Recebe o cursor ja aberto, porque quem chama e o criar_tabelas, que
+    abre e fecha a conexao uma vez so.
+
+    E uma RESEMEADURA, e nao uma insercao cega: quando a "chave" ja
+    existe, os campos sao reescritos com o do arquivo. O motivo e que a
+    mudanca de formato (de campos fixos para blocos) deixaria as linhas
+    antigas sem nada na tela, e o arquivo e a fonte da verdade do que
+    e pre-colocado.
+
+    O que NAO e tocado pelo UPDATE:
+
+      - "ativo": se a coordenacao inativou um exemplo, ele continua
+        inativado na proxima carga;
+      - "autor" e "data": continuam dizendo quem publicou e quando;
+      - qualquer linha de origem "publicado": essas nao estao no
+        arquivo, entao nao passam por aqui.
+    """
+    # O import e aqui dentro, e nao no topo do arquivo: o modulo dos
+    # exemplos nao precisa do banco, e o banco nao precisa do modulo de
+    # leitura para nada alem disto. Importar aqui evita qualquer
+    # dependencia circular entre os dois.
     from modules.exemplos_crime import (
         carregar_exemplos,
         linhas_para_texto,
@@ -226,15 +287,34 @@ def _semear_exemplos_crime(c):
 
     exemplos, _erros = carregar_exemplos()
     for exemplo in exemplos:
+        texto_blocos = blocos_para_texto(exemplo.get("blocos"))
+        texto_sinais = linhas_para_texto(exemplo["sinais"])
+        texto_protecao = linhas_para_texto(exemplo["protecao"])
+
         c.execute("SELECT id FROM conteudos WHERE chave = ?", (exemplo["chave"],))
         if c.fetchone():
-            # Já existe. A linha do professor manda: não é reescrita.
+            c.execute(
+                "UPDATE conteudos SET titulo = ?, corpo = ?, icone = ?, "
+                "categoria = ?, exemplo = ?, sinais = ?, protecao = ?, "
+                "blocos = ? WHERE chave = ?",
+                (
+                    exemplo["titulo"],
+                    exemplo["corpo"],
+                    exemplo["icone"],
+                    exemplo["categoria"],
+                    exemplo["exemplo"],
+                    texto_sinais,
+                    texto_protecao,
+                    texto_blocos,
+                    exemplo["chave"],
+                ),
+            )
             continue
 
         c.execute(
             "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
-            "categoria, exemplo, sinais, protecao, origem) "
-            "VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 'pre_colocado')",
+            "categoria, exemplo, sinais, protecao, origem, blocos) "
+            "VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 'pre_colocado', ?)",
             (
                 exemplo["titulo"],
                 exemplo["corpo"],
@@ -243,8 +323,9 @@ def _semear_exemplos_crime(c):
                 exemplo["icone"],
                 exemplo["categoria"],
                 exemplo["exemplo"],
-                linhas_para_texto(exemplo["sinais"]),
-                linhas_para_texto(exemplo["protecao"]),
+                texto_sinais,
+                texto_protecao,
+                texto_blocos,
             ),
         )
 
@@ -296,6 +377,7 @@ def salvar_conteudo(
     exemplo="",
     sinais="",
     protecao="",
+    blocos=None,
 ):
     """Grava um exemplo de crime publicado pela coordenacao para os alunos.
 
@@ -304,16 +386,21 @@ def salvar_conteudo(
 
     A "chave" fica vazia de proposito: ela so identifica os exemplos
     pre-colocados que vieram do arquivo dados/exemplos_crime.json. Um
-    conteudo publicado na mao nao tem chave, e por isso a semeadura nunca
-    tenta recria-lo.
+    conteudo publicado na mao nao tem chave, e por isso a resemeadura
+    nunca tenta recria-lo.
+
+    "blocos" e o conteudo de verdade: a lista de {tipo, texto} que a
+    pagina desenha. Os campos de texto corrido continuam sendo gravados
+    porque o painel e as listas antigas ainda os leem.
     """
     conn = conectar()
     c = conn.cursor()
     c.execute(
         "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
-        "categoria, exemplo, sinais, protecao, origem) "
-        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado')",
-        (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
+        "categoria, exemplo, sinais, protecao, origem, blocos) "
+        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado', ?)",
+        (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao,
+         blocos_para_texto(blocos)),
     )
     conn.commit()
     conn.close()
@@ -347,7 +434,7 @@ def carregar_pergaminhos():
     c = conn.cursor()
     c.execute(
         "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
-        "sinais, protecao, chave, origem FROM conteudos "
+        "sinais, protecao, chave, origem, blocos FROM conteudos "
         "WHERE ativo = 1 ORDER BY id ASC"
     )
     linhas = c.fetchall()
@@ -355,9 +442,16 @@ def carregar_pergaminhos():
 
     chaves = (
         "id", "titulo", "corpo", "autor", "data", "icone", "categoria",
-        "exemplo", "sinais", "protecao", "chave", "origem",
+        "exemplo", "sinais", "protecao", "chave", "origem", "blocos",
     )
-    return [dict(zip(chaves, linha)) for linha in linhas]
+    # "blocos" chega do banco como texto e volta como lista: quem desenha
+    # a pagina nao quer saber com o que o SQLite guarda uma lista.
+    prontos = []
+    for linha in linhas:
+        registro = dict(zip(chaves, linha))
+        registro["blocos"] = blocos_do_texto(registro.get("blocos"))
+        prontos.append(registro)
+    return prontos
 
 
 def atualizar_conteudo(
@@ -369,20 +463,21 @@ def atualizar_conteudo(
     exemplo,
     sinais,
     protecao,
+    blocos=None,
 ):
     """Reescreve um exemplo de crime. Usado pelo Professor e pela Coordenacao.
 
     A "chave" e a "origem" nao sao tocadas: a chave e o que amarra o
     exemplo pre-colocado ao arquivo de origem, e mexer nela faria a
-    semeadura criar um exemplar duplicado no proximo boot.
+    resemeadura criar um exemplar duplicado no proximo boot.
     """
     conn = conectar()
     c = conn.cursor()
     c.execute(
         "UPDATE conteudos SET titulo = ?, corpo = ?, icone = ?, categoria = ?, "
-        "exemplo = ?, sinais = ?, protecao = ? WHERE id = ?",
+        "exemplo = ?, sinais = ?, protecao = ?, blocos = ? WHERE id = ?",
         (titulo, corpo, icone, categoria, exemplo, sinais, protecao,
-         conteudo_id),
+         blocos_para_texto(blocos), conteudo_id),
     )
     conn.commit()
     conn.close()
