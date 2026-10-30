@@ -268,13 +268,17 @@ def _semear_exemplos_crime(c):
     antigas sem nada na tela, e o arquivo e a fonte da verdade do que
     e pre-colocado.
 
-    O que NAO e tocado pelo UPDATE:
+    O que NAO e tocado:
 
       - "ativo": se a coordenacao inativou um exemplo, ele continua
         inativado na proxima carga;
       - "autor" e "data": continuam dizendo quem publicou e quando;
       - qualquer linha de origem "publicado": essas nao estao no
         arquivo, entao nao passam por aqui.
+
+    Quando o arquivo e valido, exemplos pré-colocados removidos dele
+    também são inativados. Se houver erro no JSON, nenhuma linha antiga
+    é ocultada por engano.
     """
     # O import e aqui dentro, e nao no topo do arquivo: o modulo dos
     # exemplos nao precisa do banco, e o banco nao precisa do modulo de
@@ -285,7 +289,24 @@ def _semear_exemplos_crime(c):
         linhas_para_texto,
     )
 
-    exemplos, _erros = carregar_exemplos()
+    exemplos, erros = carregar_exemplos()
+    if not erros:
+        chaves_atuais = [exemplo["chave"] for exemplo in exemplos]
+        if chaves_atuais:
+            marcadores = ", ".join("?" for _ in chaves_atuais)
+            c.execute(
+                "UPDATE conteudos SET ativo = 0 "
+                "WHERE origem = 'pre_colocado' AND chave IS NOT NULL "
+                "AND chave != '' AND chave NOT IN (%s)" % marcadores,
+                chaves_atuais,
+            )
+        else:
+            c.execute(
+                "UPDATE conteudos SET ativo = 0 "
+                "WHERE origem = 'pre_colocado' AND chave IS NOT NULL "
+                "AND chave != ''"
+            )
+
     for exemplo in exemplos:
         texto_blocos = blocos_para_texto(exemplo.get("blocos"))
         texto_sinais = linhas_para_texto(exemplo["sinais"])

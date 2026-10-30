@@ -220,10 +220,11 @@ CSS_PERGAMINHOS = """
     padding: 1.35rem 1.6rem 1.6rem 1.6rem;
     /* A borda rasgada e feita com tres coisas ao mesmo tempo:
          - o gradiente que mancha o papel em varios pontos;
-         - o recorte (clip-path) que serra a borda em dentes irregulares;
+         - o recorte (clip-path) que serra a lateral e o rodape em
+           dentes irregulares;
          - a sombra interna, que escurece as beiradas.
-       Uma folha de papel velho nao tem borda reta: e por isso que o
-       clip-path tem aquelas medidas assim tresnadas. */
+       Uma folha de papel velho nao tem borda reta nas laterais: e por
+       isso que o clip-path tem aquelas medidas assim tresnadas. */
     background:
         radial-gradient(ellipse at 12% 8%, rgba(120, 85, 30, 0.16) 0%, rgba(120, 85, 30, 0) 42%),
         radial-gradient(ellipse at 88% 22%, rgba(140, 95, 35, 0.13) 0%, rgba(140, 95, 35, 0) 38%),
@@ -231,9 +232,20 @@ CSS_PERGAMINHOS = """
         radial-gradient(ellipse at 26% 78%, rgba(150, 105, 40, 0.11) 0%, rgba(150, 105, 40, 0) 34%),
         radial-gradient(circle at 50% 50%, rgba(255, 250, 230, 0.5) 0%, rgba(255, 250, 230, 0) 70%),
         linear-gradient(168deg, #e9d6a6 0%, #e2cb95 45%, #d8bd82 100%);
+    /* O topo e RETO de ponta a ponta (0% 0% -> 100% 0%): ele encosta
+       na vara de madeira la em cima. Com o serrilhado de antes, o topo
+       ficava em ziguezague contra a vara -- o "papel torto" que aparecia
+       quando o pergaminho abria.
+
+       O motivo de ter saido torto: as coordenadas do polygon sao
+       PERCENTUAIS, e o Y percentual e calculado sobre a ALTURA da
+       folha. Com o conteudo real a folha passa de 1500px, entao o "1%"
+       do ziguezague de cima valia 15px de dente -- quanto mais longo o
+       golpe, mais serrilhado o topo. Lateral e rodape continuam
+       rasgados, que e a cara de papel velho. */
     clip-path: polygon(
-        0.4% 0%, 8% 0.7%, 17% 0%, 27% 0.9%, 38% 0.2%, 49% 1%, 61% 0.1%, 72% 0.8%,
-        84% 0%, 93% 0.6%, 99.5% 0.1%, 100% 6%, 99.7% 18%, 100% 32%, 99.6% 48%,
+        0% 0%, 100% 0%,
+        100% 6%, 99.7% 18%, 100% 32%, 99.6% 48%,
         100% 63%, 99.8% 78%, 100% 92%, 99.4% 100%, 88% 99.3%, 76% 100%, 64% 99.2%,
         51% 100%, 39% 99.1%, 27% 100%, 16% 99.4%, 6% 100%, 0.3% 99.6%, 0% 90%,
         0.4% 76%, 0% 61%, 0.5% 46%, 0% 32%, 0.4% 18%, 0.1% 7%

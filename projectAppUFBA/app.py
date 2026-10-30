@@ -18,6 +18,7 @@ from modules.login import (
     segredo_da_chave_configurado,
     limpar_sessao_do_usuario,
 )
+from modules.anuncio_simulado import render_anuncio_simulado
 
 # Configuração global
 st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
@@ -278,6 +279,13 @@ else:
     st.sidebar.divider()
     if st.sidebar.button("🚪 Sair / Logout", key="botao_sair"):
         _confirmar_saida()
+
+    forcar_anuncio = st.sidebar.button(
+        "🔔 Testar pop-up",
+        key="botao_testar_anuncio",
+        help="Abre imediatamente a notificação da simulação educativa.",
+    )
+    render_anuncio_simulado(forcar=forcar_anuncio)
 
     # --- FLUXO OBRIGATÓRIO DO PRIMEIRO LOGIN (APENAS PARA ALUNOS) ---
     # Fica depois da barra lateral de proposito: assim o botao de Sair continua
