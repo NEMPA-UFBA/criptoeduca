@@ -1,11 +1,56 @@
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import json
-import sqlite3
 import bcrypt
 import streamlit as st
+import os
+import logging
+from streamlit.errors import StreamlitSecretNotFoundError
+from dotenv import load_dotenv
+
+# Carrega as variáveis do .env (se o arquivo existir)
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# Caminho de segurança (fallback) para o SQLite local
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.db")
+FALLBACK_URL = f"sqlite:///{DB_PATH}"
+
+# APP_ENV pode vir do ambiente local ou dos Secrets do Streamlit.
+APP_ENV = os.environ.get("APP_ENV")
+if not APP_ENV:
+    try:
+        APP_ENV = st.secrets.get("APP_ENV")
+    except StreamlitSecretNotFoundError:
+        APP_ENV = None
+APP_ENV = APP_ENV.strip().lower() if isinstance(APP_ENV, str) else None
+
+# 1. Tenta pegar a URL do .env
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# 2. Se não achar, tenta pegar dos Secrets (útil para quando for pro Streamlit Cloud)
+if not DATABASE_URL:
+    try:
+        DATABASE_URL = st.secrets.get("DATABASE_URL")
+    except StreamlitSecretNotFoundError:
+        DATABASE_URL = None
 
 def conectar():
-    return sqlite3.connect("plataforma.db")
+    """Conecta ao PostgreSQL garantindo a conversão correta da URL para string."""
+    
+    # 1. Se a URL foi carregada no topo do arquivo (via .env ou st.secrets)
+    if DATABASE_URL:
+        return psycopg2.connect(str(DATABASE_URL))
 
+    # 2. Se estiver usando o bloco [postgres] no secrets.toml
+    if "postgres" in st.secrets:
+        postgres_secrets = st.secrets["postgres"]
+        
+        # Se utilizou o formato url = "..."
+        if "url" in postgres_secrets:
+            return psycopg2.connect(str(postgres_secrets["url"]))
+    raise RuntimeError("Nenhuma credencial de banco de dados (DATABASE_URL ou [postgres]) foi encontrada.")
 
 def _senha_admin_inicial():
     """Le a senha do Administrador de st.secrets. Sem valor padrao no codigo.
@@ -45,18 +90,18 @@ def criar_tabelas():
     ''')
 
     # 2. Inspeciona as colunas existentes na tabela
-    c.execute("PRAGMA table_info(usuarios)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'usuarios'")
     colunas_existentes = [coluna[1] for coluna in c.fetchall()]
 
     # 3. Adiciona as colunas faltantes sem apagar dados
     if "primeiro_acesso" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN primeiro_acesso INTEGER DEFAULT 1")
+        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primeiro_acesso INTEGER DEFAULT 1")
 
     if "email" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN email TEXT DEFAULT ''")
+        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''")
 
     if "tipo" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN tipo TEXT DEFAULT 'Aluno'")
+        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'Aluno'")
         
     # --- E-MAIL ÚNICO ---
     # Índice único em vez de UNIQUE na definição da tabela: o SQLite não tem
@@ -69,13 +114,13 @@ def criar_tabelas():
     # pela checagem do formulário, em vez de quebrar na inicialização.
     try:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios (email)")
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         pass
 
     # Tabela para o Mural Criptografado
     c.execute("""
         CREATE TABLE IF NOT EXISTS mural (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             ativo INTEGER DEFAULT 1,
             username TEXT,
             mensagem_criptografada TEXT,
@@ -83,12 +128,12 @@ def criar_tabelas():
         )
     """)
 
-    c.execute("PRAGMA table_info(mural)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'mural'")
     colunas_mural = [coluna[1] for coluna in c.fetchall()]
     if "username" not in colunas_mural:
-        c.execute("ALTER TABLE mural ADD COLUMN username TEXT DEFAULT ''")
+        c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS username TEXT DEFAULT ''")
     if "ativo" not in colunas_mural:
-        c.execute("ALTER TABLE mural ADD COLUMN ativo INTEGER DEFAULT 1")
+        c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
@@ -96,7 +141,7 @@ def criar_tabelas():
     # so muda ativo para 0, entao o historico do que foi publicado fica.
     c.execute("""
         CREATE TABLE IF NOT EXISTS conteudos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             titulo TEXT NOT NULL,
             corpo TEXT NOT NULL,
             autor TEXT,
@@ -105,12 +150,12 @@ def criar_tabelas():
         )
     """)
 
-    c.execute("PRAGMA table_info(conteudos)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'conteudos'")
     colunas_conteudos = [coluna[1] for coluna in c.fetchall()]
     if "autor" not in colunas_conteudos:
-        c.execute("ALTER TABLE conteudos ADD COLUMN autor TEXT DEFAULT ''")
+        c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS autor TEXT DEFAULT ''")
     if "ativo" not in colunas_conteudos:
-        c.execute("ALTER TABLE conteudos ADD COLUMN ativo INTEGER DEFAULT 1")
+        c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
     # Colunas do exemplo de crime, que e o que o conteudo virou.
     #
@@ -142,7 +187,7 @@ def criar_tabelas():
     )
     for nome_coluna, definicao in colunas_crime:
         if nome_coluna not in colunas_conteudos:
-            c.execute("ALTER TABLE conteudos ADD COLUMN %s %s"
+            c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS %s %s"
                       % (nome_coluna, definicao))
 
     # Tabela do progresso de cada modulo de aprendizagem.
@@ -153,7 +198,7 @@ def criar_tabelas():
     # avaliacao formal de professor.
     c.execute("""
         CREATE TABLE IF NOT EXISTS progresso_modulos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
             modulo TEXT NOT NULL,
             acertos INTEGER NOT NULL,
@@ -162,12 +207,12 @@ def criar_tabelas():
         )
     """)
 
-    c.execute("PRAGMA table_info(progresso_modulos)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'progresso_modulos'")
     colunas_progresso = [coluna[1] for coluna in c.fetchall()]
     if "modulo" not in colunas_progresso:
-        c.execute("ALTER TABLE progresso_modulos ADD COLUMN modulo TEXT DEFAULT ''")
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN IF NOT EXISTS modulo TEXT DEFAULT ''")
     if "username" not in colunas_progresso:
-        c.execute("ALTER TABLE progresso_modulos ADD COLUMN username TEXT DEFAULT ''")
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN IF NOT EXISTS username TEXT DEFAULT ''")
 
     # --- ADMIN PADRÃO, SÓ SE O BANCO AINDA NÃO TIVER UM ---
     # A senha não está no código: vem de st.secrets, e só é lida neste ramo.
@@ -180,7 +225,7 @@ def criar_tabelas():
         hash_str = bcrypt.hashpw(senha_bytes, salt).decode('utf-8')
 
         c.execute(
-            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (%s, %s, %s, %s, %s)",
             ("admin", "Coordenador Geral", "admin@escola.com", "Administrador", hash_str)
         )
 
@@ -293,7 +338,7 @@ def _semear_exemplos_crime(c):
     if not erros:
         chaves_atuais = [exemplo["chave"] for exemplo in exemplos]
         if chaves_atuais:
-            marcadores = ", ".join("?" for _ in chaves_atuais)
+            marcadores = ", ".join("%s" for _ in chaves_atuais)
             c.execute(
                 "UPDATE conteudos SET ativo = 0 "
                 "WHERE origem = 'pre_colocado' AND chave IS NOT NULL "
@@ -312,12 +357,12 @@ def _semear_exemplos_crime(c):
         texto_sinais = linhas_para_texto(exemplo["sinais"])
         texto_protecao = linhas_para_texto(exemplo["protecao"])
 
-        c.execute("SELECT id FROM conteudos WHERE chave = ?", (exemplo["chave"],))
+        c.execute("SELECT id FROM conteudos WHERE chave = %s", (exemplo["chave"],))
         if c.fetchone():
             c.execute(
-                "UPDATE conteudos SET titulo = ?, corpo = ?, icone = ?, "
-                "categoria = ?, exemplo = ?, sinais = ?, protecao = ?, "
-                "blocos = ? WHERE chave = ?",
+                "UPDATE conteudos SET titulo = %s, corpo = %s, icone = %s, "
+                "categoria = %s, exemplo = %s, sinais = %s, protecao = %s, "
+                "blocos = %s WHERE chave = %s",
                 (
                     exemplo["titulo"],
                     exemplo["corpo"],
@@ -335,7 +380,7 @@ def _semear_exemplos_crime(c):
         c.execute(
             "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
             "categoria, exemplo, sinais, protecao, origem, blocos) "
-            "VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 'pre_colocado', ?)",
+            "VALUES (%s, %s, %s, 1, %s, %s, %s, %s, %s, %s, 'pre_colocado', %s)",
             (
                 exemplo["titulo"],
                 exemplo["corpo"],
@@ -356,7 +401,7 @@ def atualizar_primeiro_acesso(username):
     """Atualiza o status de primeiro acesso do aluno para 0 após o primeiro envio ao mural."""
     conn = conectar()
     c = conn.cursor()
-    c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = ?", (username,))
+    c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = %s", (username,))
     conn.commit()
     conn.close()
 
@@ -365,7 +410,7 @@ def salvar_mensagem_mural(username, mensagem_criptografada):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO mural (username, mensagem_criptografada, ativo) VALUES (?, ?, 1)",
+        "INSERT INTO mural (username, mensagem_criptografada, ativo) VALUES (%s, %s, 1)",
         (username, mensagem_criptografada)
     )
     conn.commit()
@@ -384,7 +429,7 @@ def inativar_mensagem_mural(msg_id):
     """Inativa qualquer mensagem (Apenas para Professores e Admins)"""
     conn = conectar()
     c = conn.cursor()
-    c.execute("UPDATE mural SET ativo = 0 WHERE id = ?", (msg_id,))
+    c.execute("UPDATE mural SET ativo = 0 WHERE id = %s", (msg_id,))
     conn.commit()
     conn.close()
 
@@ -418,10 +463,9 @@ def salvar_conteudo(
     c = conn.cursor()
     c.execute(
         "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
-        "categoria, exemplo, sinais, protecao, origem, blocos) "
-        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado', ?)",
-        (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao,
-         blocos_para_texto(blocos)),
+        "categoria, exemplo, sinais, protecao, origem) "
+        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado')",
+        (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
     )
     conn.commit()
     conn.close()
@@ -495,8 +539,8 @@ def atualizar_conteudo(
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "UPDATE conteudos SET titulo = ?, corpo = ?, icone = ?, categoria = ?, "
-        "exemplo = ?, sinais = ?, protecao = ?, blocos = ? WHERE id = ?",
+        "UPDATE conteudos SET titulo = %s, corpo = %s, icone = %s, categoria = %s, "
+        "exemplo = %s, sinais = %s, protecao = %s WHERE id = %s",
         (titulo, corpo, icone, categoria, exemplo, sinais, protecao,
          blocos_para_texto(blocos), conteudo_id),
     )
@@ -508,7 +552,7 @@ def inativar_conteudo(conteudo_id):
     """Inativa um conteudo (Apenas para Professores e Admins)."""
     conn = conectar()
     c = conn.cursor()
-    c.execute("UPDATE conteudos SET ativo = 0 WHERE id = ?", (conteudo_id,))
+    c.execute("UPDATE conteudos SET ativo = 0 WHERE id = %s", (conteudo_id,))
     conn.commit()
     conn.close()
 
@@ -524,7 +568,7 @@ def registrar_leitura(username, modulo):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO leituras (username, modulo) VALUES (?, ?)",
+        "INSERT OR REPLACE INTO leituras (username, modulo) VALUES (%s, %s)",
         (username, modulo),
     )
     conn.commit()
@@ -542,7 +586,7 @@ def modulo_lido(username, modulo):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "SELECT 1 FROM leituras WHERE username = ? AND modulo = ?",
+        "SELECT 1 FROM leituras WHERE username = %s AND modulo = %s",
         (username, modulo),
     )
     achou = c.fetchone() is not None
@@ -576,7 +620,7 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
     c = conn.cursor()
     c.execute(
         "INSERT INTO progresso_modulos (username, modulo, acertos, total) "
-        "VALUES (?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s)",
         (username, modulo, acertos, total),
     )
     conn.commit()
@@ -597,7 +641,7 @@ def carregar_progresso_modulos(username):
     c = conn.cursor()
     c.execute(
         "SELECT modulo, acertos, total, data FROM progresso_modulos "
-        "WHERE username = ? ORDER BY id",
+        "WHERE username = %s ORDER BY id",
         (username,),
     )
     linhas = c.fetchall()
@@ -625,7 +669,7 @@ def verificar_login(username_digitado, senha_digitada):
     c = conn.cursor()
 
     # 1. Busca no banco de dados o registro do usuário digitado
-    c.execute("SELECT nome, tipo, password FROM usuarios WHERE username = ?", (username_digitado,))
+    c.execute("SELECT nome, tipo, password FROM usuarios WHERE username = %s", (username_digitado,))
     resultado = c.fetchone()
     conn.close()
 
@@ -656,11 +700,11 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
 
     try:
         # 1. Conflitos verificados antes de gravar, para dizer qual foi.
-        c.execute("SELECT 1 FROM usuarios WHERE username = ?", (username,))
+        c.execute("SELECT 1 FROM usuarios WHERE username = %s", (username,))
         if c.fetchone():
             return "usuario_duplicado"
 
-        c.execute("SELECT 1 FROM usuarios WHERE email = ?", (email,))
+        c.execute("SELECT 1 FROM usuarios WHERE email = %s", (email,))
         if c.fetchone():
             return "email_duplicado"
 
@@ -671,12 +715,12 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
         hash_str = hash_bytes.decode('utf-8')
 
         c.execute(
-            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (%s, %s, %s, %s, %s)",
             (username, nome, email, tipo, hash_str)
         )
         conn.commit()
         return "ok"
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         # Duas submissões com o mesmo e-mail ao mesmo tempo: o índice único
         # barrou mesmo com a checagem acima. Mesma resposta da checagem.
         return "email_duplicado"
