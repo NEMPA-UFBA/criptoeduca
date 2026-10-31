@@ -464,7 +464,7 @@ def salvar_conteudo(
     c.execute(
         "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
         "categoria, exemplo, sinais, protecao, origem) "
-        "VALUES (%s, %s, %s, 1, '', %s, %s, %s, %s, %s, 'publicado')",
+        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado')",
         (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
     )
     conn.commit()
