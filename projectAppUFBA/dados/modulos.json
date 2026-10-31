@@ -1,55 +1,4 @@
 {
-  // ============================================================
-  //  MODULOS DE APRENDIZAGEM DO CRIPTOEDUCA
-  // ============================================================
-  //
-  //  Este arquivo e o unico lugar onde os modulos sao declarados.
-  //  Voce pode editar com o Bloco de Notas, com o VS Code, com
-  //  qualquer editor de texto. NAO precisa mexer em codigo Python.
-  //
-  //  Depois de salvar, volte para a tela do app e recarregue a
-  //  pagina (F5). As mudancas aparecem na hora.
-  //
-  //  COMO ESCREVER AS COISAS:
-  //
-  //  - Aspas duplas em todo texto.
-  //  - Virgula depois de cada item, MENOS no ultimo da lista.
-  //  - Comentarios com "//" no inicio da linha sao permitidos
-  //    (apenas linhas inteiras -- nao da para comentar no fim
-  //    de uma linha de codigo).
-  //
-  //  ------------------------------------------------------------
-  //  CADA MODULO:
-  //
-  //  "slug"        -> nome curto, sem acento, minusculo, com
-  //                   hifen. E o identificador do modulo: e o
-  //                   nome do PDF (static/modulos/<slug>.pdf) e
-  //                   nao pode ter espaco nem acento.
-  //  "titulo"      -> nome que aparece no card e na pagina.
-  //  "resumo"      -> 1 ou 2 frases: o que a pessoa vai aprender.
-  //  "icone"       -> um emoji.
-  //  "nivel"       -> texto do badge, ex.: "Nivel 1".
-  //  "dificuldade"-> "Iniciante", "Intermediario" ou "Avancado".
-  //  "duracao"     -> tempo estimado, ex.: "~15 min".
-  //  "cor"         -> cor do card, em hexadecimal, ex.: "#4F46E5".
-  //  "pdf"         -> nome do arquivo do material, dentro de
-  //                   static/modulos/. Se o arquivo nao estiver
-  //                   la, a pagina avisa que o material esta em
-  //                   preparacao (o app nao quebra).
-  //  "quiz"        -> lista de perguntas. Pode omitir, se o
-  //                   modulo ainda nao tiver quiz.
-  //
-  //  CADA PERGUNTA:
-  //
-  //  "enunciado"     -> a pergunta.
-  //  "alternativas"  -> lista com as opcoes de resposta.
-  //  "certa"         -> qual alternativa e a correta.
-  //                    Escreva o NUMERO da alternativa, contando
-  //                    a partir de 1 (1 = a primeira, 2 = a
-  //                    segunda...). Voce tambem pode escrever o
-  //                    texto exato da alternativa correta.
-  // ============================================================
-
   "modulos": [
     {
       "slug": "fundamentos-seguranca-criptografia",
@@ -63,31 +12,49 @@
       "pdf": "fundamentos-seguranca-criptografia.pdf",
       "quiz": [
         {
-          "enunciado": "Qual é o principal objetivo da criptografia em sistemas de informação?",
+          "enunciado": "Qual é a definição correta de criptografia conforme os conceitos básicos apresentados?",
           "alternativas": [
-            "Acelerar o processamento de redes de computadores",
-            "Garantir a confidencialidade, integridade e segurança dos dados",
-            "Compactar arquivos para economizar espaço em disco"
+            "Um sistema que usa codificação para transmitir mensagens de forma segura apenas para o destinatário legítimo.",
+            "Um método exclusivo para apagar dados de computadores em redes públicas.",
+            "Um tipo de tradução automática entre diferentes idiomas falados."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "Quais são os dois elementos fundamentais exigidos em um sistema de criptografia?",
+          "alternativas": [
+            "Ter uma senha de 8 dígitos e usar letras maiúsculas.",
+            "A capacidade de reverter o texto criptografado à forma original e o destinatário conseguir entendê-lo sem explicações prévias.",
+            "Um antivírus atualizado e um certificado digital de segurança."
           ],
           "certa": 2
         },
         {
-          "enunciado": "O que é uma cifra de substituição?",
+          "enunciado": "Como funciona o mecanismo básico de funcionamento da Cifra de César?",
           "alternativas": [
-            "Um tipo de codificação que troca cada caractere por outro, segundo uma chave",
-            "Um programa que apaga arquivos do computador",
-            "Uma rede usada só para transmitir dados de forma anônima"
+            "Pela troca aleatória de palavras inteiras usando um dicionário secreto.",
+            "Pela substituição de cada letra do alfabeto por outra com base em um deslocamento fixo.",
+            "Pela inversão de trás para frente da frase inteira."
           ],
-          "certa": 1
+          "certa": 2
         },
         {
-          "enunciado": "Em que situação a criptografia não resolve o problema?",
+          "enunciado": "Se aplicarmos a Cifra de César com um deslocamento de 1 posição para a frente na letra 'A', qual será o resultado?",
           "alternativas": [
-            "Quando alguém rouba a senha do usuário",
-            "Quando a mensagem precisa ser lida por quem não tem a chave",
-            "Quando o dado trafega pela internet"
+            "Z",
+            "B",
+            "C"
           ],
-          "certa": 1
+          "certa": 2
+        },
+        {
+          "enunciado": "No exemplo estudado, ao criptografar a palavra 'Casaco' com um deslocamento de 4 letras, qual foi o resultado obtido?",
+          "alternativas": [
+            "HEWFHT",
+            "FDXDVH",
+            "GEWEGS"
+          ],
+          "certa": 3
         }
       ]
     },
