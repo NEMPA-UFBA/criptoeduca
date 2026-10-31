@@ -228,3 +228,4 @@ __marimo__/
 # bancos criados daqui para frente.
 *.db
 *.db-journal
+projectAppUFBA/plataforma.db
