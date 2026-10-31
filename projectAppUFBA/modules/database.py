@@ -1,10 +1,10 @@
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import bcrypt
 import streamlit as st
 
 def conectar():
-    return sqlite3.connect("plataforma.db")
-
+    return psycopg2.connect(**st.secrets["postgres"])
 
 def _senha_admin_inicial():
     """Le a senha do Administrador de st.secrets. Sem valor padrao no codigo.
@@ -68,13 +68,13 @@ def criar_tabelas():
     # pela checagem do formulário, em vez de quebrar na inicialização.
     try:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios (email)")
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         pass
 
     # Tabela para o Mural Criptografado
     c.execute("""
         CREATE TABLE IF NOT EXISTS mural (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             ativo INTEGER DEFAULT 1,
             username TEXT,
             mensagem_criptografada TEXT,
@@ -95,7 +95,7 @@ def criar_tabelas():
     # so muda ativo para 0, entao o historico do que foi publicado fica.
     c.execute("""
         CREATE TABLE IF NOT EXISTS conteudos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             titulo TEXT NOT NULL,
             corpo TEXT NOT NULL,
             autor TEXT,
@@ -145,7 +145,7 @@ def criar_tabelas():
     # avaliacao formal de professor.
     c.execute("""
         CREATE TABLE IF NOT EXISTS progresso_modulos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
             modulo TEXT NOT NULL,
             acertos INTEGER NOT NULL,
@@ -172,7 +172,7 @@ def criar_tabelas():
         hash_str = bcrypt.hashpw(senha_bytes, salt).decode('utf-8')
 
         c.execute(
-            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (%s, %s, %s, %s, %s)",
             ("admin", "Coordenador Geral", "admin@escola.com", "Administrador", hash_str)
         )
 
@@ -226,7 +226,7 @@ def _semear_exemplos_crime(c):
 
     exemplos, _erros = carregar_exemplos()
     for exemplo in exemplos:
-        c.execute("SELECT id FROM conteudos WHERE chave = ?", (exemplo["chave"],))
+        c.execute("SELECT id FROM conteudos WHERE chave = %s", (exemplo["chave"],))
         if c.fetchone():
             # Já existe. A linha do professor manda: não é reescrita.
             continue
@@ -234,7 +234,7 @@ def _semear_exemplos_crime(c):
         c.execute(
             "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
             "categoria, exemplo, sinais, protecao, origem) "
-            "VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 'pre_colocado')",
+            "VALUES (%s, %s, %s, 1, %s, %s, %s, %s, %s, %s, 'pre_colocado')",
             (
                 exemplo["titulo"],
                 exemplo["corpo"],
@@ -254,7 +254,7 @@ def atualizar_primeiro_acesso(username):
     """Atualiza o status de primeiro acesso do aluno para 0 após o primeiro envio ao mural."""
     conn = conectar()
     c = conn.cursor()
-    c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = ?", (username,))
+    c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = %s", (username,))
     conn.commit()
     conn.close()
 
@@ -263,7 +263,7 @@ def salvar_mensagem_mural(username, mensagem_criptografada):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO mural (username, mensagem_criptografada, ativo) VALUES (?, ?, 1)",
+        "INSERT INTO mural (username, mensagem_criptografada, ativo) VALUES (%s, %s, 1)",
         (username, mensagem_criptografada)
     )
     conn.commit()
@@ -282,7 +282,7 @@ def inativar_mensagem_mural(msg_id):
     """Inativa qualquer mensagem (Apenas para Professores e Admins)"""
     conn = conectar()
     c = conn.cursor()
-    c.execute("UPDATE mural SET ativo = 0 WHERE id = ?", (msg_id,))
+    c.execute("UPDATE mural SET ativo = 0 WHERE id = %s", (msg_id,))
     conn.commit()
     conn.close()
 
@@ -312,7 +312,7 @@ def salvar_conteudo(
     c.execute(
         "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
         "categoria, exemplo, sinais, protecao, origem) "
-        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado')",
+        "VALUES (%s, %s, %s, 1, '', %s, %s, %s, %s, %s, 'publicado')",
         (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
     )
     conn.commit()
@@ -379,8 +379,8 @@ def atualizar_conteudo(
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "UPDATE conteudos SET titulo = ?, corpo = ?, icone = ?, categoria = ?, "
-        "exemplo = ?, sinais = ?, protecao = ? WHERE id = ?",
+        "UPDATE conteudos SET titulo = %s, corpo = %s, icone = %s, categoria = %s, "
+        "exemplo = %s, sinais = %s, protecao = %s WHERE id = %s",
         (titulo, corpo, icone, categoria, exemplo, sinais, protecao,
          conteudo_id),
     )
@@ -392,7 +392,7 @@ def inativar_conteudo(conteudo_id):
     """Inativa um conteudo (Apenas para Professores e Admins)."""
     conn = conectar()
     c = conn.cursor()
-    c.execute("UPDATE conteudos SET ativo = 0 WHERE id = ?", (conteudo_id,))
+    c.execute("UPDATE conteudos SET ativo = 0 WHERE id = %s", (conteudo_id,))
     conn.commit()
     conn.close()
 
@@ -408,7 +408,7 @@ def registrar_leitura(username, modulo):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO leituras (username, modulo) VALUES (?, ?)",
+        "INSERT OR REPLACE INTO leituras (username, modulo) VALUES (%s, %s)",
         (username, modulo),
     )
     conn.commit()
@@ -426,7 +426,7 @@ def modulo_lido(username, modulo):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "SELECT 1 FROM leituras WHERE username = ? AND modulo = ?",
+        "SELECT 1 FROM leituras WHERE username = %s AND modulo = %s",
         (username, modulo),
     )
     achou = c.fetchone() is not None
@@ -460,7 +460,7 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
     c = conn.cursor()
     c.execute(
         "INSERT INTO progresso_modulos (username, modulo, acertos, total) "
-        "VALUES (?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s)",
         (username, modulo, acertos, total),
     )
     conn.commit()
@@ -481,7 +481,7 @@ def carregar_progresso_modulos(username):
     c = conn.cursor()
     c.execute(
         "SELECT modulo, acertos, total, data FROM progresso_modulos "
-        "WHERE username = ? ORDER BY id",
+        "WHERE username = %s ORDER BY id",
         (username,),
     )
     linhas = c.fetchall()
@@ -509,7 +509,7 @@ def verificar_login(username_digitado, senha_digitada):
     c = conn.cursor()
 
     # 1. Busca no banco de dados o registro do usuário digitado
-    c.execute("SELECT nome, tipo, password FROM usuarios WHERE username = ?", (username_digitado,))
+    c.execute("SELECT nome, tipo, password FROM usuarios WHERE username = %s", (username_digitado,))
     resultado = c.fetchone()
     conn.close()
 
@@ -540,11 +540,11 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
 
     try:
         # 1. Conflitos verificados antes de gravar, para dizer qual foi.
-        c.execute("SELECT 1 FROM usuarios WHERE username = ?", (username,))
+        c.execute("SELECT 1 FROM usuarios WHERE username = %s", (username,))
         if c.fetchone():
             return "usuario_duplicado"
 
-        c.execute("SELECT 1 FROM usuarios WHERE email = ?", (email,))
+        c.execute("SELECT 1 FROM usuarios WHERE email = %s", (email,))
         if c.fetchone():
             return "email_duplicado"
 
@@ -555,12 +555,12 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
         hash_str = hash_bytes.decode('utf-8')
 
         c.execute(
-            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO usuarios (username, nome, email, tipo, password) VALUES (%s, %s, %s, %s, %s)",
             (username, nome, email, tipo, hash_str)
         )
         conn.commit()
         return "ok"
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         # Duas submissões com o mesmo e-mail ao mesmo tempo: o índice único
         # barrou mesmo com a checagem acima. Mesma resposta da checagem.
         return "email_duplicado"
