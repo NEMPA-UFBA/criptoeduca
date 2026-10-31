@@ -3,9 +3,54 @@ from psycopg2.extras import RealDictCursor
 import json
 import bcrypt
 import streamlit as st
+import os
+import logging
+from streamlit.errors import StreamlitSecretNotFoundError
+from dotenv import load_dotenv
+
+# Carrega as variáveis do .env (se o arquivo existir)
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# Caminho de segurança (fallback) para o SQLite local
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.db")
+FALLBACK_URL = f"sqlite:///{DB_PATH}"
+
+# APP_ENV pode vir do ambiente local ou dos Secrets do Streamlit.
+APP_ENV = os.environ.get("APP_ENV")
+if not APP_ENV:
+    try:
+        APP_ENV = st.secrets.get("APP_ENV")
+    except StreamlitSecretNotFoundError:
+        APP_ENV = None
+APP_ENV = APP_ENV.strip().lower() if isinstance(APP_ENV, str) else None
+
+# 1. Tenta pegar a URL do .env
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# 2. Se não achar, tenta pegar dos Secrets (útil para quando for pro Streamlit Cloud)
+if not DATABASE_URL:
+    try:
+        DATABASE_URL = st.secrets.get("DATABASE_URL")
+    except StreamlitSecretNotFoundError:
+        DATABASE_URL = None
 
 def conectar():
-    return psycopg2.connect(**st.secrets["postgres"])
+    """Conecta ao PostgreSQL garantindo a conversão correta da URL para string."""
+    
+    # 1. Se a URL foi carregada no topo do arquivo (via .env ou st.secrets)
+    if DATABASE_URL:
+        return psycopg2.connect(str(DATABASE_URL))
+
+    # 2. Se estiver usando o bloco [postgres] no secrets.toml
+    if "postgres" in st.secrets:
+        postgres_secrets = st.secrets["postgres"]
+        
+        # Se utilizou o formato url = "..."
+        if "url" in postgres_secrets:
+            return psycopg2.connect(str(postgres_secrets["url"]))
+    raise RuntimeError("Nenhuma credencial de banco de dados (DATABASE_URL ou [postgres]) foi encontrada.")
 
 def _senha_admin_inicial():
     """Le a senha do Administrador de st.secrets. Sem valor padrao no codigo.
@@ -45,18 +90,18 @@ def criar_tabelas():
     ''')
 
     # 2. Inspeciona as colunas existentes na tabela
-    c.execute("PRAGMA table_info(usuarios)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'usuarios'")
     colunas_existentes = [coluna[1] for coluna in c.fetchall()]
 
     # 3. Adiciona as colunas faltantes sem apagar dados
     if "primeiro_acesso" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN primeiro_acesso INTEGER DEFAULT 1")
+        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primeiro_acesso INTEGER DEFAULT 1")
 
     if "email" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN email TEXT DEFAULT ''")
+        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''")
 
     if "tipo" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN tipo TEXT DEFAULT 'Aluno'")
+        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'Aluno'")
         
     # --- E-MAIL ÚNICO ---
     # Índice único em vez de UNIQUE na definição da tabela: o SQLite não tem
@@ -83,12 +128,12 @@ def criar_tabelas():
         )
     """)
 
-    c.execute("PRAGMA table_info(mural)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'mural'")
     colunas_mural = [coluna[1] for coluna in c.fetchall()]
     if "username" not in colunas_mural:
-        c.execute("ALTER TABLE mural ADD COLUMN username TEXT DEFAULT ''")
+        c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS username TEXT DEFAULT ''")
     if "ativo" not in colunas_mural:
-        c.execute("ALTER TABLE mural ADD COLUMN ativo INTEGER DEFAULT 1")
+        c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
@@ -105,12 +150,12 @@ def criar_tabelas():
         )
     """)
 
-    c.execute("PRAGMA table_info(conteudos)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'conteudos'")
     colunas_conteudos = [coluna[1] for coluna in c.fetchall()]
     if "autor" not in colunas_conteudos:
-        c.execute("ALTER TABLE conteudos ADD COLUMN autor TEXT DEFAULT ''")
+        c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS autor TEXT DEFAULT ''")
     if "ativo" not in colunas_conteudos:
-        c.execute("ALTER TABLE conteudos ADD COLUMN ativo INTEGER DEFAULT 1")
+        c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
     # Colunas do exemplo de crime, que e o que o conteudo virou.
     #
@@ -142,7 +187,7 @@ def criar_tabelas():
     )
     for nome_coluna, definicao in colunas_crime:
         if nome_coluna not in colunas_conteudos:
-            c.execute("ALTER TABLE conteudos ADD COLUMN %s %s"
+            c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS %s %s"
                       % (nome_coluna, definicao))
 
     # Tabela do progresso de cada modulo de aprendizagem.
@@ -162,12 +207,12 @@ def criar_tabelas():
         )
     """)
 
-    c.execute("PRAGMA table_info(progresso_modulos)")
+    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'progresso_modulos'")
     colunas_progresso = [coluna[1] for coluna in c.fetchall()]
     if "modulo" not in colunas_progresso:
-        c.execute("ALTER TABLE progresso_modulos ADD COLUMN modulo TEXT DEFAULT ''")
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN IF NOT EXISTS modulo TEXT DEFAULT ''")
     if "username" not in colunas_progresso:
-        c.execute("ALTER TABLE progresso_modulos ADD COLUMN username TEXT DEFAULT ''")
+        c.execute("ALTER TABLE progresso_modulos ADD COLUMN IF NOT EXISTS username TEXT DEFAULT ''")
 
     # --- ADMIN PADRÃO, SÓ SE O BANCO AINDA NÃO TIVER UM ---
     # A senha não está no código: vem de st.secrets, e só é lida neste ramo.
@@ -293,7 +338,7 @@ def _semear_exemplos_crime(c):
     if not erros:
         chaves_atuais = [exemplo["chave"] for exemplo in exemplos]
         if chaves_atuais:
-            marcadores = ", ".join("?" for _ in chaves_atuais)
+            marcadores = ", ".join("%s" for _ in chaves_atuais)
             c.execute(
                 "UPDATE conteudos SET ativo = 0 "
                 "WHERE origem = 'pre_colocado' AND chave IS NOT NULL "
@@ -308,47 +353,6 @@ def _semear_exemplos_crime(c):
             )
 
     for exemplo in exemplos:
-        texto_blocos = blocos_para_texto(exemplo.get("blocos"))
-        texto_sinais = linhas_para_texto(exemplo["sinais"])
-        texto_protecao = linhas_para_texto(exemplo["protecao"])
-
-        c.execute("SELECT id FROM conteudos WHERE chave = %s", (exemplo["chave"],))
-        if c.fetchone():
-            c.execute(
-                "UPDATE conteudos SET titulo = %s, corpo = %s, icone = %s, "
-                "categoria = %s, exemplo = %s, sinais = %s, protecao = %s, "
-                "blocos = %s WHERE chave = %s",
-                (
-                    exemplo["titulo"],
-                    exemplo["corpo"],
-                    exemplo["icone"],
-                    exemplo["categoria"],
-                    exemplo["exemplo"],
-                    texto_sinais,
-                    texto_protecao,
-                    texto_blocos,
-                    exemplo["chave"],
-                ),
-            )
-            continue
-
-        c.execute(
-            "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
-            "categoria, exemplo, sinais, protecao, origem, blocos) "
-            "VALUES (%s, %s, %s, 1, %s, %s, %s, %s, %s, %s, 'pre_colocado', %s)",
-            (
-                exemplo["titulo"],
-                exemplo["corpo"],
-                "pré-colocado",
-                exemplo["chave"],
-                exemplo["icone"],
-                exemplo["categoria"],
-                exemplo["exemplo"],
-                texto_sinais,
-                texto_protecao,
-                texto_blocos,
-            ),
-        )for exemplo in exemplos:
         texto_blocos = blocos_para_texto(exemplo.get("blocos"))
         texto_sinais = linhas_para_texto(exemplo["sinais"])
         texto_protecao = linhas_para_texto(exemplo["protecao"])
