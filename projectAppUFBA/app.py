@@ -200,7 +200,7 @@ else:
     if "username" in st.session_state and tipo == "Aluno":
         conn = conectar()
         c = conn.cursor()
-        c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = ?", (st.session_state["username"],))
+        c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = %s", (st.session_state["username"],))
         res = c.fetchone()
         conn.close()
         if res:

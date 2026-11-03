@@ -246,6 +246,14 @@ def criar_tabelas():
         )
     """)
 
+    # Garante a restrição única para tabelas criadas anteriormente sem a chave primária
+    try:
+        c.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_leituras_user_modulo ON leituras (username, modulo)"
+        )
+    except psycopg2.IntegrityError:
+        conn.rollback()  # Reverte a transação se houver erro de integridade
+
     # --- EXEMPLOS DE CRIMES PRÉ-COLOCADOS ---
     #
     # Vem do arquivo dados/exemplos_crime.json, que o professor edita
@@ -464,7 +472,7 @@ def salvar_conteudo(
     c.execute(
         "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
         "categoria, exemplo, sinais, protecao, origem) "
-        "VALUES (?, ?, ?, 1, '', ?, ?, ?, ?, ?, 'publicado')",
+        "VALUES (%s, %s, %s, 1, '', %s, %s, %s, %s, %s, 'publicado')",
         (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
     )
     conn.commit()
@@ -568,8 +576,11 @@ def registrar_leitura(username, modulo):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO leituras (username, modulo) VALUES (%s, %s)",
-        (username, modulo),
+         """
+         INSERT INTO leituras (username, modulo) VALUES (%s, %s) 
+         ON CONFLICT (username, modulo) DO UPDATE SET data = CURRENT_TIMESTAMP
+    """,
+    (username, modulo)
     )
     conn.commit()
     conn.close()
@@ -619,8 +630,7 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
     conn = conectar()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO progresso_modulos (username, modulo, acertos, total) "
-        "VALUES (%s, %s, %s, %s)",
+        "INSERT INTO progresso_modulos (username, modulo, acertos, total) VALUES (%s, %s, %s, %s)",
         (username, modulo, acertos, total),
     )
     conn.commit()
