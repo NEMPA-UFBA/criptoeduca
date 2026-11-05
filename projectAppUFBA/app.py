@@ -1,6 +1,5 @@
 import streamlit as st
 from modules.database import (
-    criar_tabelas,
     conectar,
     modulos_lidos,
     carregar_progresso_modulos,
@@ -22,9 +21,6 @@ from modules.anuncio_simulado import render_anuncio_simulado
 
 # Configuração global
 st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
-
-# Inicializa as tabelas no SQLite
-criar_tabelas()
 
 # Confirmação de saída.
 #
@@ -198,11 +194,10 @@ else:
 
     # Sincroniza o status de primeiro acesso do banco de dados para o session_state caso seja aluno
     if "username" in st.session_state and tipo == "Aluno":
-        conn = conectar()
-        c = conn.cursor()
-        c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = %s", (st.session_state["username"],))
-        res = c.fetchone()
-        conn.close()
+        with conectar() as conn:
+            c = conn.cursor()
+            c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = %s", (st.session_state["username"],))
+            res = c.fetchone()
         if res:
             st.session_state["primeiro_acesso"] = res[0]
 

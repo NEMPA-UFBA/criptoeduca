@@ -32,20 +32,30 @@ distribuída pela coordenação dentro do sistema. Aluno se cadastra sem chave.
 
 Requisitos: Python 3.10 ou superior.
 
+Execute os comandos abaixo a partir do diretório `projectAppUFBA`.
+
 ```bash
 # 1. Dependências
-pip install streamlit bcrypt
+python -m pip install -r requirements.txt
 
 # 2. Segredos (só é obrigatório se o banco ainda não tiver o usuário admin)
 cp .streamlit/secrets.example.toml .streamlit/secrets.toml
 # edite o ADMIN_SENHA no arquivo criado
 # o CHAVE_SEGREDO é opcional, mas veja a seção "A chave do dia" abaixo
 
-# 3. Subir o app
+# 3. Preparar o banco (banco novo ou após mudanças de schema)
+python -m modules.init_db
+
+# 4. Subir o app
 streamlit run app.py
 ```
 
 O app abre em `http://localhost:8501`.
+
+Execute `python -m modules.init_db` somente uma vez para cada banco novo ou
+quando uma mudança exigir preparação do schema. A preparação não roda nos
+reruns normais da interface. Ela também insere exemplos do JSON que ainda não
+existam no banco; exemplos existentes são preservados e não são sobrescritos.
 
 ### Sobre o `.streamlit/secrets.toml`
 
@@ -88,6 +98,7 @@ projectAppUFBA/
 └── modules/
     ├── login.py               # login, cadastro, validações, chave do dia
     ├── database.py            # conexão, tabelas, hash, verificação
+    ├── init_db.py             # preparação explícita do banco
     ├── ratelimit.py           # limitador de tentativas em memória
     ├── modulos.py             # leitor do JSON (dados, não layout)
     ├── exemplos_crime.py      # leitor dos exemplos de crime
@@ -201,12 +212,12 @@ porque a classe real inclui o id.
 O conteúdo dos pergaminhos vem de dois lugares, e os dois são a mesma
 coisa na tela:
 
-- **`dados/exemplos_crime.json`** — os exemplos pré-colocados, semeados no
-  primeiro boot. O texto que vem no arquivo é **lorem ipsum** de propósito:
-  é um molde, e o que o Professor escreve vale mais do que o que está no
-  arquivo. A semeadura é idempotente pela `chave`: um exemplo que já
-  existe não é recriado, então a edição feita na tela **não é
-  sobrescrita** no próximo boot.
+- **`dados/exemplos_crime.json`** — exemplos pré-colocados, inseridos quando
+  o banco é preparado. O texto que vem no arquivo é **lorem ipsum** de
+  propósito: é um molde, e o que o Professor escreve vale mais do que o que
+  está no arquivo. A semeadura só insere uma `chave` que ainda não existe;
+  exemplos já existentes no banco não são atualizados nem inativados por
+  mudanças no JSON.
 - **A publicação em "Gerenciar Aulas"** — o que o Professor e a
   Coordenação publicam ali vira pergaminho, na mesma lista.
 
@@ -283,9 +294,12 @@ branco de todo HTML montado pelo app.
 
 ### `modules/database.py`
 
-- `conectar()` — abre o SQLite.
-- `criar_tabelas()` — cria a tabela se faltar, **soma colunas** novas sem
-  apagar dados e garante o índice único de e-mail.
+- `conectar()` — empresta e devolve conexões de um pool PostgreSQL compartilhado
+  entre as threads do app. O pool mantém até 10 conexões por processo, e cada
+  tentativa de conexão tem timeout de 10 segundos.
+- `criar_tabelas()` — cria tabelas/colunas ausentes sem apagar dados e
+  garante índices. É executada pelo comando `python -m modules.init_db`,
+  não durante os reruns da interface.
 - `cadastrar_usuario(...)` — devolve um motivo (`"ok"`, `"usuario_duplicado"`,
   `"email_duplicado"`) em vez de `True`/`False`, para que a tela possa
   distinguir os dois casos de duplicidade.
