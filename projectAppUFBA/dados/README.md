@@ -91,17 +91,16 @@ responder. Não mova o arquivo para lá.
 página **Exemplos de Crimes Digitais**, cada um como um pergaminho que a
 pessoa abre e fecha.
 
-## O texto que vem no arquivo é um molde
+## O arquivo vem vazio
 
-Os exemplos que já vêm prontos têm o texto em **lorem ipsum** de
-propósito: é um placeholder, não conteúdo de segurança. O que o
-Professor e a Coordenação fazem é trocar esse texto pelo material real
-da escola, pela página **Gerenciar Aulas**, sem precisar mexer em
-nenhum arquivo.
+Hoje `exemplos_crime.json` está com a lista `"exemplos": []` de
+propósito: os exemplos antigos eram **lorem ipsum**, texto de molde sem
+conteúdo real de segurança, e foram removidos.
 
-Ou seja: **editar o JSON é opcional**. Quem prefere escrever direto na
-tela do app (e é o caminho mais comum, porque dá para publicar na hora)
-não precisa abrir este arquivo nunca.
+O material verdadeiro da escola entra pela página **Gerenciar Aulas**,
+que é o caminho normal e não exige abrir nenhum arquivo. O JSON fica
+reservado para o caso de quererem exemplos fixos que já apareçam no
+primeiro boot do app.
 
 ## Como o app usa este arquivo
 

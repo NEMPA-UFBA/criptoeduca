@@ -81,6 +81,19 @@ def render_sessao_interativa(modo_voluntario=False):
                    alguém alterar o texto cifrado no banco, a decifração falha
                    em vez de devolver lixo.
             """))
+    else:
+        # PRIMEIRO ACESSO (modo obrigatorio). Sem este aviso, a tela era
+        # so um titulo e uma caixa de texto solta: nada dizia que publicar
+        # era o que liberava a plataforma, e o menu lateral clicavel mas
+        # morto (st.stop no app.py) dava a sensacao de pagina travada.
+        st.info(
+            "👋 **Bem-vindo(a) ao CriptoEduca!** Este é o seu primeiro "
+            "acesso. Para liberar o menu lateral e todas as páginas, "
+            "publique uma mensagem cifrada: escreva algo no campo abaixo, "
+            "defina uma chave e aperte **Criptografar com AES-128-GCM e "
+            "Enviar**. Assim que a mensagem aparecer no mural, tudo fica "
+            "liberado."
+        )
 
     # A versao no key do form e o que limpa os campos depois de um envio
     # bem-sucedido. clear_on_submit=True limparia tambem quando a validacao

@@ -1,20 +1,25 @@
 {
   // ============================================================
-  //  EXEMPLOS DE CRIMES DIGITAIS -- EXEMPLOS PRÉ-COLOCADOS
+  //  EXEMPLOS DE CRIMES DIGITAIS
   // ============================================================
   //
-  //  Este arquivo é o ponto de partida da página "Exemplos de
-  //  Crimes Digitais" (os pergaminhos). Os itens aqui entram no
-  //  app como pergaminhos na primeira vez que ele roda, e cada
-  //  professor pode editar o texto pela página "Gerenciar Aulas".
+  //  Este arquivo é a fonte dos exemplos PRÉ-COLOCADOS da página
+  //  "Exemplos de Crimes Digitais" (os pergaminhos).
   //
-  //  O texto dos itens é LOREM IPSUM de propósito: é um molde.
-  //  Nada aqui é conteúdo real de segurança -- é o texto que o
-  //  professor troca pelo material verdadeiro da escola. O que
-  //  importa agora é que a página já abra, já mostre os
-  //  pergaminhos, e já aceite a edição sem nenhum código.
+  //  Hoje ele está VAZIO de propósito. Os exemplos antigos eram
+  //  lorem ipsum -- texto de molde, sem conteúdo real de segurança
+  //  -- e foram removidos. O material verdadeiro da escola entra
+  //  depois, em dois caminhos:
   //
-  //  COMO EDITAR:
+  //    1. pela página "Gerenciar Aulas", que é o caminho normal;
+  //    2. aqui, caso queiram os exemplos fixos que vêm no primeiro
+  //       boot do app.
+  //
+  //  Enquanto a lista estiver vazia, o app não tenta criar nada, e
+  //  a página mostra apenas o que a coordenação publicar.
+  //
+  //  ------------------------------------------------------------
+  //  COMO PREENCHER (quando o material real chegar):
   //
   //  - Aspas duplas em todo texto.
   //  - Virgula depois de cada item, MENOS no ultimo da lista.
@@ -22,167 +27,182 @@
   //    (apenas linhas inteiras).
   //  - Salve e recarregue a página do app (F5).
   //
-  //  ------------------------------------------------------------
   //  CADA EXEMPLO:
   //
-  //  "chave"    -> identificador unico e fixo do exemplo. Serve
-  //                para o app saber que este item ja foi semeado
-  //                e nao criar outro igual. Sem acento, minuscula,
-  //                com hifen.
-  //  "titulo"   -> nome do golpe, que aparece no pergaminho.
-  //  "icone"    -> um emoji.
-  //  "categoria"-> agrupamento (ex.: "Financeiro", "Roubo de
-  //                identidade").
-  //  "corpo"    -> o que e o golpe, em 2 ou 3 frases.
-  //  "exemplo"  -> uma mensagem falsa, como a que a pessoa
-  //                receberia de verdade.
-  //  "sinais"   -> lista de sinais de alerta.
-  //  "protecao" -> lista do que fazer para se proteger.
+  //  "chave"     -> identificador unico e fixo. O app usa isto para
+  //                 saber que o item ja existe no banco e reescreve-lo
+  //                 em vez de duplicar. Sem acento, minuscula, com hifen.
+  //  "titulo"    -> nome do golpe.
+  //  "icone"     -> um emoji.
+  //  "categoria" -> agrupamento (ex.: "Financeiro").
+  //  "blocos"    -> o conteudo, na ordem em que deve aparecer.
+  //
+  //  CADA BLOCO:
+  //
+  //  { "tipo": "...", "texto": "..." }
+  //
+  //  "tipo" aceita exatamente quatro valores:
+  //
+  //    "titulo"     -> secao maior, em negrito escuro
+  //    "subtitulo"  -> rubrica pequena, caixa alta, com filete
+  //    "paragrafo"  -> texto corrido. Pode aparecer quantas vezes
+  //                    quiser, e uma quebra de linha no campo vira
+  //                    paragrafo novo
+  //    "fonte"      -> credito do texto, no rodape do pergaminho:
+  //                    sai pequeno e esmaecido, e fica nitido com
+  //                    o mouse em cima
+  //
+  //  Exemplo de como fica um item pronto:
+  //
+  //    {
+  //      "chave": "golpe-pix-falso",
+  //      "titulo": "Golpe do Pix Falso",
+  //      "icone": "💸",
+  //      "categoria": "Financeiro",
+  //      "blocos": [
+  //        { "tipo": "titulo",    "texto": "Como o golpe acontece" },
+  //        { "tipo": "paragrafo", "texto": "A pessoa recebe..." },
+  //        { "tipo": "subtitulo", "texto": "Sinais de alerta" },
+  //        { "tipo": "paragrafo", "texto": "O remetente..." },
+  //        { "tipo": "fonte",     "texto": "Banco Central, 2026" }
+  //      ]
+  //    }
+  //
+  //  IMPORTANTE: itens pré-colocados são regravados a partir deste
+  //  arquivo a cada carga do app. Para alterar de vez, edite aqui.
   // ============================================================
 
   "exemplos": [
     {
-      "chave": "golpe-pix-falso",
-      "titulo": "Golpe do Pix Falso",
-      "icone": "💸",
-      "categoria": "Financeiro",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet.",
-        "Consectetur adipiscing elit sed do eiusmod.",
-        "Tempor incididunt ut labore et dolore magna aliqua."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur.",
-        "Adipiscing elit, sed do eiusmod tempor.",
-        "Incididunt ut labore et dolore."
-      ]
-    },
-    {
-      "chave": "phishing-bancario",
-      "titulo": "Phishing Bancário",
-      "icone": "🎣",
-      "categoria": "Financeiro",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.",
-      "exemplo": "Lorem ipsum dolor sit amet: noticeus aliquam ut enim ad minim veniam quis nostrud.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
-        "Elit, sed do eiusmod tempor incididunt.",
-        "Ut labore et dolore magna aliqua enim."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-        "Sed do eiusmod tempor incididunt ut labore.",
-        "Et dolore magna aliqua veniam quis."
-      ]
-    },
-    {
-      "chave": "falsa-central-atendimento",
-      "titulo": "Falsa Central de Atendimento",
-      "icone": "☎️",
-      "categoria": "Financeiro",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor ut labore.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet, consectetur.",
-        "Adipiscing elit, sed do eiusmod tempor.",
-        "Incididunt ut labore et dolore magna."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
-        "Sed do eiusmod tempor incididunt.",
-        "Ut labore et dolore magna aliqua."
-      ]
-    },
-    {
-      "chave": "golpe-melhor-amigo",
-      "titulo": "Golpe do Melhor Amigo",
-      "icone": "🧑‍🤝‍🧑",
-      "categoria": "Engenharia Social",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate velit esse.",
-      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure in voluptate.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
-        "Elit, sed do eiusmod tempor incididunt.",
-        "Ut labore et dolore magna aliqua."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
-        "Sed do eiusmod tempor incididunt ut labore.",
-        "Et dolore magna aliqua veniam."
-      ]
-    },
-    {
-      "chave": "conta-invadida",
-      "titulo": "Conta de Rede Social Invadida",
+      "chave": "golpe-novo-numero",
+      "titulo": "Golpe novo número",
       "icone": "📱",
-      "categoria": "Roubo de Identidade",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do eiusmod tempor.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet, consectetur.",
-        "Adipiscing elit, sed do eiusmod tempor.",
-        "Incididunt ut labore et dolore magna aliqua."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-        "Sed do eiusmod tempor incididunt ut labore.",
-        "Et dolore magna aliqua veniam quis."
+      "categoria": "Engenharia Social",
+      "blocos": [
+        {
+          "tipo": "titulo",
+          "texto": "O que é o golpe?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "O criminoso usa a foto e o nome de um familiar ou amigo, mas entra em contato por outro número de telefone. Depois, inventa uma emergência e pede dinheiro por Pix, tentando impedir que a vítima confirme se a história é verdadeira."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Como se proteger?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Antes de transferir dinheiro, ligue para a pessoa pelo número antigo ou faça uma chamada de vídeo. Nunca envie dinheiro sem confirmar a identidade de quem está pedindo."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Se você já sofreu esse golpe, o que fazer?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Avise imediatamente seu banco e solicite a tentativa de devolução do Pix pelo MED. Guarde as conversas e os comprovantes, registre um boletim de ocorrência e denuncie o número falso."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Exemplo real!"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Em Goiás, um idoso de 78 anos perdeu R$ 50 mil após criminosos se passarem por familiares. Em março de 2025, dois suspeitos foram presos durante uma operação policial."
+        },
+        {
+          "tipo": "fonte",
+          "texto": "Fonte: https://www.maisgoias.com.br/cidades/suspeitos-de-movimentar-milhoes-em-golpe-do-novo-número-contra-idosos-sao-presos-em-goias"
+        }
       ]
     },
     {
-      "chave": "golpe-emprego-falso",
-      "titulo": "Golpe do Emprego Falso",
+      "chave": "golpe-falso-emprego",
+      "titulo": "Golpe falso emprego",
       "icone": "💼",
       "categoria": "Engenharia Social",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.",
-      "exemplo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor ut labore.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
-        "Elit, sed do eiusmod tempor incididunt.",
-        "Ut labore et dolore magna aliqua."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-        "Sed do eiusmod tempor incididunt ut labore.",
-        "Et dolore magna aliqua veniam quis."
+      "blocos": [
+        {
+          "tipo": "titulo",
+          "texto": "O que é o golpe?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "O criminoso divulga vagas de emprego falsas, geralmente com salários atrativos, para conquistar a confiança dos candidatos. Depois, solicita documentos, fotos do rosto ou dinheiro, podendo usar os dados para cometer fraudes financeiras."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Como se proteger?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Pesquise a empresa e confira se a vaga aparece nos canais oficiais. Não envie documentos pessoais para contatos desconhecidos nem pague taxas para participar de processos seletivos."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Se você já sofreu esse golpe, o que fazer?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Avise seu banco, registre um boletim de ocorrência e procure os órgãos de proteção ao consumidor. Se enviou documentos, monitore possíveis financiamentos e movimentações financeiras feitos em seu nome."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Exemplo real!"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Em agosto de 2026, duas mulheres foram investigadas em Goiás por suspeita de usar falsas entrevistas de emprego para obter dados pessoais. Uma das vítimas descobriu que um financiamento de veículo havia sido feito em seu nome."
+        },
+        {
+          "tipo": "fonte",
+          "texto": "Fonte: https://goiasnoticia.com.br/mulheres-sao-suspeitas-de-usar-dados-de-desempregados-para-pedir-financiamentos-e-sumir-com-dinheiro/"
+        }
       ]
     },
     {
-      "chave": "golpe-link-whatsapp",
-      "titulo": "Golpe do Link no WhatsApp",
-      "icone": "🔗",
+      "chave": "golpe-da-falsa-compra-online",
+      "titulo": "Golpe da falsa compra online",
+      "icone": "🛒",
       "categoria": "Engenharia Social",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate velit esse.",
-      "exemplo": "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet, consectetur.",
-        "Adipiscing elit, sed do eiusmod tempor.",
-        "Incididunt ut labore et dolore magna aliqua."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
-        "Sed do eiusmod tempor incididunt ut labore.",
-        "Et dolore magna aliqua veniam."
-      ]
-    },
-    {
-      "chave": "golpe-emprestimo-falso",
-      "titulo": "Golpe do Empréstimo Falso",
-      "icone": "🏦",
-      "categoria": "Financeiro",
-      "corpo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-      "exemplo": "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt.",
-      "sinais": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing.",
-        "Elit, sed do eiusmod tempor incididunt.",
-        "Ut labore et dolore magna aliqua."
-      ],
-      "protecao": [
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-        "Sed do eiusmod tempor incididunt ut labore.",
-        "Et dolore magna aliqua veniam quis."
+      "blocos": [
+        {
+          "tipo": "titulo",
+          "texto": "O que é o golpe?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Os criminosos criam lojas falsas ou publicam anúncios com preços muito baixos para atrair compradores. A vítima realiza o pagamento, muitas vezes por Pix, mas não recebe o produto ou recebe um item diferente."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Como se proteger?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Verifique se o site é oficial, pesquise a reputação da loja e compare os preços. Evite links desconhecidos e prefira plataformas de pagamento confiáveis."
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Se você já sofreu esse golpe, o que fazer?"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Guarde os comprovantes de pagamento, as mensagens e os anúncios. Entre em contato com a loja ou plataforma para pedir o reembolso e, se necessário, registre um boletim de ocorrência e procure o Procon"
+        },
+        {
+          "tipo": "titulo",
+          "texto": "Exemplo real!"
+        },
+        {
+          "tipo": "paragrafo",
+          "texto": "Em setembro de 2026, uma consumidora relatou ter recebido uma caixa de leite condensado no lugar de um smartphone comprado pela internet. Ela registrou um boletim de ocorrência e teve o pedido inicial de reembolso negado."
+        },
+        {
+          "tipo": "fonte",
+          "texto": "Fonte: https://record.r7.com/fala-brasil/video/caixa-de-leite-condensado-no-lugar-de-smartphone-consumidores-relatam-golpes-em-compras-online-03092026/"
+        }
       ]
     }
   ]
