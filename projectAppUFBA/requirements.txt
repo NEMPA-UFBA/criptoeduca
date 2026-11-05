@@ -1,6 +1,7 @@
 # Dependências do EduStream.
 #
-# Só duas, e as duas são de verdade. Todo o resto do projeto (sqlite3, hmac,
+# Três, e as três são de verdade: Streamlit (interface), bcrypt (senhas) e
+# cryptography (AES-128-GCM do mural). Todo o resto do projeto (sqlite3, hmac,
 # hashlib, ipaddress, re, threading, time, datetime, collections) é da
 # biblioteca padrão do Python.
 #
@@ -18,3 +19,4 @@
 
 streamlit==1.64.0
 bcrypt==5.0.0
+cryptography==50.0.2

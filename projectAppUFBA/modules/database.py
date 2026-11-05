@@ -89,6 +89,18 @@ def criar_tabelas():
     if "ativo" not in colunas_mural:
         c.execute("ALTER TABLE mural ADD COLUMN ativo INTEGER DEFAULT 1")
 
+    # --- MURAL: APOSENTA A CIFRA ANTIGA ---
+    # As mensagens gravadas antes do AES-128-GCM usavam uma cifra de
+    # substituicao derivada do username -- reversivel por qualquer pessoa.
+    # Elas nao sao apagadas (o padrao do projeto e inativar, nao excluir),
+    # mas deixam de aparecer no mural. O filtro e idempotente: toda mensagem
+    # nova comeca com "aes-gcm-", entao nunca e afetada por este UPDATE.
+    c.execute(
+        "UPDATE mural SET ativo = 0 "
+        "WHERE mensagem_criptografada IS NULL "
+        "   OR mensagem_criptografada NOT LIKE 'aes-gcm-%'"
+    )
+
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
     # para os alunos. Segue o mesmo padrao do mural: nada e apagado, a linha
