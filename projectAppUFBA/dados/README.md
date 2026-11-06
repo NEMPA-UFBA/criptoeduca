@@ -28,6 +28,14 @@ Há dois arquivos aqui, e os dois seguem a mesma regra:
 O arquivo já vem comentado, com a explicação de cada campo. Os comentários
 são linhas inteiras que começam com `//`.
 
+## Pelo app
+
+Professor e Administrador também podem criar módulos pela página
+**Gerenciar Módulos**. Esses módulos novos ficam no banco (tabela
+`modulos`), não neste arquivo. O JSON continua sendo a origem dos
+módulos originais; o Administrador pode editá-los pela tela, e quem
+criou um módulo novo pode editar e excluir o próprio.
+
 ## O que acontece se o arquivo tiver erro
 
 O app **não quebra**. Ele mostra um aviso expansivo com o que precisa ser
@@ -72,6 +80,8 @@ digitação de uma frase longa.
 Os arquivos do material ficam em `static/modulos/`, e não nesta pasta,
 porque é de lá que o app serve os arquivos ao navegador. O campo `pdf` do
 módulo é só o **nome do arquivo** (o caminho completo também funciona).
+Quando o Professor envia um PDF pela página **Gerenciar Módulos**, o app
+grava o arquivo aqui com o nome do `slug`.
 
 Se o PDF não estiver lá, a página do módulo avisa que o material está em
 preparação — o app continua funcionando.

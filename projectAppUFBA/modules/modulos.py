@@ -19,6 +19,7 @@ qualquer aluno abriria a URL e leria as respostas antes de responder.
 import json
 import os
 import re
+import unicodedata
 
 # Pasta base do app. Os caminhos sao resolvidos a partir dela, e nao do
 # diretorio de onde o processo foi iniciado -- o app pode ser subir de
@@ -177,17 +178,19 @@ def _carregar_modulo(bruto, posicao, erros):
     }
 
 
-def carregar_modulos():
-    """Devolve (modulos, erros).
+def _ler_json():
+    """Le dados/modulos.json e devolve (dados, erros).
 
-    modulos e a lista dos modulos que puderam ser lidos; erros e a lista de
-    problemas encontrados no arquivo, em portugues. Os dois vao juntos: a
-    tela mostra os modulos que valem e o que precisa ser corrigido.
+    "dados" e o conteudo bruto do arquivo -- o dicionario com a chave
+    "modulos" -- ou None quando nem deu para ler. Os erros sao os mesmos
+    textos em portugues que a tela mostra. Esta funcao existe separada do
+    carregar_modulos() porque a pagina de gerenciamento precisa do bruto
+    para reescrever o arquivo sem perder campos que o app nao conhece.
     """
     erros = []
 
     if not os.path.isfile(CAMINHO_JSON):
-        return [], [
+        return None, [
             "Não achei o arquivo de módulos em '%s'. Ele deve existir, com os "
             "módulos dentro." % os.path.join("dados", "modulos.json")
         ]
@@ -212,10 +215,10 @@ def carregar_modulos():
         except UnicodeDecodeError:
             continue
         except OSError as erro:
-            return [], ["Não consegui abrir o arquivo de módulos: %s" % erro]
+            return None, ["Não consegui abrir o arquivo de módulos: %s" % erro]
 
     if texto is None:
-        return [], [
+        return None, [
             "O arquivo dados/modulos.json está em uma codificação que o app "
             "não entende. Salve o arquivo como UTF-8 (no Bloco de Notas: "
             "Arquivo > Salvar como > Codificação: UTF-8)."
@@ -234,11 +237,101 @@ def carregar_modulos():
     try:
         dados = json.loads(_tirar_comentarios(texto))
     except json.JSONDecodeError as erro:
-        return [], [
+        return None, [
             "O arquivo dados/modulos.json tem um erro de escrita: %s "
             "(linha %s, coluna %s). Confira as vírgulas e as aspas."
             % (erro.msg, erro.lineno, erro.colno)
         ]
+
+    return dados, erros
+
+
+def salvar_json(dados):
+    """Grava o arquivo de modulos em UTF-8, no mesmo formato legivel.
+
+    A gravacao e direta, e nao atomica (arquivo temporario + renomear),
+    porque o app roda em um unico processo e a pagina de gerenciamento
+    nao tem concorrencia. Se um dia passar a ter, este e o ponto para
+    trocar por os.replace.
+    """
+    with open(CAMINHO_JSON, "w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=2)
+        arquivo.write("\n")
+
+
+def gerar_slug(texto):
+    """Gera um slug a partir do titulo, sem acento e sem espaco."""
+    texto = unicodedata.normalize("NFKD", texto or "")
+    texto = texto.encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^a-zA-Z0-9]+", "-", texto).strip("-").lower()
+    return texto
+
+
+def _modulos_do_banco(erros):
+    """Le os modulos criados na plataforma, sem derrubar o JSON.
+
+    Importa o database aqui dentro, e nao no topo do arquivo: o modulo
+    de modulos e usado por paginas que tambem importam o database, e o
+    import local evita qualquer dependencia circular entre os dois.
+    """
+    try:
+        from modules.database import listar_modulos_banco
+        linhas = listar_modulos_banco()
+    except Exception as erro:
+        erros.append(
+            "Não consegui carregar os módulos criados na plataforma: %s" % erro
+        )
+        return []
+
+    prontos = []
+    for linha in linhas:
+        slug = (linha.get("slug") or "").strip().lower()
+        if not slug or not RE_SLUG.match(slug):
+            erros.append(
+                "Um módulo criado na plataforma tem slug inválido ('%s') e "
+                "foi ignorado." % slug
+            )
+            continue
+        titulo = (linha.get("titulo") or "").strip()
+        if not titulo:
+            erros.append(
+                "O módulo '%s', criado na plataforma, está sem título e foi "
+                "ignorado." % slug
+            )
+            continue
+        prontos.append({
+            "slug": slug,
+            "titulo": titulo,
+            "resumo": (linha.get("resumo") or "").strip(),
+            "icone": (linha.get("icone") or "📘").strip(),
+            "nivel": (linha.get("nivel") or "").strip(),
+            "dificuldade": (linha.get("dificuldade") or "").strip(),
+            "duracao": (linha.get("duracao") or "").strip(),
+            "cor": (linha.get("cor") or "#4F46E5").strip(),
+            "pdf": (linha.get("pdf") or "").strip(),
+            "quiz": linha.get("quiz") or [],
+            "origem": "banco",
+            "id": linha.get("id"),
+            "autor": linha.get("autor") or "",
+        })
+    return prontos
+
+
+def carregar_modulos():
+    """Devolve (modulos, erros).
+
+    Junta duas origens: os modulos fixos de dados/modulos.json e os
+    modulos criados pela pagina "Gerenciar Modulos", que ficam na tabela
+    "modulos" do banco. O JSON continua sendo a fonte dos modulos
+    originais; o banco guarda apenas os novos.
+
+    modulos e a lista dos modulos que puderam ser lidos; erros e a lista de
+    problemas encontrados, em portugues. Os dois vao juntos: a tela mostra
+    os modulos que valem e o que precisa ser corrigido.
+    """
+    dados, erros = _ler_json()
+    if dados is None:
+        return [], erros
 
     if not isinstance(dados, dict):
         return [], ["O arquivo dados/modulos.json deve começar com { e ter "
@@ -262,9 +355,69 @@ def carregar_modulos():
                          "precisa ser único." % modulo["slug"])
             continue
         slugs_vistos.add(modulo["slug"])
+        modulo["origem"] = "json"
+        modulo["id"] = None
+        modulo["autor"] = ""
+        modulos.append(modulo)
+
+    for modulo in _modulos_do_banco(erros):
+        if modulo["slug"] in slugs_vistos:
+            erros.append(
+                "O módulo '%s', criado na plataforma, tem o mesmo slug de "
+                "outro módulo e foi ignorado." % modulo["slug"]
+            )
+            continue
+        slugs_vistos.add(modulo["slug"])
         modulos.append(modulo)
 
     return modulos, erros
+
+
+def atualizar_modulo_json(slug_original, campos):
+    """Atualiza um modulo que veio do JSON. Devolve (ok, motivo).
+
+    Os campos recebidos usam o formato interno do app. O quiz, em
+    especial, chega com "certa" zero-based; na hora de gravar ele volta
+    para o formato do arquivo, com a resposta contando a partir de 1.
+    """
+    dados, erros = _ler_json()
+    if dados is None:
+        return False, erros[0] if erros else "Não consegui ler o arquivo de módulos."
+    if not isinstance(dados, dict) or not isinstance(dados.get("modulos"), list):
+        return False, "O arquivo de módulos está em um formato inesperado."
+
+    for bruto in dados["modulos"]:
+        if isinstance(bruto, dict) and bruto.get("slug") == slug_original:
+            bruto.update(campos)
+            try:
+                salvar_json(dados)
+            except OSError as erro:
+                return False, "Não consegui gravar dados/modulos.json: %s" % erro
+            return True, None
+    return False, "Módulo não encontrado no arquivo de módulos."
+
+
+def excluir_modulo_json(slug):
+    """Remove um modulo do JSON. Devolve (ok, motivo)."""
+    dados, erros = _ler_json()
+    if dados is None:
+        return False, erros[0] if erros else "Não consegui ler o arquivo de módulos."
+    if not isinstance(dados, dict) or not isinstance(dados.get("modulos"), list):
+        return False, "O arquivo de módulos está em um formato inesperado."
+
+    antes = len(dados["modulos"])
+    dados["modulos"] = [
+        bruto for bruto in dados["modulos"]
+        if not (isinstance(bruto, dict) and bruto.get("slug") == slug)
+    ]
+    if len(dados["modulos"]) == antes:
+        return False, "Módulo não encontrado no arquivo de módulos."
+
+    try:
+        salvar_json(dados)
+    except OSError as erro:
+        return False, "Não consegui gravar dados/modulos.json: %s" % erro
+    return True, None
 
 
 def modulo_por_slug(slug, modulos=None):

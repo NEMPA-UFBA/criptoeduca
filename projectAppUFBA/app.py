@@ -8,6 +8,7 @@ from modules.sessaoInterativa import render_sessao_interativa
 from modules.mainmenu import render_modulos
 from modules.paginaModulo import render_pagina_modulo
 from modules.pergaminhos import render_pergaminhos, render_gerenciar_crime
+from modules.gerenciar_modulos import render_gerenciar_modulos
 from modules.leitura import CHAVE_LEITURA, render_pagina_leitura
 from modules.modulos import carregar_modulos
 from modules.mainmenu import render_progresso_aluno
@@ -255,9 +256,9 @@ else:
     # isso o Aluno não tem mais uma página de avisos: tem a página dos
     # golpes, e o que a coordenação escreveu aparece lá dentro.
     if tipo == "Administrador":
-        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Gerenciar Módulos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     elif tipo == "Professor":
-        opcoes = ["Painel Geral", "Gerenciar Aulas", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel Geral", "Turma", "Gerenciar Aulas", "Gerenciar Módulos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     else:
         opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado"]
 
@@ -326,6 +327,15 @@ else:
         st.title("📋 Painel Geral")
         st.write("Aulas, quizzes e materiais do professor.")
 
+    elif pagina == "Turma":
+        # Pagina reservada para o professor. Por enquanto e so o lugar:
+        # a lista de alunos e o acompanhamento da turma entram depois.
+        if tipo != "Professor":
+            st.error("Página exclusiva do professor.")
+        else:
+            st.title("👥 Turma")
+            st.caption("Página da turma do professor.")
+
     elif pagina == "Gerenciar Aulas":
         # A publicacao da coordenacao virou a publicacao dos exemplos de
         # crime: e o que o Professor e o Administrador escrevem aqui que
@@ -333,6 +343,11 @@ else:
         # continua "Gerenciar Aulas" porque e ele que o pessoal ja
         # conhece.
         render_gerenciar_crime()
+
+    elif pagina == "Gerenciar Módulos":
+        # Modulos criados aqui vao para o banco; os originais continuam
+        # em dados/modulos.json. A pagina aplica a hierarquia de autoria.
+        render_gerenciar_modulos()
 
     elif pagina == "Notas dos Alunos":
         st.title("🧮 Notas dos Alunos")
