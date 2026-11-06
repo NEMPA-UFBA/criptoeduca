@@ -54,8 +54,9 @@ O app abre em `http://localhost:8501`.
 
 Execute `python -m modules.init_db` somente uma vez para cada banco novo ou
 quando uma mudança exigir preparação do schema. A preparação não roda nos
-reruns normais da interface. Ela também insere exemplos do JSON que ainda não
-existam no banco; exemplos existentes são preservados e não são sobrescritos.
+reruns normais da interface. Exemplos novos de `dados/exemplos_crime.json`
+são inseridos ao abrir a página **Exemplos de Crimes Digitais**; exemplos
+existentes são preservados e não são sobrescritos.
 
 ### Sobre o `.streamlit/secrets.toml`
 
@@ -213,12 +214,12 @@ porque a classe real inclui o id.
 O conteúdo dos pergaminhos vem de dois lugares, e os dois são a mesma
 coisa na tela:
 
-- **`dados/exemplos_crime.json`** — exemplos pré-colocados, inseridos quando
-  o banco é preparado. O texto que vem no arquivo é **lorem ipsum** de
-  propósito: é um molde, e o que o Professor escreve vale mais do que o que
-  está no arquivo. A semeadura só insere uma `chave` que ainda não existe;
-  exemplos já existentes no banco não são atualizados nem inativados por
-  mudanças no JSON.
+- **`dados/exemplos_crime.json`** — exemplos pré-colocados, inseridos ao
+  abrir a página. O texto que vem no arquivo é **lorem ipsum** de propósito:
+  é um molde, e o que o Professor escreve vale mais do que o que está no
+  arquivo. A semeadura só insere uma `chave` que ainda não existe; exemplos
+  já existentes no banco não são atualizados nem inativados por mudanças no
+  JSON.
 - **A publicação em "Gerenciar Aulas"** — o que o Professor e a
   Coordenação publicam ali vira pergaminho, na mesma lista.
 

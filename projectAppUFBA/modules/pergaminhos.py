@@ -22,8 +22,8 @@ uma tabela, um formulario e um video dentro de um papel de 1400.
 De onde vem o conteudo:
 
   - dos exemplos pre-colocados em dados/exemplos_crime.json, que sao
-    regravados no banco a cada carga do app (o arquivo e a fonte da
-    verdade deles);
+    inseridos no banco quando a pagina e carregada, se ainda nao
+    existirem (exemplos ja existentes nao sao sobrescritos);
   - do que o Professor e a Coordenacao publicam em "Gerenciar Aulas",
     pelo construtor de blocos que este arquivo desenha.
 

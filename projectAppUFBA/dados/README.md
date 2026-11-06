@@ -101,21 +101,10 @@ responder. Não mova o arquivo para lá.
 página **Exemplos de Crimes Digitais**, cada um como um pergaminho que a
 pessoa abre e fecha.
 
-## O arquivo vem vazio
-
-Hoje `exemplos_crime.json` está com a lista `"exemplos": []` de
-propósito: os exemplos antigos eram **lorem ipsum**, texto de molde sem
-conteúdo real de segurança, e foram removidos.
-
-O material verdadeiro da escola entra pela página **Gerenciar Aulas**,
-que é o caminho normal e não exige abrir nenhum arquivo. O JSON fica
-reservado para o caso de quererem exemplos fixos que já apareçam no
-primeiro boot do app.
-
 ## Como o app usa este arquivo
 
-Na primeira vez que o app roda, os exemplos deste arquivo entram no banco
-como pergaminhos. A partir daí:
+Ao abrir a página **Exemplos de Crimes Digitais**, os exemplos deste arquivo
+que ainda não existem no banco entram como pergaminhos. A partir daí:
 
 - um exemplo cujo `chave` já existe **não é recriado** — o que o
   Professor editou na tela vale mais do que o que está no arquivo, e não

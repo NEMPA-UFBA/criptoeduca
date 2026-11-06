@@ -539,22 +539,25 @@ def carregar_conteudos():
 
 
 def carregar_pergaminhos():
-    """Carrega os exemplos de crime ativos, na ordem em que foram gravados.
+    """Sincroniza exemplos novos e carrega os ativos, na ordem gravada.
 
     Devolve dicionarios, e nao tuplas, porque a pagina dos pergaminhos
     usa muitos campos de cada exemplo e a tupla de dez posicoes vira
-    uma lista de indices difficult de ler. A ordem e por id: os
-    pre-colocados vem primeiro, na ordem do arquivo, e o que a
-    coordenacao publica depois entra no fim.
+    uma lista de indices dificil de ler. Exemplos novos do JSON sao
+    inseridos nesta carga; chaves existentes nao sao sobrescritas. A
+    ordem e por id: os pre-colocados vem primeiro, na ordem do arquivo,
+    e o que a coordenacao publica depois entra no fim.
     """
     with conectar() as conn:
         c = conn.cursor()
+        _semear_exemplos_crime(c)
         c.execute(
             "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
             "sinais, protecao, chave, origem, blocos FROM conteudos "
             "WHERE ativo = 1 ORDER BY id ASC"
         )
         linhas = c.fetchall()
+        conn.commit()
 
     chaves = (
         "id", "titulo", "corpo", "autor", "data", "icone", "categoria",
