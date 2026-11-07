@@ -116,6 +116,11 @@ def _card_html(modulo, concluido, lido=False):
 
 def render_modulos():
     """Desenha a pagina-índice dos modulos."""
+    with st.container(key="pagina_catalogo_modulos"):
+        _render_catalogo_modulos()
+
+
+def _render_catalogo_modulos():
     aplicar_estilo()
 
     st.markdown(
@@ -128,7 +133,8 @@ def render_modulos():
         unsafe_allow_html=True,
     )
 
-    modulos, erros = carregar_modulos()
+    with st.spinner("Carregando módulos..."):
+        modulos, erros = carregar_modulos()
 
     if erros:
         # O arquivo dados/modulos.json foi editado por alguém e tem
@@ -155,7 +161,8 @@ def render_modulos():
         )
         return
 
-    progresso, lidos = _estado_do_aluno()
+    with st.spinner("Carregando seu progresso..."):
+        progresso, lidos = _estado_do_aluno()
     concluidos = sum(1 for m in modulos if m["slug"] in progresso)
     st.markdown(
         _caixa_progresso(concluidos, len(modulos)), unsafe_allow_html=True
