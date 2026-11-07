@@ -25,7 +25,9 @@ registro do que foi lido fica no banco (tabela "leituras"), por aluno e
 por modulo, entao a liberacao do quiz sobrevive a fechar o navegador.
 """
 
+import base64
 import html
+import os
 
 import streamlit as st
 
@@ -34,45 +36,45 @@ from modules.database import (
     modulo_lido,
 )
 from modules.estilo import html_bruto
-from modules.modulos import modulo_por_slug, caminho_pdf, pdf_disponivel
+from modules.modulos import PASTA_PDFS, modulo_por_slug, caminho_pdf
 
 # Chave da sessao que diz qual modulo esta em leitura. Enquanto ela
 # existir, o app desenha a pagina de leitura.
 CHAVE_LEITURA = "leitura_em_curso"
 
 
-def _pdf_para_visualizar(modulo):
-    """Descobre o PDF do modulo, olhando nos dois lugares possiveis.
-
-    O PDF esta em dois lugares: a pasta static/modulos/ (que e o que o
-    app serve ao navegador) e a tabela "conteudos" do banco (que e o
-    que a coordenacao publica). O de arquivo vem primeiro, porque e o
-    material de leitura do modulo; o do banco e o material extra
-    publicado junto.
-    """
-    if pdf_disponivel(modulo):
-        return caminho_pdf(modulo)
-    return None
+@st.cache_data(ttl=3600, show_spinner=False)
+def _ler_pdf_base64(caminho_absoluto, mtime_ns, tamanho):
+    stat = os.stat(caminho_absoluto)
+    if stat.st_mtime_ns != mtime_ns or stat.st_size != tamanho:
+        raise OSError("O PDF mudou durante a leitura. Recarregue a página.")
+    with open(caminho_absoluto, "rb") as arquivo:
+        return base64.b64encode(arquivo.read()).decode("ascii")
 
 
-def _url_do_pdf(modulo):
-    """URL publica do PDF do modulo, para o <iframe> exibir.
+def _pdf_em_base64(modulo):
+    """Le e codifica o PDF local para embuti-lo diretamente no iframe."""
+    caminho = caminho_pdf(modulo)
+    if caminho is None:
+        return None, None
 
-    Os parametros depois do "#" sao do VISUALIZADOR NATIVO do navegador
-    (o Chrome, o Edge e o Firefox embedded tem o mesmo), e nao do
-    Streamlit:
+    pasta_absoluta = os.path.realpath(PASTA_PDFS)
+    caminho_absoluto = os.path.realpath(os.path.abspath(caminho))
+    try:
+        if os.path.commonpath((pasta_absoluta, caminho_absoluto)) != pasta_absoluta:
+            return None, "O caminho do PDF está fora da pasta de materiais."
+    except ValueError:
+        return None, "O caminho do PDF está fora da pasta de materiais."
 
-      toolbar=0   -> esconde a barra de ferramentas. E o que tira do
-                      aluno a caneta de ANOTACAO, com que da para
-                      "editar" o PDF desenhando por cima. Sem isso, o
-                      aluno podia marcar o material do professor.
-      navpanes=0  -> esconde o painel de miniaturas.
-      view=FitH   -> ajusta a altura da pagina no visor.
-    """
-    nome = (modulo.get("pdf") or "").rsplit("/", 1)[-1]
-    if not nome:
-        return None
-    return "/app/static/modulos/%s#toolbar=0&navpanes=0&view=FitH" % nome
+    try:
+        stat = os.stat(caminho_absoluto)
+        pdf_base64 = _ler_pdf_base64(
+            caminho_absoluto, stat.st_mtime_ns, stat.st_size
+        )
+    except OSError as erro:
+        return None, "Não consegui ler o PDF: %s" % erro
+
+    return pdf_base64, None
 
 
 def render_pagina_leitura(slug):
@@ -117,23 +119,22 @@ def render_pagina_leitura(slug):
     )
 
     # ---------- O material ----------
-    caminho = _pdf_para_visualizar(modulo)
-    url = _url_do_pdf(modulo)
+    pdf_base64, erro_pdf = _pdf_em_base64(modulo)
 
-    if url:
+    if erro_pdf:
+        st.error(erro_pdf)
+    elif pdf_base64 is not None:
         # Sem botao de baixar. O botao entregava o arquivo do professor
         # na mao do aluno, e quem tem o arquivo pode edita-lo e
         # redistribuir -- o material do professor saia da pagina dele.
         #
-        # A leitura acontece dentro do app, com o visualizador do
-        # navegador em modo somente-leitura (toolbar=0 na URL, ver
-        # _url_do_pdf). Sem a barra de ferramentas, some a caneta de
-        # anotacao com que da para "editar" o PDF desenhando por cima.
+        # O PDF vai no proprio HTML como data URI; assim o iframe nao
+        # depende de uma URL local que o navegador da nuvem nao consegue abrir.
         st.markdown(
             html_bruto(
                 f"""
                 <iframe
-                    src="{html.escape(url)}"
+                    src="data:application/pdf;base64,{pdf_base64}"
                     width="100%"
                     height="820"
                     style="border:1px solid rgba(148, 163, 184, 0.25);

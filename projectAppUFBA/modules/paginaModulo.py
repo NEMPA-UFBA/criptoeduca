@@ -7,14 +7,14 @@ missoes (modules/mainmenu.py). Ela reune, na mesma tela:
   - o material de leitura em PDF, exibido dentro da propria pagina;
   - o quiz do modulo, logo abaixo do material.
 
-O material e exibido num <iframe> com o PDF servido pelo proprio
-Streamlit, mais um botao para baixar o arquivo. Nao existe widget
-nativo de PDF no Streamlit -- nao ha st.pdf -- entao o embed era a
-opcao que mantem a leitura dentro da pagina do modulo.
+O material e exibido num <iframe> com os bytes do PDF embutidos no
+HTML como data URI, mais um botao para baixar o arquivo. Nao existe
+widget nativo de PDF no Streamlit -- nao ha st.pdf -- entao o embed
+mantem a leitura dentro da pagina do modulo.
 """
 
+import base64
 import html
-from urllib.parse import quote
 
 import streamlit as st
 
@@ -51,22 +51,6 @@ def bytes_do_pdf(modulo):
 ALTURA_PDF = 820
 
 
-def _url_publica_do_pdf(modulo):
-    """URL publica do PDF do modulo.
-
-    O Streamlit serve a pasta "static" em /app/static/. Como o PDF fica
-    dentro dela, o caminho publico e o mesmo arquivo com o prefixo.
-
-    O nome do arquivo vem do manifesto, entao pode ter acento ou espaco
-    (o "pdf" aceita caminho com pasta). A URL precisa disso codificado,
-    e nao cru: um espaco quebra a requisição.
-    """
-    caminho = modulo.get("pdf") or ""
-    if "/" in caminho:
-        caminho = caminho.rsplit("/", 1)[-1]
-    return "/app/static/modulos/" + quote(caminho)
-
-
 def _mostrar_pdf(modulo):
     """Desenha o PDF do módulo, com um botão para baixar.
 
@@ -78,7 +62,6 @@ def _mostrar_pdf(modulo):
     leitura (modules/leitura.py). Aqui ela continua caso o material
     precise ser mostrado em outro lugar.
     """
-    url = _url_publica_do_pdf(modulo)
     conteudo = bytes_do_pdf(modulo)
 
     if conteudo is None:
@@ -88,6 +71,7 @@ def _mostrar_pdf(modulo):
         )
         return
 
+    pdf_base64 = base64.b64encode(conteudo).decode("ascii")
     with st.container(key="modulo_material"):
         st.download_button(
             "⬇️ Baixar o material (PDF)",
@@ -101,7 +85,7 @@ def _mostrar_pdf(modulo):
             html_bruto(
                 f"""
                 <iframe
-                    src="{html.escape(url)}"
+                    src="data:application/pdf;base64,{pdf_base64}"
                     width="100%"
                     height="{ALTURA_PDF}"
                     style="border:1px solid rgba(148, 163, 184, 0.25);

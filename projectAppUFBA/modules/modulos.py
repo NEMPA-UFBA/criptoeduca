@@ -437,9 +437,24 @@ def modulo_por_slug(slug, modulos=None):
 
 def caminho_pdf(modulo):
     """Caminho absoluto do PDF do módulo, ou None se não houver PDF."""
-    if not modulo or not modulo.get("pdf"):
+    if not isinstance(modulo, dict):
         return None
-    return os.path.join(PASTA_PDFS, modulo["pdf"])
+    pdf = modulo.get("pdf")
+    if not isinstance(pdf, str) or not pdf.strip():
+        return None
+
+    nome = os.path.basename(pdf.replace("\\", "/"))
+    if nome in ("", ".", ".."):
+        return None
+
+    pasta = os.path.realpath(PASTA_PDFS)
+    caminho = os.path.realpath(os.path.join(pasta, nome))
+    try:
+        if os.path.commonpath((pasta, caminho)) != pasta:
+            return None
+    except ValueError:
+        return None
+    return caminho
 
 
 def pdf_disponivel(modulo):

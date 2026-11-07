@@ -11,17 +11,18 @@ exatamente para isto que ele serve agora.
 """
 
 import html
+import logging
 
 import streamlit as st
 
-from modules.database import carregar_progresso_modulos
-from modules.database import modulos_lidos as modulos_lidos_no_banco
+from modules.database import carregar_estado_modulos
 from modules.estilo import aplicar_estilo, html_bruto
 from modules.modulos import carregar_modulos
 
 # Quantos cards cabem numa linha. Tres em tela larga, e o CSS encolhe o card
 # em tela estreita. O Streamlit nao tem media query para numero de colunas.
 COLUNAS = 3
+logger = logging.getLogger(__name__)
 
 
 def _html(trecho):
@@ -29,38 +30,20 @@ def _html(trecho):
     return html_bruto(trecho)
 
 
-def _progresso_do_aluno():
-    """Progresso do usuario logado: {slug: {acertos, total, data}}.
-
-    Devolve dicionario vazio para quem nao tem usuario na sessao (o app
-    so desenha esta pagina depois do login, mas o mural e o login
-    compartilham o mesmo arquivo de sessao -- melhor nao assumir).
-    """
+def _estado_do_aluno():
+    """Carrega notas e leituras do usuário em uma única consulta."""
     username = st.session_state.get("username")
     if not username:
-        return {}
+        return {}, set()
     try:
-        return carregar_progresso_modulos(username)
+        return carregar_estado_modulos(username)
     except Exception:
-        # O progresso e enfeite. Se o banco estiver travado, a lista de
-        # modulos tem que aparecer mesmo assim.
-        return {}
-
-
-def _modulos_lidos():
-    """Conjunto de slugs cujo material o aluno ja terminou de ler.
-
-    E o que libera o quiz. Vem do banco (modules/leitura.py), e nao da
-    sessao, porque a leitura precisa sobreviver ao fechamento do
-    navegador.
-    """
-    username = st.session_state.get("username")
-    if not username:
-        return set()
-    try:
-        return modulos_lidos_no_banco(username)
-    except Exception:
-        return set()
+        logger.exception("Falha ao carregar o estado dos módulos do aluno")
+        st.warning(
+            "Não consegui carregar seu progresso agora. "
+            "A lista de módulos continua disponível."
+        )
+        return {}, set()
 
 
 def _caixa_progresso(concluidos, total):
@@ -172,8 +155,7 @@ def render_modulos():
         )
         return
 
-    progresso = _progresso_do_aluno()
-    lidos = _modulos_lidos()
+    progresso, lidos = _estado_do_aluno()
     concluidos = sum(1 for m in modulos if m["slug"] in progresso)
     st.markdown(
         _caixa_progresso(concluidos, len(modulos)), unsafe_allow_html=True
@@ -228,9 +210,7 @@ def render_progresso_aluno():
     st.title("📊 Desempenho")
     st.write("O que você já leu e as suas notas nos quizzes.")
 
-    username = st.session_state.get("username", "")
-    lidos = _modulos_lidos()
-    progresso = _progresso_do_aluno()
+    progresso, lidos = _estado_do_aluno()
 
     modulos, _erros = carregar_modulos()
     if not modulos:

@@ -678,11 +678,13 @@ def _quiz_para_texto(quiz):
     return json.dumps(quiz or [], ensure_ascii=False)
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def listar_modulos_banco():
     """Devolve os modulos criados na plataforma, do mais antigo ao mais novo.
 
     O quiz volta como lista, e nao como texto: quem chama (o carregador
     dos modulos) espera o mesmo formato dos modulos do JSON.
+    O cache e invalidado por salvar_modulo, atualizar_modulo e excluir_modulo.
     """
     with conectar() as conn:
         try:
@@ -752,6 +754,7 @@ def salvar_modulo(
             )
             novo_id = c.fetchone()[0]
             conn.commit()
+            listar_modulos_banco.clear()
             return novo_id, None
         except psycopg2.IntegrityError:
             conn.rollback()
@@ -817,6 +820,7 @@ def atualizar_modulo(
                 conn.rollback()
                 return False, "sem_permissao"
             conn.commit()
+            listar_modulos_banco.clear()
             return True, None
         except psycopg2.IntegrityError:
             conn.rollback()
@@ -847,6 +851,7 @@ def excluir_modulo(modulo_id, solicitante, tipo):
                 conn.rollback()
                 return False, "sem_permissao"
             conn.commit()
+            listar_modulos_banco.clear()
             return True, None
         except Exception as erro:
             conn.rollback()
@@ -872,8 +877,12 @@ def registrar_leitura(username, modulo):
         (username, modulo)
         )
         conn.commit()
+    carregar_estado_modulos.clear()
+    modulo_lido.clear()
+    modulos_lidos.clear()
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def modulo_lido(username, modulo):
     """Diz se o aluno ja terminou de ler o material de um modulo.
 
@@ -892,6 +901,7 @@ def modulo_lido(username, modulo):
     return achou
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def modulos_lidos(username):
     """Devolve o conjunto de modulos que o aluno ja terminou de ler."""
     if not username:
@@ -900,6 +910,60 @@ def modulos_lidos(username):
         c = conn.cursor()
         c.execute("SELECT modulo FROM leituras WHERE username = %s", (username,))
         return {linha[0] for linha in c.fetchall()}
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def carregar_estado_modulos(username):
+    """Carrega leituras e progresso do aluno com uma consulta ao banco.
+
+    O resultado fica em cache por pouco tempo e e invalidado quando o aluno
+    registra uma leitura ou uma tentativa de quiz.
+    """
+    if not username:
+        return {}, set()
+
+    with conectar() as conn:
+        try:
+            c = conn.cursor()
+            c.execute(
+                "SELECT 'leitura' AS tipo, modulo, NULL::INTEGER AS acertos, "
+                "NULL::INTEGER AS total, NULL::TIMESTAMP AS data, "
+                "NULL::INTEGER AS ordem "
+                "FROM leituras WHERE username = %s "
+                "UNION ALL "
+                "SELECT 'progresso' AS tipo, modulo, acertos, total, data, id "
+                "FROM progresso_modulos WHERE username = %s "
+                "ORDER BY ordem NULLS FIRST",
+                (username, username),
+            )
+            linhas = c.fetchall()
+            conn.rollback()
+        except Exception:
+            conn.rollback()
+            raise
+
+    lidos = set()
+    progresso = {}
+    ordens_progresso = {}
+    for tipo, modulo, acertos, total, data, ordem in linhas:
+        if tipo == "leitura":
+            lidos.add(modulo)
+            continue
+        if (
+            modulo not in progresso
+            or acertos > progresso[modulo]["acertos"]
+            or (
+                acertos == progresso[modulo]["acertos"]
+                and ordem < ordens_progresso[modulo]
+            )
+        ):
+            progresso[modulo] = {
+                "acertos": acertos,
+                "total": total,
+                "data": data,
+            }
+            ordens_progresso[modulo] = ordem
+    return progresso, lidos
 
 
 def salvar_progresso_modulo(username, modulo, acertos, total):
@@ -919,8 +983,11 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
             (username, modulo, acertos, total),
         )
         conn.commit()
+    carregar_estado_modulos.clear()
+    carregar_progresso_modulos.clear()
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def carregar_progresso_modulos(username):
     """Devolve {slug_do_modulo: melhor resultado} do usuario.
 
