@@ -2,9 +2,10 @@
 
 Esta pasta guarda os PDFs que cada módulo de aprendizagem exibe.
 
-Os **dados** dos módulos (título, resumo, quiz) não ficam aqui: ficam em
-[`dados/modulos.json`](../../dados/modulos.json), que é o arquivo que a
-pessoa responsável pelo conteúdo edita. Veja o
+Os **dados** dos módulos (título, resumo, quiz) não ficam aqui: os
+módulos originais ficam em
+[`dados/modulos.json`](../../dados/modulos.json), e os criados pela
+página **Gerenciar Módulos** ficam na tabela `modulos` do banco. Veja o
 [README dos dados](../../dados/README.md).
 
 ## Como nomear os arquivos

@@ -6,9 +6,9 @@ Projeto de Pesquisa (FENIC) — NEMPA/UFBA e Colégio Estadual Álpio Franca.
 > **Nota sobre a linha de descrição:** a versão anterior do README dizia
 > "via Aritmética Modular". O código do repositório não usa Aritmética Modular
 > em lugar nenhum — nenhuma biblioteca de criptografia assimétrica, nenhum
-> cálculo modular. O que existe é bcrypt para senhas e uma chave diária
-> derivada por HMAC-SHA256. A descrição foi corrigida para não prometer uma
-> técnica que o app não implementa.
+> cálculo modular. O que existe é bcrypt para senhas, uma chave diária
+> derivada por HMAC-SHA256 e AES-128-GCM no mural. A descrição foi corrigida
+> para não prometer uma técnica que o app não implementa.
 
 ---
 
@@ -39,7 +39,7 @@ Execute os comandos abaixo a partir do diretório `projectAppUFBA`.
 python -m pip install -r requirements.txt
 
 # 2. Segredos (só é obrigatório se o banco ainda não tiver o usuário admin)
-cp .streamlit/secrets.example.toml .streamlit/secrets.toml
+cp .streamlit/secrets_example.toml .streamlit/secrets.toml
 # edite o ADMIN_SENHA no arquivo criado
 # o CHAVE_SEGREDO é opcional, mas veja a seção "A chave do dia" abaixo
 
@@ -54,14 +54,15 @@ O app abre em `http://localhost:8501`.
 
 Execute `python -m modules.init_db` somente uma vez para cada banco novo ou
 quando uma mudança exigir preparação do schema. A preparação não roda nos
-reruns normais da interface. Ela também insere exemplos do JSON que ainda não
-existam no banco; exemplos existentes são preservados e não são sobrescritos.
+reruns normais da interface. Exemplos novos de `dados/exemplos_crime.json`
+são inseridos ao abrir a página **Exemplos de Crimes Digitais**; exemplos
+existentes são preservados e não são sobrescritos.
 
 ### Sobre o `.streamlit/secrets.toml`
 
 O arquivo é lido pelo Streamlit automaticamente — no Community Cloud, local e
 em self-hosted — e já está no `.gitignore`, então o valor de verdade nunca
-entra no Git. O `secrets.example.toml` é a documentação do que o app espera.
+entra no Git. O `secrets_example.toml` é a documentação do que o app espera.
 
 A senha do `admin` é lida **uma única vez**: no primeiro boot, só se o banco
 ainda não tiver esse usuário. Depois disso o que autentica é o hash bcrypt no
@@ -88,7 +89,7 @@ projectAppUFBA/
 ├── app.py                     # roteamento por perfil e as seis páginas
 ├── plataforma.db              # SQLite (versionado)
 ├── .streamlit/
-│   └── secrets.example.toml   # modelo do gerenciador de segredos
+│   └── secrets_example.toml   # modelo do gerenciador de segredos
 ├── dados/
 │   ├── modulos.json           # OS MÓDULOS — quem escreve o curso mexe aqui
 │   ├── exemplos_crime.json    # OS EXEMPLOS DE CRIMES (os pergaminhos)
@@ -108,7 +109,8 @@ projectAppUFBA/
     ├── quiz.py                # o quiz do módulo, com gabarito
     ├── pergaminhos.py         # os pergaminhos: exemplos de crimes digitais
     ├── estilo.py              # folha de estilo da identidade visual
-    └── sessaoInterativa.py    # mural criptografado
+    ├── criptografia.py        # AES-128-GCM do mural (cifrar/decifrar)
+    └── sessaoInterativa.py    # mural com chave por mensagem
 ```
 
 ### `dados/modulos.json`
@@ -212,12 +214,12 @@ porque a classe real inclui o id.
 O conteúdo dos pergaminhos vem de dois lugares, e os dois são a mesma
 coisa na tela:
 
-- **`dados/exemplos_crime.json`** — exemplos pré-colocados, inseridos quando
-  o banco é preparado. O texto que vem no arquivo é **lorem ipsum** de
-  propósito: é um molde, e o que o Professor escreve vale mais do que o que
-  está no arquivo. A semeadura só insere uma `chave` que ainda não existe;
-  exemplos já existentes no banco não são atualizados nem inativados por
-  mudanças no JSON.
+- **`dados/exemplos_crime.json`** — exemplos pré-colocados, inseridos ao
+  abrir a página. O texto que vem no arquivo é **lorem ipsum** de propósito:
+  é um molde, e o que o Professor escreve vale mais do que o que está no
+  arquivo. A semeadura só insere uma `chave` que ainda não existe; exemplos
+  já existentes no banco não são atualizados nem inativados por mudanças no
+  JSON.
 - **A publicação em "Gerenciar Aulas"** — o que o Professor e a
   Coordenação publicam ali vira pergaminho, na mesma lista.
 
@@ -291,6 +293,45 @@ Duas armadilhas do `st.markdown` com HTML, ambas medidas no navegador:
 
 Por isso `estilo.html_bruto()` tira a indentação e remove as linhas em
 branco de todo HTML montado pelo app.
+
+### `modules/criptografia.py` e o mural
+
+O mural usa **AES-128-GCM**, com a chave derivada da frase que o autor
+digita. Não é mais a cifra de substituição que existia antes: aquela derivava
+a "chave" do `username`, então qualquer pessoa podia refazer o mapa e ler
+tudo.
+
+O caminho de uma mensagem:
+
+1. A frase-chave passa por **PBKDF2-HMAC-SHA256** (600.000 iterações) com um
+   *salt* aleatório de 16 bytes, e vira a chave de 16 bytes do AES.
+2. Um **nonce** aleatório de 12 bytes é sorteado para cada mensagem. A mesma
+   mensagem com a mesma chave gera ciphertexts diferentes.
+3. O **GCM** cifra e autentica: chave errada ou ciphertext alterado levantam
+   `InvalidTag` em vez de devolver texto errado.
+4. O banco guarda só o envelope
+   `aes-gcm-v1$<iteracoes>$<salt>$<nonce>$<ciphertext+tag>`, em base64. A
+   chave nunca é gravada. Na tela, o mural mostra só o `ciphertext+tag`; o
+   envelope completo fica no banco, porque é ele que a decifração precisa.
+
+A chave pode ter qualquer tamanho; o formulário só exige que não seja vazia.
+Chaves curtas são fáceis de adivinhar, então a tela recomenda uma frase longa.
+
+O prefixo e o número de iterações ficam dentro do envelope para que uma
+mudança futura de parâmetros não torne as mensagens antigas ilegíveis. O
+número de iterações lido do banco tem limite de sanidade, para um envelope
+forjado não travar a página.
+
+**Por que não ECB.** O ECB cifra cada bloco de 16 bytes isoladamente: o mesmo
+bloco de texto vira o mesmo bloco cifrado, a mesma mensagem com a mesma chave
+dá sempre o mesmo resultado, e não há IV nem autenticação. É o modo que os
+materiais de segurança usam como exemplo de *como não fazer*. O GCM custa o
+mesmo esforço de código e não ensina a lição errada.
+
+As mensagens gravadas com a cifra antiga são **inativadas** no boot
+(`UPDATE mural SET ativo = 0 WHERE ... NOT LIKE 'aes-gcm-%'`), e não apagadas:
+o histórico fica no banco, mas não aparece no mural. O filtro é idempotente,
+porque toda mensagem nova começa com `aes-gcm-`.
 
 ### `modules/database.py`
 
@@ -384,6 +425,8 @@ Vale ser explícito, porque parte do que parece proteção não é.
 ### Feito
 
 - Senhas com **bcrypt**, nunca texto puro, nunca no código.
+- **Mural com AES-128-GCM**: a chave vem da frase do autor via PBKDF2, o
+  nonce é aleatório e o GCM autentica o texto. O banco guarda só o ciphertext.
 - **Índice único de e-mail**: o mesmo e-mail não pode abrir duas contas.
 - **Rate limit** no login e na chave do Professor, com janela deslizante real
   (medida, não só teórica).
@@ -438,6 +481,12 @@ em 5 — nenhum contou, e a chave errada nunca chegou a ser comparada.
 único, a tela dizia "este e-mail já está cadastrado" e o nome de usuário
 ficava livre para teste. Agora ela diz as duas coisas. É uma troca: integridade
 dos dados contra uma enumeração de usuários.
+
+**A chave do mural não é armazenada, e isso é uma faca de dois gumes.** Quem
+esquece a frase perde a mensagem para sempre; não há recuperação. Além disso,
+o servidor vê a chave em memória no instante do envio — o que o AES protege é
+o que fica gravado no banco, não o tráfego até o servidor. Quem souber a
+chave decifra a mensagem, inclusive de outra pessoa.
 
 **A senha é validada só por forma** (1 maiúscula, 1 minúscula, 1 número), não
 por força real. E não há recuperação de senha: quem esquece está perdido.
@@ -546,9 +595,10 @@ navegador.
 Branch `Nicolas`. O trabalho de segurar a chave de 12 caracteres, o rate limit
 corrigido e os dois formulários está commitado.
 
-**`requirements.txt` continua faltando.** `streamlit` e `bcrypt` não estão
-declarados em lugar nenhum, o que bloqueia deploy fora desta máquina. É o
-pendente mais concreto da lista.
+**`requirements.txt` agora declara as três dependências.** `streamlit`,
+`bcrypt` e `cryptography` estão fixados no arquivo, então o deploy fora desta
+máquina tem o que instalar. O `cryptography` entrou junto com o AES-128-GCM do
+mural.
 
 **A suíte de teste não está no repositório.** A rodada 3 escreveu 49
 verificações (`AppTest`) cobrindo a chave, o perfil, o rate limit e o login,

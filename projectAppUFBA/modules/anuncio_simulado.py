@@ -8,6 +8,7 @@ import streamlit as st
 
 _CHAVE_INICIO = "_ce_anuncio_inicio_monotonic"
 _CHAVE_EXIBIDO = "_ce_anuncio_exibido"
+_CHAVE_NOTIFICACAO_PENDENTE = "_ce_anuncio_notificacao_pendente"
 
 
 def _mostrar_notificacao() -> None:
@@ -21,21 +22,35 @@ def _mostrar_notificacao() -> None:
     )
 
 
-@st.fragment(run_every="1s")
+@st.fragment(run_every="5s")
 def _verificar_tempo() -> None:
     """Exibe a notificação após dois minutos, sem depender de JavaScript."""
-    if _CHAVE_EXIBIDO in st.session_state:
+    if _CHAVE_EXIBIDO in st.session_state or _CHAVE_INICIO not in st.session_state:
         return
 
-    inicio = st.session_state.setdefault(_CHAVE_INICIO, time.monotonic())
+    inicio = st.session_state[_CHAVE_INICIO]
     if time.monotonic() - inicio >= 120:
         st.session_state[_CHAVE_EXIBIDO] = True
-        _mostrar_notificacao()
+        st.session_state[_CHAVE_NOTIFICACAO_PENDENTE] = True
+        st.rerun()
 
 
 def render_anuncio_simulado(forcar: bool = False) -> None:
     """Ativa o temporizador e permite disparar a notificação pelo botão."""
     if forcar:
         st.session_state[_CHAVE_EXIBIDO] = True
+        st.session_state.pop(_CHAVE_NOTIFICACAO_PENDENTE, None)
         _mostrar_notificacao()
+        return
+
+    if st.session_state.get(_CHAVE_NOTIFICACAO_PENDENTE):
+        st.session_state.pop(_CHAVE_NOTIFICACAO_PENDENTE, None)
+        _mostrar_notificacao()
+        return
+
+    if _CHAVE_EXIBIDO in st.session_state:
+        return
+
+    if _CHAVE_INICIO not in st.session_state:
+        st.session_state[_CHAVE_INICIO] = time.monotonic()
     _verificar_tempo()

@@ -164,6 +164,18 @@ def _criar_tabelas(conn):
     if "ativo" not in colunas_mural:
         c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
+    # --- MURAL: APOSENTA A CIFRA ANTIGA ---
+    # As mensagens gravadas antes do AES-128-GCM usavam uma cifra de
+    # substituicao derivada do username -- reversivel por qualquer pessoa.
+    # Elas nao sao apagadas (o padrao do projeto e inativar, nao excluir),
+    # mas deixam de aparecer no mural. O filtro e idempotente: toda mensagem
+    # nova comeca com "aes-gcm-", entao nunca e afetada por este UPDATE.
+    c.execute(
+        "UPDATE mural SET ativo = 0 "
+        "WHERE mensagem_criptografada IS NULL "
+        "   OR mensagem_criptografada NOT LIKE 'aes-gcm-%'"
+    )
+
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
     # para os alunos. Segue o mesmo padrao do mural: nada e apagado, a linha
@@ -218,6 +230,63 @@ def _criar_tabelas(conn):
         if nome_coluna not in colunas_conteudos:
             c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS %s %s"
                       % (nome_coluna, definicao))
+
+    # --- MODULOS CRIADOS PELA PLATAFORMA ---
+    #
+    # Os modulos originais continuam em dados/modulos.json. Esta tabela
+    # guarda apenas os modulos novos, criados pela pagina "Gerenciar
+    # Modulos". O campo "autor" e o username de quem criou, e e ele que
+    # limita a edicao/exclusao: o criador mexe no proprio modulo, o
+    # Administrador mexe em todos.
+    #
+    # O quiz fica em uma coluna de texto com JSON, do mesmo jeito que os
+    # blocos dos pergaminhos. A lista de perguntas e pequena e nao tem
+    # consulta por dentro dela, entao uma tabela separada so criaria
+    # juncoes para nada.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS modulos (
+            id SERIAL PRIMARY KEY,
+            slug TEXT NOT NULL UNIQUE,
+            titulo TEXT NOT NULL,
+            resumo TEXT DEFAULT '',
+            icone TEXT DEFAULT '📘',
+            nivel TEXT DEFAULT '',
+            dificuldade TEXT DEFAULT '',
+            duracao TEXT DEFAULT '',
+            cor TEXT DEFAULT '#4F46E5',
+            pdf TEXT DEFAULT '',
+            quiz TEXT DEFAULT '[]',
+            autor TEXT NOT NULL,
+            ativo INTEGER DEFAULT 1,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    c.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'modulos'"
+    )
+    colunas_modulos = [linha[0] for linha in c.fetchall()]
+    for nome_coluna, definicao in (
+        ("slug", "TEXT"),
+        ("titulo", "TEXT"),
+        ("resumo", "TEXT DEFAULT ''"),
+        ("icone", "TEXT DEFAULT '📘'"),
+        ("nivel", "TEXT DEFAULT ''"),
+        ("dificuldade", "TEXT DEFAULT ''"),
+        ("duracao", "TEXT DEFAULT ''"),
+        ("cor", "TEXT DEFAULT '#4F46E5'"),
+        ("pdf", "TEXT DEFAULT ''"),
+        ("quiz", "TEXT DEFAULT '[]'"),
+        ("autor", "TEXT DEFAULT ''"),
+        ("ativo", "INTEGER DEFAULT 1"),
+        ("data", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+    ):
+        if nome_coluna not in colunas_modulos:
+            c.execute(
+                "ALTER TABLE modulos ADD COLUMN IF NOT EXISTS %s %s"
+                % (nome_coluna, definicao)
+            )
 
     # Tabela do progresso de cada modulo de aprendizagem.
     #
@@ -470,22 +539,25 @@ def carregar_conteudos():
 
 
 def carregar_pergaminhos():
-    """Carrega os exemplos de crime ativos, na ordem em que foram gravados.
+    """Sincroniza exemplos novos e carrega os ativos, na ordem gravada.
 
     Devolve dicionarios, e nao tuplas, porque a pagina dos pergaminhos
     usa muitos campos de cada exemplo e a tupla de dez posicoes vira
-    uma lista de indices difficult de ler. A ordem e por id: os
-    pre-colocados vem primeiro, na ordem do arquivo, e o que a
-    coordenacao publica depois entra no fim.
+    uma lista de indices dificil de ler. Exemplos novos do JSON sao
+    inseridos nesta carga; chaves existentes nao sao sobrescritas. A
+    ordem e por id: os pre-colocados vem primeiro, na ordem do arquivo,
+    e o que a coordenacao publica depois entra no fim.
     """
     with conectar() as conn:
         c = conn.cursor()
+        _semear_exemplos_crime(c)
         c.execute(
             "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
             "sinais, protecao, chave, origem, blocos FROM conteudos "
             "WHERE ativo = 1 ORDER BY id ASC"
         )
         linhas = c.fetchall()
+        conn.commit()
 
     chaves = (
         "id", "titulo", "corpo", "autor", "data", "icone", "categoria",
@@ -545,6 +617,241 @@ def inativar_conteudo(conteudo_id):
         c = conn.cursor()
         c.execute("UPDATE conteudos SET ativo = 0 WHERE id = %s", (conteudo_id,))
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Modulos criados pela plataforma
+# ---------------------------------------------------------------------------
+#
+# Os modulos originais continuam em dados/modulos.json. A tabela "modulos"
+# guarda somente os que nascem na pagina "Gerenciar Modulos". As funcoes
+# abaixo sao o CRUD dessa tabela.
+#
+# O quiz e gravado como JSON de uma lista de:
+#   {"enunciado": "...", "alternativas": ["..."], "certa": 0}
+# O indice "certa" aqui e ZERO-based, que e o formato que o resto do app
+# usa internamente. A conversao para o formato do JSON (1-based) acontece
+# so na hora de gravar um modulo que veio do arquivo.
+
+
+def _quiz_do_texto(texto):
+    """Le a coluna "quiz" de volta como lista, tolerando lixo no banco.
+
+    O banco nao precisa derrubar a tela por causa de um quiz corrompido:
+    a pergunta invalida e descartada e as demais continuam valendo.
+    """
+    if not texto:
+        return []
+    try:
+        dados = json.loads(texto)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(dados, list):
+        return []
+
+    prontos = []
+    for questao in dados:
+        if not isinstance(questao, dict):
+            continue
+        enunciado = str(questao.get("enunciado") or "").strip()
+        alternativas = questao.get("alternativas")
+        if not enunciado or not isinstance(alternativas, list) or len(alternativas) < 2:
+            continue
+        alternativas = [str(alternativa) for alternativa in alternativas]
+        certa = questao.get("certa")
+        if (
+            not isinstance(certa, int)
+            or isinstance(certa, bool)
+            or not (0 <= certa < len(alternativas))
+        ):
+            certa = 0
+        prontos.append({
+            "enunciado": enunciado,
+            "alternativas": alternativas,
+            "certa": certa,
+        })
+    return prontos
+
+
+def _quiz_para_texto(quiz):
+    """Serializa a lista de perguntas para a coluna de texto."""
+    return json.dumps(quiz or [], ensure_ascii=False)
+
+
+def listar_modulos_banco():
+    """Devolve os modulos criados na plataforma, do mais antigo ao mais novo.
+
+    O quiz volta como lista, e nao como texto: quem chama (o carregador
+    dos modulos) espera o mesmo formato dos modulos do JSON.
+    """
+    with conectar() as conn:
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as c:
+                c.execute(
+                    "SELECT id, slug, titulo, resumo, icone, nivel, dificuldade, "
+                    "duracao, cor, pdf, quiz, autor, data FROM modulos "
+                    "WHERE ativo = 1 ORDER BY id ASC"
+                )
+                linhas = c.fetchall()
+            # Consulta so de leitura: encerra a transacao para a conexao
+            # voltar limpa ao pool.
+            conn.rollback()
+        except Exception:
+            # Deixa a conexao limpa para voltar ao pool: uma transacao
+            # abortada contaminaria a proxima consulta que a reaproveitar.
+            conn.rollback()
+            raise
+
+    prontos = []
+    for linha in linhas:
+        registro = dict(linha)
+        registro["quiz"] = _quiz_do_texto(registro.get("quiz"))
+        prontos.append(registro)
+    return prontos
+
+
+def salvar_modulo(
+    slug,
+    titulo,
+    resumo,
+    icone,
+    nivel,
+    dificuldade,
+    duracao,
+    cor,
+    pdf,
+    quiz,
+    autor,
+):
+    """Cria um modulo novo. Devolve (id, None) ou (None, motivo).
+
+    O "motivo" e uma chave curta que a tela traduz em portugues:
+    "slug_duplicado" ou o texto do erro inesperado.
+    """
+    with conectar() as conn:
+        c = conn.cursor()
+        try:
+            c.execute(
+                "INSERT INTO modulos (slug, titulo, resumo, icone, nivel, "
+                "dificuldade, duracao, cor, pdf, quiz, autor, ativo) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1) "
+                "RETURNING id",
+                (
+                    slug,
+                    titulo,
+                    resumo,
+                    icone,
+                    nivel,
+                    dificuldade,
+                    duracao,
+                    cor,
+                    pdf,
+                    _quiz_para_texto(quiz),
+                    autor,
+                ),
+            )
+            novo_id = c.fetchone()[0]
+            conn.commit()
+            return novo_id, None
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            return None, "slug_duplicado"
+        except Exception as erro:
+            conn.rollback()
+            logger.exception("Falha ao criar modulo")
+            return None, str(erro)
+
+
+def atualizar_modulo(
+    modulo_id,
+    slug,
+    titulo,
+    resumo,
+    icone,
+    nivel,
+    dificuldade,
+    duracao,
+    cor,
+    pdf,
+    quiz,
+    solicitante,
+    tipo,
+):
+    """Reescreve um modulo do banco respeitando quem criou.
+
+    O Administrador pode editar qualquer modulo. Os demais so podem
+    editar a linha cujo "autor" e o proprio username -- a condicao vai
+    no WHERE, e nao so na tela, para a regra nao depender da interface.
+    """
+    with conectar() as conn:
+        c = conn.cursor()
+        parametros = (
+            slug,
+            titulo,
+            resumo,
+            icone,
+            nivel,
+            dificuldade,
+            duracao,
+            cor,
+            pdf,
+            _quiz_para_texto(quiz),
+        )
+        try:
+            if tipo == "Administrador":
+                c.execute(
+                    "UPDATE modulos SET slug = %s, titulo = %s, resumo = %s, "
+                    "icone = %s, nivel = %s, dificuldade = %s, duracao = %s, "
+                    "cor = %s, pdf = %s, quiz = %s WHERE id = %s",
+                    parametros + (modulo_id,),
+                )
+            else:
+                c.execute(
+                    "UPDATE modulos SET slug = %s, titulo = %s, resumo = %s, "
+                    "icone = %s, nivel = %s, dificuldade = %s, duracao = %s, "
+                    "cor = %s, pdf = %s, quiz = %s "
+                    "WHERE id = %s AND autor = %s",
+                    parametros + (modulo_id, solicitante),
+                )
+            if c.rowcount <= 0:
+                conn.rollback()
+                return False, "sem_permissao"
+            conn.commit()
+            return True, None
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            return False, "slug_duplicado"
+        except Exception as erro:
+            conn.rollback()
+            logger.exception("Falha ao atualizar modulo")
+            return False, str(erro)
+
+
+def excluir_modulo(modulo_id, solicitante, tipo):
+    """Exclui um modulo do banco. Admin pode todos; os demais so os proprios.
+
+    Devolve (ok, motivo), como atualizar_modulo: "sem_permissao" quando a
+    linha nao existe ou nao e do solicitante, ou o texto do erro inesperado.
+    """
+    with conectar() as conn:
+        c = conn.cursor()
+        try:
+            if tipo == "Administrador":
+                c.execute("DELETE FROM modulos WHERE id = %s", (modulo_id,))
+            else:
+                c.execute(
+                    "DELETE FROM modulos WHERE id = %s AND autor = %s",
+                    (modulo_id, solicitante),
+                )
+            if c.rowcount <= 0:
+                conn.rollback()
+                return False, "sem_permissao"
+            conn.commit()
+            return True, None
+        except Exception as erro:
+            conn.rollback()
+            logger.exception("Falha ao excluir modulo")
+            return False, str(erro)
 
 
 def registrar_leitura(username, modulo):

@@ -59,31 +59,43 @@
       ]
     },
     {
-      "slug": "senhas-e-autenticacao",
-      "titulo": "Senhas Fortes e Autenticação",
-      "resumo": "Como criar senhas que aguentam ataque, por que a mesma senha não pode ser repetida e o que é autenticação em duas etapas.",
-      "icone": "🔑",
+      "slug": "os-fundamentos-da-criptografia-e-seguranca-digital",
+      "titulo": "Os Fundamentos da Criptografia e Seguranca Digital",
+      "resumo": "Este módulo oferece um panorama claro e acessível sobre a evolução histórica e técnica da segurança da informação. A partir do caso clássico da Máquina Enigma e da atuação de Alan Turing na Segunda Guerra Mundial, o texto examina as limitações e os desafios de compartilhamento da criptografia simétrica. Em seguida, introduz o conceito de criptografia assimétrica — utilizando a analogia intuitiva do cadeado — e detalha o funcionamento do algoritmo RSA, explicando como números primos e aritmética modular sustentam a segurança dos sistemas digitais modernos.",
+      "icone": "🔐",
       "nivel": "Nível 2",
-      "dificuldade": "Intermediário",
-      "duracao": "~20 min",
+      "dificuldade": "Iniciante",
+      "duracao": "~15 min",
       "cor": "#38bdf8",
-      "pdf": "senhas-e-autenticacao.pdf",
+      "pdf": "criptografia.pdf",
       "quiz": [
         {
-          "enunciado": "Qual das senhas abaixo é a mais segura?",
+          "enunciado": "Qual era a principal função da máquina enigma na segunda guerra mundial?",
           "alternativas": [
-            "ana123456",
-            "Cripto@2026",
-            "Senha#Segura9"
+            "Transportar mensagens físicas.",
+            "Criar códigos de programação.",
+            "Proteger mensagens militares.",
+            "Detectar aviões inimigos."
           ],
           "certa": 3
         },
         {
-          "enunciado": "O que a autenticação em duas etapas (2FA) acrescenta?",
+          "enunciado": "Qual é o principal problema da criptografia simétrica?",
           "alternativas": [
-            "Nada: é apenas uma forma mais bonita de digitar a senha",
-            "Um segundo fator, que continua valendo mesmo se a senha vazar",
-            "Uma cópia do e-mail para não perder a conta"
+            "A chave muda a língua da mensagem.",
+            "A mensagem só pode ter números.",
+            "A chave secreta precisa ser compartilhada com segurança.",
+            "As mensagens não podem ser cifradas."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Para que serve a chave pública, na criptografia assimétrica, quando alguém quer enviar uma mensagem secreta para outra pessoa?",
+          "alternativas": [
+            "Para revelar a chave privada.",
+            "Para cifrar a mensagem destinada a ele.",
+            "Para substituir todas as senhas pessoais.",
+            "Para abrir a mensagem recebida."
           ],
           "certa": 2
         }

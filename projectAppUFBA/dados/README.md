@@ -28,6 +28,14 @@ Há dois arquivos aqui, e os dois seguem a mesma regra:
 O arquivo já vem comentado, com a explicação de cada campo. Os comentários
 são linhas inteiras que começam com `//`.
 
+## Pelo app
+
+Professor e Administrador também podem criar módulos pela página
+**Gerenciar Módulos**. Esses módulos novos ficam no banco (tabela
+`modulos`), não neste arquivo. O JSON continua sendo a origem dos
+módulos originais; o Administrador pode editá-los pela tela, e quem
+criou um módulo novo pode editar e excluir o próprio.
+
 ## O que acontece se o arquivo tiver erro
 
 O app **não quebra**. Ele mostra um aviso expansivo com o que precisa ser
@@ -72,6 +80,8 @@ digitação de uma frase longa.
 Os arquivos do material ficam em `static/modulos/`, e não nesta pasta,
 porque é de lá que o app serve os arquivos ao navegador. O campo `pdf` do
 módulo é só o **nome do arquivo** (o caminho completo também funciona).
+Quando o Professor envia um PDF pela página **Gerenciar Módulos**, o app
+grava o arquivo aqui com o nome do `slug`.
 
 Se o PDF não estiver lá, a página do módulo avisa que o material está em
 preparação — o app continua funcionando.
@@ -91,21 +101,10 @@ responder. Não mova o arquivo para lá.
 página **Exemplos de Crimes Digitais**, cada um como um pergaminho que a
 pessoa abre e fecha.
 
-## O arquivo vem vazio
-
-Hoje `exemplos_crime.json` está com a lista `"exemplos": []` de
-propósito: os exemplos antigos eram **lorem ipsum**, texto de molde sem
-conteúdo real de segurança, e foram removidos.
-
-O material verdadeiro da escola entra pela página **Gerenciar Aulas**,
-que é o caminho normal e não exige abrir nenhum arquivo. O JSON fica
-reservado para o caso de quererem exemplos fixos que já apareçam no
-primeiro boot do app.
-
 ## Como o app usa este arquivo
 
-Na primeira vez que o app roda, os exemplos deste arquivo entram no banco
-como pergaminhos. A partir daí:
+Ao abrir a página **Exemplos de Crimes Digitais**, os exemplos deste arquivo
+que ainda não existem no banco entram como pergaminhos. A partir daí:
 
 - um exemplo cujo `chave` já existe **não é recriado** — o que o
   Professor editou na tela vale mais do que o que está no arquivo, e não
