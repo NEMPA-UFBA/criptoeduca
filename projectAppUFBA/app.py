@@ -194,7 +194,11 @@ else:
     tipo = st.session_state["tipo_usuario"]
 
     # Sincroniza o status de primeiro acesso do banco de dados para o session_state caso seja aluno
-    if "username" in st.session_state and tipo == "Aluno":
+    if (
+        "username" in st.session_state
+        and tipo == "Aluno"
+        and "primeiro_acesso" not in st.session_state
+    ):
         with conectar() as conn:
             c = conn.cursor()
             c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = %s", (st.session_state["username"],))
@@ -223,7 +227,8 @@ else:
     #    aberto. Some quando o primeiro acesso é concluído, porque a
     #    regra só é emitida enquanto a condição vale.
     if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
-        st.session_state["menu"] = "Mural de Criptografia"
+        if st.session_state.get("menu") != "Mural de Criptografia":
+            st.session_state["menu"] = "Mural de Criptografia"
         st.markdown(
             """
             <style>

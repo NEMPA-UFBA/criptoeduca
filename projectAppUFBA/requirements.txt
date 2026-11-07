@@ -20,6 +20,6 @@
 
 streamlit==1.64.0
 bcrypt==5.0.0
-cryptography==50.0.2
 psycopg2-binary==2.9.13
 python-dotenv==1.2.4
+cryptography==50.0.2

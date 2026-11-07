@@ -48,7 +48,10 @@ def render_sessao_interativa(modo_voluntario=False):
     """, unsafe_allow_html=True)
 
     if modo_voluntario:
-        if st.button("⬅️ Voltar para o Menu Principal"):
+        if st.button(
+            "⬅️ Voltar para o Menu Principal",
+            key=f"voltar_mural_menu_{username_atual}",
+        ):
             st.session_state["voltar_para_menu"] = True
             st.rerun()
 
@@ -102,18 +105,26 @@ def render_sessao_interativa(modo_voluntario=False):
         st.session_state["mural_form_versao"] = 0
     versao_form = st.session_state["mural_form_versao"]
 
-    with st.form(f"form_mural_interativo_{versao_form}"):
-        mensagem = st.text_area("Digite sua mensagem secreta para o mural:")
+    chave_form = f"{username_atual}_{versao_form}"
+    with st.form(f"form_mural_interativo_{chave_form}"):
+        mensagem = st.text_area(
+            "Digite sua mensagem secreta para o mural:",
+            key=f"mural_mensagem_{chave_form}",
+        )
         chave = st.text_input(
             "Chave secreta:",
             type="password",
             help="A chave não é armazenada. Sem ela, a mensagem é irrecuperável.",
+            key=f"mural_chave_{chave_form}",
         )
         st.caption(
             "Guarde esta chave: ela não é armazenada e não há como recuperá-la. "
             "Chaves curtas são fáceis de adivinhar; prefira uma frase longa."
         )
-        btn_enviar = st.form_submit_button("Criptografar com AES-128-GCM e Enviar")
+        btn_enviar = st.form_submit_button(
+            "Criptografar com AES-128-GCM e Enviar",
+            key=f"mural_enviar_{chave_form}",
+        )
 
         if btn_enviar:
             if not mensagem.strip():
@@ -156,13 +167,19 @@ def render_sessao_interativa(modo_voluntario=False):
                     </div>
                 """, unsafe_allow_html=True)
 
-                with st.expander("🔓 Decifrar esta mensagem"):
+                with st.expander(
+                    "🔓 Decifrar esta mensagem",
+                    key=f"expander_decifrar_{username_atual}_{msg_id}",
+                ):
                     chave_leitura = st.text_input(
                         "Chave usada pelo autor:",
                         type="password",
-                        key=f"chave_dec_{msg_id}",
+                        key=f"chave_dec_{username_atual}_{msg_id}",
                     )
-                    if st.button("Decifrar", key=f"btn_dec_{msg_id}"):
+                    if st.button(
+                        "Decifrar",
+                        key=f"btn_dec_{username_atual}_{msg_id}",
+                    ):
                         try:
                             texto = decifrar(msg, chave_leitura)
                         except ValueError:
@@ -175,14 +192,22 @@ def render_sessao_interativa(modo_voluntario=False):
             with col_botoes:
                 # O proprio autor pode limpar/excluir a sua mensagem
                 if autor_msg == username_atual:
-                    if st.button("🗑️ Limpar Minha", key=f"limpar_{msg_id}", type="secondary"):
+                    if st.button(
+                        "🗑️ Limpar Minha",
+                        key=f"limpar_{username_atual}_{msg_id}",
+                        type="secondary",
+                    ):
                         inativar_mensagem_mural(msg_id)
                         st.success("Sua mensagem foi removida!")
                         st.rerun()
 
                 # Professores e Admins podem inativar qualquer mensagem do mural
                 if eh_gestor and autor_msg != username_atual:
-                    if st.button("🛡️ Inativar", key=f"gestor_del_{msg_id}", type="secondary"):
+                    if st.button(
+                        "🛡️ Inativar",
+                        key=f"gestor_del_{username_atual}_{msg_id}",
+                        type="secondary",
+                    ):
                         inativar_mensagem_mural(msg_id)
                         st.warning(f"Mensagem {msg_id} inativada pela moderação.")
                         st.rerun()
