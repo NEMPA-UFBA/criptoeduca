@@ -1,6 +1,7 @@
 """Notificação da simulação educativa de anúncio cripto."""
 
 import time
+from urllib.parse import urlparse
 
 import streamlit as st
 
@@ -11,7 +12,9 @@ _CHAVE_NOTIFICACAO_PENDENTE = "_ce_anuncio_notificacao_pendente"
 
 
 def _mostrar_notificacao() -> None:
-    url = "/app/static/simulacao-golpe/simulacao-golpe.html"
+    host = urlparse(st.context.url).hostname
+    prefixo_proxy = "" if host in {"localhost", "127.0.0.1", "::1"} else "/~/+"
+    url = f"{prefixo_proxy}/app/static/simulacao-golpe/simulacao-golpe.html"
     st.toast(
         "**Oportunidade exclusiva!** Multiplique seu dinheiro em 30 dias. "
         f"[Conferir agora →]({url})",
