@@ -98,6 +98,11 @@ def render_pagina_leitura(slug):
     resumo = html.escape(modulo.get("resumo", ""))
     cor = html.escape(modulo.get("cor", "#4F46E5"))
 
+    with st.container(key=f"pagina_leitura_{slug}"):
+        _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor)
+
+
+def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
     st.markdown(
         html_bruto(
             f"""
@@ -128,20 +133,21 @@ def render_pagina_leitura(slug):
         # na mao do aluno, e quem tem o arquivo pode edita-lo e
         # redistribuir -- o material do professor saia da pagina dele.
         #
-        # O PDF vai no proprio HTML como data URI; assim o iframe nao
-        # depende de uma URL local que o navegador da nuvem nao consegue abrir.
+        # O PDF vai no proprio HTML como data URI, sem depender de uma URL local.
         st.markdown(
             html_bruto(
                 f"""
-                <iframe
-                    src="data:application/pdf;base64,{pdf_base64}"
+                <object
+                    data="data:application/pdf;base64,{pdf_base64}"
+                    type="application/pdf"
                     width="100%"
-                    height="820"
+                    height="800px"
                     style="border:1px solid rgba(148, 163, 184, 0.25);
                            border-radius:12px;
                            background:#1e293b;"
-                    title="Material de leitura do módulo">
-                </iframe>
+                    aria-label="Material de leitura do módulo">
+                  Não foi possível exibir o PDF neste navegador.
+                </object>
                 """
             ),
             unsafe_allow_html=True,
@@ -165,7 +171,7 @@ def render_pagina_leitura(slug):
 
     if col1.button(
         "✅ Concluir a leitura e liberar o quiz",
-        key="concluir_leitura",
+        key=f"concluir_leitura_{slug}",
         type="primary",
         width="stretch",
     ):
@@ -173,7 +179,7 @@ def render_pagina_leitura(slug):
 
     if col2.button(
         "← Voltar sem concluir",
-        key="voltar_sem_concluir",
+        key=f"voltar_sem_concluir_{slug}",
         width="stretch",
     ):
         st.session_state.pop(CHAVE_LEITURA, None)

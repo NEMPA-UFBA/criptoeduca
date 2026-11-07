@@ -21,6 +21,8 @@ import os
 import re
 import unicodedata
 
+import streamlit as st
+
 # Pasta base do app. Os caminhos sao resolvidos a partir dela, e nao do
 # diretorio de onde o processo foi iniciado -- o app pode ser subir de
 # outro lugar.
@@ -276,7 +278,8 @@ def _modulos_do_banco(erros):
     """
     try:
         from modules.database import listar_modulos_banco
-        linhas = listar_modulos_banco()
+        username = st.session_state.get("username", "")
+        linhas = listar_modulos_banco(username)
     except Exception as erro:
         erros.append(
             "Não consegui carregar os módulos criados na plataforma: %s" % erro

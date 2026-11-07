@@ -7,7 +7,7 @@ missoes (modules/mainmenu.py). Ela reune, na mesma tela:
   - o material de leitura em PDF, exibido dentro da propria pagina;
   - o quiz do modulo, logo abaixo do material.
 
-O material e exibido num <iframe> com os bytes do PDF embutidos no
+O material e exibido num <object> com os bytes do PDF embutidos no
 HTML como data URI, mais um botao para baixar o arquivo. Nao existe
 widget nativo de PDF no Streamlit -- nao ha st.pdf -- entao o embed
 mantem a leitura dentro da pagina do modulo.
@@ -44,7 +44,7 @@ def bytes_do_pdf(modulo):
 
 # Altura, em pixels, do visor do PDF dentro da pagina.
 #
-# O visor e um <iframe> com o PDF do Streamlit. Nao existe widget nativo de
+# O visor e um <object> com o PDF do Streamlit. Nao existe widget nativo de
 # PDF no Streamlit -- nao ha st.pdf -- entao as duas opcoes sao o embed ou
 # um link para abrir em outra aba. O embed foi escolhido porque a leitura
 # acontece sem sair da pagina do modulo, que e o que o aluno quer.
@@ -72,27 +72,30 @@ def _mostrar_pdf(modulo):
         return
 
     pdf_base64 = base64.b64encode(conteudo).decode("ascii")
-    with st.container(key="modulo_material"):
+    slug = modulo.get("slug", "")
+    with st.container(key=f"modulo_material_{slug}"):
         st.download_button(
             "⬇️ Baixar o material (PDF)",
             data=conteudo,
             file_name=(modulo.get("pdf") or "material.pdf").rsplit("/", 1)[-1],
             mime="application/pdf",
-            key="baixar_material_modulo",
+            key=f"baixar_material_modulo_{slug}",
         )
 
         st.markdown(
             html_bruto(
                 f"""
-                <iframe
-                    src="data:application/pdf;base64,{pdf_base64}"
+                <object
+                    data="data:application/pdf;base64,{pdf_base64}"
+                    type="application/pdf"
                     width="100%"
                     height="{ALTURA_PDF}"
                     style="border:1px solid rgba(148, 163, 184, 0.25);
                            border-radius:12px;
                            background:#1e293b;"
-                    title="Material de leitura do módulo">
-                </iframe>
+                    aria-label="Material de leitura do módulo">
+                    Não foi possível exibir o PDF neste navegador.
+                </object>
                 """
             ),
             unsafe_allow_html=True,
@@ -112,9 +115,17 @@ def render_pagina_modulo(slug):
         st.rerun()
         return
 
+    with st.container(key=f"pagina_modulo_{slug}"):
+        _render_conteudo_modulo(modulo, slug)
+
+
+def _render_conteudo_modulo(modulo, slug):
     # Voltar para o mapa. O botao fica antes do cabecalho porque e a acao
     # de onde a pessoa veio.
-    if st.button("⬅️ Voltar ao mapa de missões", key="voltar_mapa_modulos"):
+    if st.button(
+        "⬅️ Voltar ao mapa de missões",
+        key=f"voltar_mapa_modulos_{slug}",
+    ):
         st.session_state.pop("modulo_selecionado", None)
         st.rerun()
 

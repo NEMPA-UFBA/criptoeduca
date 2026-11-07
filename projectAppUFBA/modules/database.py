@@ -679,11 +679,13 @@ def _quiz_para_texto(quiz):
 
 
 @st.cache_data(ttl=30, show_spinner=False)
-def listar_modulos_banco():
+def listar_modulos_banco(username):
     """Devolve os modulos criados na plataforma, do mais antigo ao mais novo.
 
     O quiz volta como lista, e nao como texto: quem chama (o carregador
     dos modulos) espera o mesmo formato dos modulos do JSON.
+    O username particiona o cache por sessao; o catalogo em si continua
+    compartilhado entre os usuarios.
     O cache e invalidado por salvar_modulo, atualizar_modulo e excluir_modulo.
     """
     with conectar() as conn:
