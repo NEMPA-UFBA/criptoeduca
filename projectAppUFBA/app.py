@@ -297,105 +297,110 @@ else:
         render_sessao_interativa(modo_voluntario=False)
         st.stop()
 
-    # Conteudo condicional.
-    # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
-    # tres do Aluno, entao Professor e Administrador escolhiam uma pagina e
-    # nao recebiam nada, nem o titulo.
-    if pagina == "Painel da Coordenação":
-        st.title("🛡️ Painel da Coordenação")
-        st.write("Visão geral da plataforma e credenciamento de professores.")
+    # Todas as paginas ocupam o mesmo placeholder. Ao trocar de menu, ele
+    # substitui o conteudo anterior antes que a nova pagina faca suas cargas.
+    pagina_conteudo = st.empty()
+    pagina_conteudo.empty()
+    with pagina_conteudo.container():
+        # Conteudo condicional.
+        # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
+        # tres do Aluno, entao Professor e Administrador escolhiam uma pagina e
+        # nao recebiam nada, nem o titulo.
+        if pagina == "Painel da Coordenação":
+            st.title("🛡️ Painel da Coordenação")
+            st.write("Visão geral da plataforma e credenciamento de professores.")
 
-        # Gera a mesma chave do dia usando a função do login.py
-        st.subheader("🔑 Chave de Acesso para Novos Professores")
-        st.info("Passe este código para os professores que forem se cadastrar hoje:")
-        # Exibe em um bloco clicável para fácil cópia
-        st.code(obter_chave_professor_diaria(), language="text")
-        st.caption("Esta chave expira automaticamente às 23:59:59 de hoje.")
+            # Gera a mesma chave do dia usando a função do login.py
+            st.subheader("🔑 Chave de Acesso para Novos Professores")
+            st.info("Passe este código para os professores que forem se cadastrar hoje:")
+            # Exibe em um bloco clicável para fácil cópia
+            st.code(obter_chave_professor_diaria(), language="text")
+            st.caption("Esta chave expira automaticamente às 23:59:59 de hoje.")
 
-        # Aviso de configuração. Fica aqui e não em st.secrets porque quem
-        # precisa saber é a coordenação, e é a coordenação quem usa o painel —
-        # não quem programa o sistema. Fora do alcance dessa pessoa, o aviso é
-        # ruído.
-        if not segredo_da_chave_configurado():
-            st.warning(
-                "Esta chave está sendo derivada do segredo padrão que vem no "
-                "código-fonte. Ela tem 12 caracteres e é muito difícil de adivinhar, "
-                "mas qualquer pessoa com uma cópia do repositório consegue calcular "
-                "a chave do dia. Para fechar isso, crie "
-                "`.streamlit/secrets.toml` com `CHAVE_SEGREDO = \"...\"` "
-                "(esse caminho já está no .gitignore) e reinicie o app. "
-                "Esta mensagem some sozinha quando o segredo estiver configurado.",
-                icon="⚠️",
-            )
+            # Aviso de configuração. Fica aqui e não em st.secrets porque quem
+            # precisa saber é a coordenação, e é a coordenação quem usa o painel —
+            # não quem programa o sistema. Fora do alcance dessa pessoa, o aviso é
+            # ruído.
+            if not segredo_da_chave_configurado():
+                st.warning(
+                    "Esta chave está sendo derivada do segredo padrão que vem no "
+                    "código-fonte. Ela tem 12 caracteres e é muito difícil de adivinhar, "
+                    "mas qualquer pessoa com uma cópia do repositório consegue calcular "
+                    "a chave do dia. Para fechar isso, crie "
+                    "`.streamlit/secrets.toml` com `CHAVE_SEGREDO = \"...\"` "
+                    "(esse caminho já está no .gitignore) e reinicie o app. "
+                    "Esta mensagem some sozinha quando o segredo estiver configurado.",
+                    icon="⚠️",
+                )
 
-    elif pagina == "Painel Geral":
-        st.title("📋 Painel Geral")
-        st.write("Aulas, quizzes e materiais do professor.")
+        elif pagina == "Painel Geral":
+            st.title("📋 Painel Geral")
+            st.write("Aulas, quizzes e materiais do professor.")
 
-    elif pagina == "Turma":
-        # Pagina reservada para o professor. Por enquanto e so o lugar:
-        # a lista de alunos e o acompanhamento da turma entram depois.
-        if tipo != "Professor":
-            st.error("Página exclusiva do professor.")
-        else:
-            st.title("👥 Turma")
-            st.caption("Página da turma do professor.")
+        elif pagina == "Turma":
+            # Pagina reservada para o professor. Por enquanto e so o lugar:
+            # a lista de alunos e o acompanhamento da turma entram depois.
+            if tipo != "Professor":
+                st.error("Página exclusiva do professor.")
+            else:
+                st.title("👥 Turma")
+                st.caption("Página da turma do professor.")
 
-    elif pagina == "Gerenciar Aulas":
-        # A publicacao da coordenacao virou a publicacao dos exemplos de
-        # crime: e o que o Professor e o Administrador escrevem aqui que
-        # vira pergaminho na pagina do aluno. O nome do item do menu
-        # continua "Gerenciar Aulas" porque e ele que o pessoal ja
-        # conhece.
-        render_gerenciar_crime()
+        elif pagina == "Gerenciar Aulas":
+            # A publicacao da coordenacao virou a publicacao dos exemplos de
+            # crime: e o que o Professor e o Administrador escrevem aqui que
+            # vira pergaminho na pagina do aluno. O nome do item do menu
+            # continua "Gerenciar Aulas" porque e ele que o pessoal ja
+            # conhece.
+            render_gerenciar_crime()
 
-    elif pagina == "Gerenciar Módulos":
-        # Modulos criados aqui vao para o banco; os originais continuam
-        # em dados/modulos.json. A pagina aplica a hierarquia de autoria.
-        render_gerenciar_modulos()
+        elif pagina == "Gerenciar Módulos":
+            # Modulos criados aqui vao para o banco; os originais continuam
+            # em dados/modulos.json. A pagina aplica a hierarquia de autoria.
+            render_gerenciar_modulos()
 
-    elif pagina == "Notas dos Alunos":
-        st.title("🧮 Notas dos Alunos")
-        st.write("Lançamento e consulta de notas.")
+        elif pagina == "Notas dos Alunos":
+            st.title("🧮 Notas dos Alunos")
+            st.write("Lançamento e consulta de notas.")
 
-    elif pagina == "Painel Principal":
-        st.title(f"Bem-vindo(a) de volta, {st.session_state['nome_usuario']}! 👋")
-        st.write("Aqui fica o painel da plataforma de estudos.")
+        elif pagina == "Painel Principal":
+            st.title(f"Bem-vindo(a) de volta, {st.session_state['nome_usuario']}! 👋")
+            st.write("Aqui fica o painel da plataforma de estudos.")
 
-    elif pagina == "Módulos de Aprendizado":
-        # A home dos módulos é o mapa de missões (modules/mainmenu.py).
-        # A página do módulo individual é a mesma rota, só que com um módulo
-        # escolhido: o slug fica na sessão e a página volta para o mapa
-        # quando o slug some.
-        slug_modulo = st.session_state.get("modulo_selecionado")
+        elif pagina == "Módulos de Aprendizado":
+            # A home dos módulos é o mapa de missões (modules/mainmenu.py).
+            # A página do módulo individual é a mesma rota, só que com um módulo
+            # escolhido: o slug fica na sessão e a página volta para o mapa
+            # quando o slug some.
+            slug_modulo = st.session_state.get("modulo_selecionado")
 
-        # A PAGINA DE LEITURA tem prioridade sobre a pagina do modulo.
-        # E a mesma rota com outro estado: enquanto o aluno esta lendo,
-        # o app desenha a leitura; quando ele conclui, a leitura some
-        # da sessao e a pagina do modulo volta, com o quiz liberado.
-        #
-        # Fica dentro do app, e nao em uma pagina solta na pasta static,
-        # porque a sessao do Streamlit morre quando o navegador sai do
-        # app e volta: o aluno voltaria deslogado. Medido no navegador.
-        slug_leitura = st.session_state.get(CHAVE_LEITURA)
-        if slug_leitura:
-            render_pagina_leitura(slug_leitura)
-        elif slug_modulo:
-            render_pagina_modulo(slug_modulo)
-        else:
-            render_modulos()
+            # A PAGINA DE LEITURA tem prioridade sobre a pagina do modulo.
+            # E a mesma rota com outro estado: enquanto o aluno esta lendo,
+            # o app desenha a leitura; quando ele conclui, a leitura some
+            # da sessao e a pagina do modulo volta, com o quiz liberado.
+            #
+            # Fica dentro do app, e nao em uma pagina solta na pasta static,
+            # porque a sessao do Streamlit morre quando o navegador sai do
+            # app e volta: o aluno voltaria deslogado. Medido no navegador.
+            slug_leitura = st.session_state.get(CHAVE_LEITURA)
+            if slug_leitura:
+                render_pagina_leitura(slug_leitura)
+            elif slug_modulo:
+                render_pagina_modulo(slug_modulo)
+            else:
+                render_modulos()
 
-    elif pagina == "Mural de Criptografia":
-        # O título desta página fica no próprio módulo do mural. Antes o app
-        # desenhava um "Sessão do Mural" aqui e o módulo desenhava o dele logo
-        # em seguida, então apareciam dois títulos seguidos.
-        render_sessao_interativa(modo_voluntario=True)
+        elif pagina == "Mural de Criptografia":
+            # O título desta página fica no próprio módulo do mural. Antes o app
+            # desenhava um "Sessão do Mural" aqui e o módulo desenhava o dele logo
+            # em seguida, então apareciam dois títulos seguidos.
+            render_sessao_interativa(modo_voluntario=True)
 
-    elif pagina == "Exemplos de Crimes Digitais":
-        # A pagina dos pergaminhos. Substitui a antiga "Conteúdos": o que a
-        # coordenação publica em "Gerenciar Aulas" aparece aqui, dentro de um
-        # pergaminho, em vez de uma lista de avisos.
-        render_pergaminhos()
+        elif pagina == "Exemplos de Crimes Digitais":
+            # A pagina dos pergaminhos. Substitui a antiga "Conteúdos": o que a
+            # coordenação publica em "Gerenciar Aulas" aparece aqui, dentro de um
+            # pergaminho, em vez de uma lista de avisos.
+            render_pergaminhos()
 
-    elif pagina == "Meu Progresso":
-        render_progresso_aluno()
+        elif pagina == "Meu Progresso":
+            render_progresso_aluno()

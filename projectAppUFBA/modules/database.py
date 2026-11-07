@@ -522,6 +522,7 @@ def salvar_conteudo(
             (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
         )
         conn.commit()
+    carregar_pergaminhos.clear()
 
 
 def carregar_conteudos():
@@ -538,7 +539,8 @@ def carregar_conteudos():
     return dados
 
 
-def carregar_pergaminhos():
+@st.cache_data(ttl=30, show_spinner=False)
+def carregar_pergaminhos(username):
     """Sincroniza exemplos novos e carrega os ativos, na ordem gravada.
 
     Devolve dicionarios, e nao tuplas, porque a pagina dos pergaminhos
@@ -546,7 +548,8 @@ def carregar_pergaminhos():
     uma lista de indices dificil de ler. Exemplos novos do JSON sao
     inseridos nesta carga; chaves existentes nao sao sobrescritas. A
     ordem e por id: os pre-colocados vem primeiro, na ordem do arquivo,
-    e o que a coordenacao publica depois entra no fim.
+    e o que a coordenacao publica depois entra no fim. O username separa
+    as chaves de cache por sessao; o conteudo continua publico e compartilhado.
     """
     with conectar() as conn:
         c = conn.cursor()
@@ -609,6 +612,7 @@ def atualizar_conteudo(
             ),
         )
         conn.commit()
+    carregar_pergaminhos.clear()
 
 
 def inativar_conteudo(conteudo_id):
@@ -617,6 +621,7 @@ def inativar_conteudo(conteudo_id):
         c = conn.cursor()
         c.execute("UPDATE conteudos SET ativo = 0 WHERE id = %s", (conteudo_id,))
         conn.commit()
+    carregar_pergaminhos.clear()
 
 
 # ---------------------------------------------------------------------------

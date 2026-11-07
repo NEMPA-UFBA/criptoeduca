@@ -42,7 +42,7 @@ from modules.database import (
     atualizar_conteudo,
     inativar_conteudo,
 )
-from modules.estilo import html_bruto
+from modules.estilo import aplicar_estilo, html_bruto
 from modules.exemplos_crime import (
     ROTULO_TIPO,
     TIPOS_BLOCO,
@@ -605,8 +605,21 @@ def _miolo_html(pergaminho):
     )
 
 
+def _alternar_pergaminho(pid):
+    """Abre o pergaminho escolhido ou fecha o que ja estava aberto."""
+    atual = st.session_state.get(CHAVE_ABERTO)
+    st.session_state[CHAVE_ABERTO] = None if atual == pid else pid
+
+
 def render_pergaminhos():
-    """Desenha a pagina de exemplos de crimes digitais (o pergaminhos)."""
+    """Desenha a pagina de exemplos de crimes digitais."""
+    with st.container(key="pagina_crimes_digitais"):
+        _render_pagina_pergaminhos()
+
+
+def _render_pagina_pergaminhos():
+    """Desenha o conteudo da pagina do aluno dentro do contêiner identificado."""
+    aplicar_estilo()
     st.markdown(CSS_PERGAMINHOS, unsafe_allow_html=True)
 
     st.markdown(
@@ -619,7 +632,9 @@ def render_pergaminhos():
         unsafe_allow_html=True,
     )
 
-    pergaminhos = carregar_pergaminhos()
+    username = st.session_state.get("username", "")
+    with st.spinner("Carregando exemplos..."):
+        pergaminhos = carregar_pergaminhos(username)
 
     if not pergaminhos:
         st.info(
@@ -649,17 +664,13 @@ def render_pergaminhos():
         else:
             chave_widget = f"pergaminho_{pid}"
 
-        if st.button(
+        st.button(
             f"{icone}  {titulo}",
             key=chave_widget,
             width="stretch",
-        ):
-            if esta_aberto:
-                # Clicar no que ja estava aberto fecha.
-                st.session_state[CHAVE_ABERTO] = None
-            else:
-                st.session_state[CHAVE_ABERTO] = pid
-            st.rerun()
+            on_click=_alternar_pergaminho,
+            args=(pid,),
+        )
 
         if esta_aberto:
             st.markdown(_miolo_html(pergaminho), unsafe_allow_html=True)
@@ -1066,7 +1077,8 @@ def render_gerenciar_crime():
     st.divider()
     st.subheader("Exemplos já publicados")
 
-    pergaminhos = carregar_pergaminhos()
+    username = st.session_state.get("username", "")
+    pergaminhos = carregar_pergaminhos(username)
     if not pergaminhos:
         st.info("Nenhum exemplo publicado ainda.")
         return

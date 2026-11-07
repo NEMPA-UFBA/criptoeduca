@@ -1,7 +1,6 @@
 """Notificação da simulação educativa de anúncio cripto."""
 
 import time
-from urllib.parse import quote
 
 import streamlit as st
 
@@ -12,8 +11,7 @@ _CHAVE_NOTIFICACAO_PENDENTE = "_ce_anuncio_notificacao_pendente"
 
 
 def _mostrar_notificacao() -> None:
-    caminho = quote("simulaçao-golpe/simulacao-golpe.html")
-    url = f"/app/static/{caminho}"
+    url = "/app/static/simulacao-golpe/simulacao-golpe.html"
     st.toast(
         "**Oportunidade exclusiva!** Multiplique seu dinheiro em 30 dias. "
         f"[Conferir agora →]({url})",
