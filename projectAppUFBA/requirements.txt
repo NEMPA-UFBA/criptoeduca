@@ -1,10 +1,10 @@
 # Dependências do EduStream.
 #
-# Cinco, e as cinco são de verdade: Streamlit (interface), bcrypt (senhas),
-# cryptography (AES-128-GCM do mural), psycopg2-binary (driver PostgreSQL) e
-# python-dotenv (carrega o .env local). Todo o resto do projeto (hmac, hashlib,
-# ipaddress, re, threading, time, datetime, collections) é da biblioteca
-# padrão do Python.
+# Seis dependências usadas diretamente: Streamlit (interface),
+# streamlit-pdf-viewer (visualização de PDFs), bcrypt (senhas), cryptography
+# (AES-128-GCM do mural), psycopg2-binary (driver PostgreSQL) e python-dotenv
+# (carrega o .env local). Todo o resto do projeto (hmac, hashlib, ipaddress,
+# re, threading, time, datetime, collections) é da biblioteca padrão do Python.
 #
 # Versões fixadas, não ">=", porque este arquivo existe para resolver um
 # problema prático: o app só rodava na máquina onde foi testado, porque nada
@@ -23,3 +23,4 @@ bcrypt==5.0.0
 psycopg2-binary==2.9.13
 python-dotenv==1.2.4
 cryptography==50.0.2
+streamlit-pdf-viewer==0.0.30

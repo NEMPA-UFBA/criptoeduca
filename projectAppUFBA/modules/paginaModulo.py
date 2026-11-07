@@ -7,16 +7,14 @@ missoes (modules/mainmenu.py). Ela reune, na mesma tela:
   - o material de leitura em PDF, exibido dentro da propria pagina;
   - o quiz do modulo, logo abaixo do material.
 
-O material e exibido num <object> com os bytes do PDF embutidos no
-HTML como data URI, mais um botao para baixar o arquivo. Nao existe
-widget nativo de PDF no Streamlit -- nao ha st.pdf -- entao o embed
-mantem a leitura dentro da pagina do modulo.
+O material e exibido pelo componente streamlit-pdf-viewer a partir do
+caminho absoluto do PDF, mais um botao para baixar o arquivo.
 """
 
-import base64
 import html
 
 import streamlit as st
+from streamlit_pdf_viewer import pdf_viewer
 
 from modules.estilo import aplicar_estilo, html_bruto
 from modules.modulos import modulo_por_slug, pdf_disponivel, caminho_pdf
@@ -24,31 +22,19 @@ from modules.leitura import abrir_leitura, quiz_liberado
 from modules.quiz import render_quiz
 
 
-def bytes_do_pdf(modulo):
-    """Le o arquivo do PDF do módulo e devolve os bytes.
+def bytes_do_pdf(caminho_absoluto):
+    """Le o arquivo do PDF e devolve os bytes para o botao de download.
 
-    Devolve None quando o arquivo não está na pasta: quem chama já
-    checou com pdf_disponivel, mas a checagem é feita duas vezes porque
-    entre uma e outra o arquivo pode sumir. Um None aqui vira um erro
-    claro na tela, e não um traceback.
+    Devolve None quando o arquivo não pode ser lido, para a tela mostrar
+    uma mensagem clara em vez de um traceback.
     """
-    caminho = caminho_pdf(modulo)
-    if not caminho:
+    if not caminho_absoluto:
         return None
     try:
-        with open(caminho, "rb") as arquivo:
+        with open(caminho_absoluto, "rb") as arquivo:
             return arquivo.read()
     except OSError:
         return None
-
-
-# Altura, em pixels, do visor do PDF dentro da pagina.
-#
-# O visor e um <object> com o PDF do Streamlit. Nao existe widget nativo de
-# PDF no Streamlit -- nao ha st.pdf -- entao as duas opcoes sao o embed ou
-# um link para abrir em outra aba. O embed foi escolhido porque a leitura
-# acontece sem sair da pagina do modulo, que e o que o aluno quer.
-ALTURA_PDF = 820
 
 
 def _mostrar_pdf(modulo):
@@ -62,7 +48,8 @@ def _mostrar_pdf(modulo):
     leitura (modules/leitura.py). Aqui ela continua caso o material
     precise ser mostrado em outro lugar.
     """
-    conteudo = bytes_do_pdf(modulo)
+    caminho_absoluto = caminho_pdf(modulo)
+    conteudo = bytes_do_pdf(caminho_absoluto)
 
     if conteudo is None:
         st.error(
@@ -71,7 +58,6 @@ def _mostrar_pdf(modulo):
         )
         return
 
-    pdf_base64 = base64.b64encode(conteudo).decode("ascii")
     slug = modulo.get("slug", "")
     with st.container(key=f"modulo_material_{slug}"):
         st.download_button(
@@ -82,24 +68,7 @@ def _mostrar_pdf(modulo):
             key=f"baixar_material_modulo_{slug}",
         )
 
-        st.markdown(
-            html_bruto(
-                f"""
-                <object
-                    data="data:application/pdf;base64,{pdf_base64}"
-                    type="application/pdf"
-                    width="100%"
-                    height="{ALTURA_PDF}"
-                    style="border:1px solid rgba(148, 163, 184, 0.25);
-                           border-radius:12px;
-                           background:#1e293b;"
-                    aria-label="Material de leitura do módulo">
-                    Não foi possível exibir o PDF neste navegador.
-                </object>
-                """
-            ),
-            unsafe_allow_html=True,
-        )
+        pdf_viewer(caminho_absoluto, width=700, height=800)
 
 
 def render_pagina_modulo(slug):

@@ -25,11 +25,11 @@ registro do que foi lido fica no banco (tabela "leituras"), por aluno e
 por modulo, entao a liberacao do quiz sobrevive a fechar o navegador.
 """
 
-import base64
 import html
 import os
 
 import streamlit as st
+from streamlit_pdf_viewer import pdf_viewer
 
 from modules.database import (
     registrar_leitura,
@@ -43,17 +43,8 @@ from modules.modulos import PASTA_PDFS, modulo_por_slug, caminho_pdf
 CHAVE_LEITURA = "leitura_em_curso"
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def _ler_pdf_base64(caminho_absoluto, mtime_ns, tamanho):
-    stat = os.stat(caminho_absoluto)
-    if stat.st_mtime_ns != mtime_ns or stat.st_size != tamanho:
-        raise OSError("O PDF mudou durante a leitura. Recarregue a página.")
-    with open(caminho_absoluto, "rb") as arquivo:
-        return base64.b64encode(arquivo.read()).decode("ascii")
-
-
-def _pdf_em_base64(modulo):
-    """Le e codifica o PDF local para embuti-lo diretamente no iframe."""
+def _caminho_pdf_seguro(modulo):
+    """Devolve o caminho absoluto do PDF, limitado à pasta de materiais."""
     caminho = caminho_pdf(modulo)
     if caminho is None:
         return None, None
@@ -67,14 +58,12 @@ def _pdf_em_base64(modulo):
         return None, "O caminho do PDF está fora da pasta de materiais."
 
     try:
-        stat = os.stat(caminho_absoluto)
-        pdf_base64 = _ler_pdf_base64(
-            caminho_absoluto, stat.st_mtime_ns, stat.st_size
-        )
+        if not os.path.isfile(caminho_absoluto):
+            return None, "O arquivo PDF não foi encontrado na pasta de materiais."
     except OSError as erro:
         return None, "Não consegui ler o PDF: %s" % erro
 
-    return pdf_base64, None
+    return caminho_absoluto, None
 
 
 def render_pagina_leitura(slug):
@@ -124,34 +113,15 @@ def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
     )
 
     # ---------- O material ----------
-    pdf_base64, erro_pdf = _pdf_em_base64(modulo)
+    caminho_absoluto, erro_pdf = _caminho_pdf_seguro(modulo)
 
     if erro_pdf:
         st.error(erro_pdf)
-    elif pdf_base64 is not None:
+    elif caminho_absoluto is not None:
         # Sem botao de baixar. O botao entregava o arquivo do professor
         # na mao do aluno, e quem tem o arquivo pode edita-lo e
         # redistribuir -- o material do professor saia da pagina dele.
-        #
-        # O PDF vai no proprio HTML como data URI, sem depender de uma URL local.
-        st.markdown(
-            html_bruto(
-                f"""
-                <object
-                    data="data:application/pdf;base64,{pdf_base64}"
-                    type="application/pdf"
-                    width="100%"
-                    height="800px"
-                    style="border:1px solid rgba(148, 163, 184, 0.25);
-                           border-radius:12px;
-                           background:#1e293b;"
-                    aria-label="Material de leitura do módulo">
-                  Não foi possível exibir o PDF neste navegador.
-                </object>
-                """
-            ),
-            unsafe_allow_html=True,
-        )
+        pdf_viewer(caminho_absoluto, width=700, height=800)
     else:
         st.info(
             "Este módulo ainda não tem material em PDF na pasta "
