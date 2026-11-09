@@ -20,6 +20,7 @@ from modules.database import (
     salvar_modulo,
 )
 from modules.estilo import aplicar_estilo, html_bruto
+from modules.mainmenu import _card_html
 from modules.modulos import (
     PASTA_PDFS,
     RE_SLUG,
@@ -31,10 +32,81 @@ from modules.modulos import (
 
 MAX_PERGUNTAS = 20
 
+# Limite do material em PDF. O st.file_uploader barra o arquivo grande no
+# navegador (max_upload_size), e _salvar_pdf confere de novo no servidor:
+# a checagem do widget e do cliente, e nao deve ser a unica barreira.
+MAX_PDF_MB = 20
+
+# Chave da sessao que diz se o formulario de criacao esta aberto. Fica em
+# uma chave propria porque o "expanded" do st.expander nao e um widget: ele
+# nao guarda estado entre execucoes, e clicar no cabecalho do expander nao
+# reroda o script. Quem abre e fecha e o botao, para o formulario nao
+# recolher sozinho no meio da digitacao.
+CHAVE_FORM_NOVO = "form_novo_modulo_aberto"
+
+# CSS proprio da pagina, no mesmo padrao do CSS_PERGAMINHOS (cada pagina
+# guarda o que e so dela; modules/estilo.py fica com a identidade comum).
+CSS_GERENCIAR_MODULOS = """
+<style>
+/* Rotulo de secao do formulario. O prefixo .stMarkdown p e obrigatorio:
+   o Streamlit escreve ".stMarkdown p { font-size: ... }" (0,1,1), que
+   ganha de um ".ce-secao" sozinho (0,1,0) -- a mesma armadilha explicada
+   em modules/estilo.py. */
+.stMarkdown p.ce-secao {
+    color: #7dd3fc;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 0.2rem 0 0.9rem 0;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.28);
+}
+/* A previa usa o card verdadeiro (.ce-card) para o professor ver
+   exatamente o que vai aparecer no mapa. O card real tem min-height de
+   380px, pensado para a fileira de cards; na previa isso viraria um
+   bloco enorme e vazio. */
+.ce-previa .ce-card {
+    min-height: auto;
+}
+.ce-previa {
+    border: 1px dashed rgba(148, 163, 184, 0.28);
+    border-radius: 14px;
+    padding: 0.9rem;
+    background: rgba(15, 23, 42, 0.35);
+}
+.stMarkdown p.ce-previa-titulo {
+    color: #94a3b8;
+    font-size: 0.78rem;
+    margin: 0 0 0.6rem 0;
+}
+@media (max-width: 640px) {
+    .stMarkdown p.ce-secao {
+        font-size: 0.68rem;
+    }
+    .ce-previa {
+        padding: 0.65rem;
+    }
+}
+</style>
+"""
+
 
 def _html(trecho):
     """Atalho para html_bruto (ver a explicacao em modules/estilo.py)."""
     return html_bruto(trecho)
+
+
+def _secao(titulo):
+    """Desenha um rotulo de secao do formulario.
+
+    O titulo e sempre literal do codigo (nunca digitado pelo usuario),
+    por isso nao precisa de html.escape.
+    """
+    st.markdown(
+        _html('<p class="ce-secao">%s</p>' % titulo),
+        unsafe_allow_html=True,
+    )
 
 
 def _tipo():
@@ -112,7 +184,6 @@ def _iniciar(prefixo, modulo=None):
 
 def _editor_quiz(prefixo):
     """Editor simples: uma caixa por pergunta, alternativas em linhas."""
-    st.markdown("**Quiz do módulo**")
     st.caption("Deixe 0 perguntas para criar um módulo sem quiz.")
 
     quantidade = int(st.number_input(
@@ -125,7 +196,16 @@ def _editor_quiz(prefixo):
 
     for indice in range(quantidade):
         with st.container(border=True):
-            st.caption("Pergunta %d" % (indice + 1))
+            # O numero da pergunta usa o mesmo selo dos cards do mapa
+            # (.ce-badge), em vez de um caption solto: fica claro onde
+            # uma pergunta comeca e a outra termina.
+            st.markdown(
+                _html(
+                    '<span class="ce-badge">Pergunta %d</span>'
+                    % (indice + 1)
+                ),
+                unsafe_allow_html=True,
+            )
             st.text_input(
                 "Enunciado",
                 key=_k(prefixo, "q_enunciado_%d" % indice),
@@ -276,6 +356,13 @@ def _salvar_pdf(upload, slug, pdf_atual):
     if upload is None:
         return pdf_atual, None
 
+    tamanho = len(upload.getbuffer())
+    if tamanho > MAX_PDF_MB * 1024 * 1024:
+        return pdf_atual, (
+            "O PDF passa do limite de %d MB. Envie um arquivo menor."
+            % MAX_PDF_MB
+        )
+
     nome = "%s.pdf" % slug
     caminho = os.path.join(PASTA_PDFS, nome)
     try:
@@ -306,8 +393,48 @@ def _atualizar_banco(modulo_id, dados, pdf):
     )
 
 
+def _previa_card(prefixo):
+    """Mostra o card do mapa com os valores que estao no formulario.
+
+    O desenho vem do proprio modules/mainmenu.py (_card_html), e nao de
+    uma copia: assim a previa nunca diverge do card que o aluno ve. O
+    _card_html ja passa tudo por html.escape.
+    """
+    def valor(nome, padrao):
+        return (
+            str(st.session_state.get(_k(prefixo, nome), "")).strip() or padrao
+        )
+
+    modulo = {
+        "titulo": valor("titulo", "Título do módulo"),
+        "resumo": valor("resumo", "Resumo do módulo."),
+        "icone": valor("icone", "📘"),
+        "nivel": valor("nivel", "Nível"),
+        "dificuldade": valor("dificuldade", "Dificuldade"),
+        "duracao": valor("duracao", "Duração"),
+        "cor": valor("cor", "#4F46E5"),
+    }
+
+    st.markdown(
+        _html(
+            '<div class="ce-previa">'
+            '<p class="ce-previa-titulo">Prévia do card no mapa</p>'
+            + _card_html(modulo, False)
+            + '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def _campos_modulo(prefixo, modulo=None):
-    """Desenha os campos comuns a criacao e a edicao. Devolve o upload."""
+    """Desenha os campos comuns a criacao e a edicao. Devolve o upload.
+
+    Os campos ficam agrupados em quatro secoes. A previa do card le os
+    widgets ja desenhados (st.session_state), por isso ela vem depois
+    deles: assim mostra o titulo/cor/icone que estao na tela naquele
+    momento, sem precisar de um botao de "atualizar".
+    """
+    _secao("Identificação")
     st.text_input("Título", key=_k(prefixo, "titulo"))
     st.text_input(
         "Slug (identificador)",
@@ -317,19 +444,35 @@ def _campos_modulo(prefixo, modulo=None):
             "Deixe em branco para gerar a partir do título."
         ),
     )
+    slug_digitado = str(
+        st.session_state.get(_k(prefixo, "slug"), "")
+    ).strip()
+    if not slug_digitado:
+        titulo_digitado = str(
+            st.session_state.get(_k(prefixo, "titulo"), "")
+        ).strip()
+        slug_gerado = gerar_slug(titulo_digitado)
+        if slug_gerado:
+            st.caption("Sem slug: vai virar `%s`." % slug_gerado)
     st.text_area("Resumo", key=_k(prefixo, "resumo"), height=90)
 
-    coluna_icone, coluna_cor = st.columns(2)
-    coluna_icone.text_input("Ícone (um emoji)", key=_k(prefixo, "icone"))
-    coluna_cor.color_picker("Cor do card", key=_k(prefixo, "cor"))
+    _secao("Aparência no mapa")
+    coluna_campos, coluna_previa = st.columns([3, 2], gap="large")
+    with coluna_campos:
+        coluna_icone, coluna_cor = st.columns(2)
+        coluna_icone.text_input("Ícone (um emoji)", key=_k(prefixo, "icone"))
+        coluna_cor.color_picker("Cor do card", key=_k(prefixo, "cor"))
 
-    coluna_nivel, coluna_dificuldade, coluna_duracao = st.columns(3)
-    coluna_nivel.text_input("Nível", key=_k(prefixo, "nivel"))
-    coluna_dificuldade.text_input(
-        "Dificuldade", key=_k(prefixo, "dificuldade")
-    )
-    coluna_duracao.text_input("Duração", key=_k(prefixo, "duracao"))
+        coluna_nivel, coluna_dificuldade, coluna_duracao = st.columns(3)
+        coluna_nivel.text_input("Nível", key=_k(prefixo, "nivel"))
+        coluna_dificuldade.text_input(
+            "Dificuldade", key=_k(prefixo, "dificuldade")
+        )
+        coluna_duracao.text_input("Duração", key=_k(prefixo, "duracao"))
+    with coluna_previa:
+        _previa_card(prefixo)
 
+    _secao("Material")
     pdf_atual = (modulo or {}).get("pdf", "")
     if pdf_atual:
         st.caption("PDF atual: `%s`" % pdf_atual)
@@ -338,18 +481,37 @@ def _campos_modulo(prefixo, modulo=None):
         "Material em PDF",
         type=["pdf"],
         key=_k(prefixo, "pdf"),
+        max_upload_size=MAX_PDF_MB,
         help=(
-            "O arquivo é gravado em static/modulos/ com o nome do slug. "
-            "Sem upload, o PDF atual é mantido."
+            "O arquivo é gravado em static/modulos/ com o nome do slug, "
+            "até %d MB. Sem upload, o PDF atual é mantido." % MAX_PDF_MB
         ),
     )
 
+    _secao("Quiz")
     _editor_quiz(prefixo)
     return upload
 
 
 def _formulario_novo():
     prefixo = "novo_modulo"
+
+    # Recolhido por padrao: a pagina abre com a lista de modulos visivel,
+    # e nao com um formulario longo empurrando tudo para baixo. Quem
+    # controla o estado e o botao, e nao o cabecalho do st.expander --
+    # clicar no cabecalho nao reroda o script, entao o expander voltaria
+    # a fechar no primeiro rerun de qualquer tecla.
+    if not st.session_state.get(CHAVE_FORM_NOVO, False):
+        if st.button(
+            "Criar novo módulo",
+            type="primary",
+            key="abrir_form_novo",
+            icon=":material/add:",
+        ):
+            st.session_state[CHAVE_FORM_NOVO] = True
+            st.rerun()
+        return
+
     _iniciar(prefixo)
 
     with st.expander("➕ Criar novo módulo", expanded=True):
@@ -358,7 +520,23 @@ def _formulario_novo():
         )
         upload = _campos_modulo(prefixo)
 
-        if st.button("Criar módulo", type="primary", key="criar_modulo_novo"):
+        coluna_criar, coluna_recolher = st.columns([2, 1])
+        criar = coluna_criar.button(
+            "Criar módulo",
+            type="primary",
+            key="criar_modulo_novo",
+            icon=":material/add:",
+        )
+        recolher = coluna_recolher.button(
+            "Recolher",
+            key="recolher_form_novo",
+            icon=":material/close:",
+        )
+        if recolher:
+            st.session_state[CHAVE_FORM_NOVO] = False
+            st.rerun()
+
+        if criar:
             dados, problemas = _coletar(prefixo)
             erro = _validar(dados, problemas)
             if erro:
@@ -410,6 +588,7 @@ def _formulario_novo():
                         )
 
             st.session_state["_limpar_novo_modulo"] = True
+            st.session_state[CHAVE_FORM_NOVO] = False
             if "_aviso_modulos" not in st.session_state:
                 st.session_state["_aviso_modulos"] = (
                     "success",
@@ -459,6 +638,7 @@ def _formulario_editar(modulo):
         "Salvar alterações",
         type="primary",
         key="salvar_%s" % prefixo,
+        icon=":material/save:",
     ):
         dados, problemas = _coletar(prefixo)
         erro = _validar(dados, problemas, original=modulo)
@@ -508,7 +688,11 @@ def _formulario_editar(modulo):
         )
         st.rerun()
 
-    if coluna_cancelar.button("Cancelar edição", key="cancelar_%s" % prefixo):
+    if coluna_cancelar.button(
+        "Cancelar edição",
+        key="cancelar_%s" % prefixo,
+        icon=":material/close:",
+    ):
         st.session_state["_limpar_edicao_modulo"] = True
         st.session_state.pop("modulo_em_edicao", None)
         st.rerun()
@@ -535,6 +719,7 @@ def _confirmar_exclusao(modulo):
         "Sim, excluir",
         type="primary",
         key="confirmar_exclusao_%s" % chave,
+        icon=":material/delete:",
     ):
         if modulo.get("origem") == "banco":
             ok, motivo = excluir_modulo(modulo["id"], _username(), _tipo())
@@ -555,7 +740,11 @@ def _confirmar_exclusao(modulo):
         st.session_state["_aviso_modulos"] = ("success", "Módulo excluído.")
         st.rerun()
 
-    if coluna_nao.button("Cancelar", key="cancelar_exclusao_%s" % chave):
+    if coluna_nao.button(
+        "Cancelar",
+        key="cancelar_exclusao_%s" % chave,
+        icon=":material/close:",
+    ):
         st.session_state.pop("modulo_excluindo", None)
         st.rerun()
 
@@ -589,6 +778,8 @@ def render_gerenciar_modulos():
     if _tipo() not in ("Professor", "Administrador"):
         st.error("Acesso restrito a professores e administradores.")
         return
+
+    st.markdown(CSS_GERENCIAR_MODULOS, unsafe_allow_html=True)
 
     # As limpezas vem antes de qualquer widget: mexer em chave de widget
     # depois que ele nasceu, na mesma execucao, levanta erro no Streamlit.
@@ -684,6 +875,7 @@ def render_gerenciar_modulos():
             if coluna_editar.button(
                 "Editar",
                 key="editar_%s_%s" % (origem, chave),
+                icon=":material/edit:",
             ):
                 st.session_state["_limpar_edicao_modulo"] = True
                 st.session_state["modulo_em_edicao"] = referencia
@@ -693,6 +885,7 @@ def render_gerenciar_modulos():
             if coluna_excluir.button(
                 "Excluir",
                 key="excluir_%s_%s" % (origem, chave),
+                icon=":material/delete:",
             ):
                 st.session_state.pop("modulo_em_edicao", None)
                 st.session_state["modulo_excluindo"] = referencia
