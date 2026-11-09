@@ -54,6 +54,9 @@ abrindo.
 
 ## Tamanho
 
-PDF muito pesado trava a página, porque o arquivo inteiro é carregado no
-navegador. Para material de leitura de一章, um arquivo de até 10 MB é
-razoável. Se passar disso, vale exportar com as imagens em baixa resolução.
+O envio pela página **Gerenciar Módulos** aceita PDF de até **20 MB**.
+Acima disso o arquivo é recusado antes de ser gravado. O teto existe
+porque o PDF inteiro é carregado no navegador: um arquivo muito pesado
+trava a leitura, principalmente no celular. Para material de leitura,
+10 MB ou menos já é bastante; se passar disso, vale exportar com as
+imagens em baixa resolução.
