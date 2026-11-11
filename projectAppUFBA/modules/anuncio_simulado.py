@@ -8,7 +8,6 @@ import streamlit as st
 
 _CHAVE_INICIO = "_ce_anuncio_inicio_monotonic"
 _CHAVE_EXIBIDO = "_ce_anuncio_exibido"
-_CHAVE_NOTIFICACAO_PENDENTE = "_ce_anuncio_notificacao_pendente"
 
 
 def _mostrar_notificacao() -> None:
@@ -32,20 +31,15 @@ def _verificar_tempo() -> None:
     inicio = st.session_state[_CHAVE_INICIO]
     if time.monotonic() - inicio >= 120:
         st.session_state[_CHAVE_EXIBIDO] = True
-        st.session_state[_CHAVE_NOTIFICACAO_PENDENTE] = True
-        st.rerun()
+        # O toast pode ser desenhado pelo proprio fragmento; nao precisa
+        # de um rerun do app inteiro so para mostra-lo.
+        _mostrar_notificacao()
 
 
 def render_anuncio_simulado(forcar: bool = False) -> None:
     """Ativa o temporizador e permite disparar a notificação pelo botão."""
     if forcar:
         st.session_state[_CHAVE_EXIBIDO] = True
-        st.session_state.pop(_CHAVE_NOTIFICACAO_PENDENTE, None)
-        _mostrar_notificacao()
-        return
-
-    if st.session_state.get(_CHAVE_NOTIFICACAO_PENDENTE):
-        st.session_state.pop(_CHAVE_NOTIFICACAO_PENDENTE, None)
         _mostrar_notificacao()
         return
 

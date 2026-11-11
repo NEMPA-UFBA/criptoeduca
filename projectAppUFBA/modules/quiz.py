@@ -36,7 +36,7 @@ import html
 
 import streamlit as st
 
-from modules.database import salvar_progresso_modulo, carregar_progresso_modulos
+from modules.database import salvar_progresso_modulo, carregar_estado_modulos
 from modules.estilo import html_bruto
 
 # Chave da sessao que guarda o resultado de uma tentativa, por modulo.
@@ -44,6 +44,11 @@ from modules.estilo import html_bruto
 # O "%s" e o slug. O valor guardado e o dicionario com as respostas que
 # foram enviadas, o numero de acertos e o total.
 _CHAVE_RESULTADO = "quiz_resultado_%s"
+
+# Chave do aviso de validacao (pergunta em branco). O callback nao pode
+# desenhar st.error: ele roda antes de a tela existir. O texto fica aqui
+# e e mostrado no rerun seguinte.
+_CHAVE_ERRO = "quiz_erro_%s"
 
 
 def _perguntas_do_modulo(modulo):
@@ -59,8 +64,52 @@ def _melhor_nota(username, slug):
     """A melhor nota que o aluno ja fez neste modulo, ou None."""
     if not username:
         return None
-    progresso = carregar_progresso_modulos(username)
+    progresso, _ = carregar_estado_modulos(username)
     return progresso.get(slug)
+
+
+def _enviar_tentativa(slug, perguntas, username):
+    """Corrige e grava a tentativa como callback do botao.
+
+    Callbacks rodam antes de a tela ser desenhada, por isso as respostas
+    sao lidas das chaves dos radios no session_state. O erro de validacao
+    fica guardado para o rerun seguinte, que e quem pode mostrar st.error.
+    """
+    respostas = {}
+    faltando = []
+    for indice in range(1, len(perguntas) + 1):
+        escolhida = st.session_state.get("quiz_%s_%d" % (slug, indice))
+        respostas[indice] = escolhida
+        if escolhida is None:
+            faltando.append(indice)
+
+    if faltando:
+        st.session_state[_CHAVE_ERRO % slug] = (
+            "Responda todas as perguntas antes de ver o resultado. "
+            "Falta: %s."
+            % ", ".join("questão %d" % i for i in faltando)
+        )
+        return
+
+    st.session_state.pop(_CHAVE_ERRO % slug, None)
+
+    acertos = sum(
+        1
+        for indice, pergunta in enumerate(perguntas, start=1)
+        if respostas.get(indice) == pergunta["certa"]
+    )
+    total = len(perguntas)
+
+    # A tentativa e gravada. O historico de tentativas fica no banco:
+    # a tela usa a melhor nota, mas o professor ve todas.
+    if username:
+        salvar_progresso_modulo(username, slug, acertos, total)
+
+    st.session_state[_CHAVE_RESULTADO % slug] = {
+        "respostas": dict(respostas),
+        "acertos": acertos,
+        "total": total,
+    }
 
 
 def _limpar_respostas(slug, perguntas):
@@ -72,6 +121,7 @@ def _limpar_respostas(slug, perguntas):
     ja marcada, e ele acharia que ja tinha respondido.
     """
     st.session_state.pop(_CHAVE_RESULTADO % slug, None)
+    st.session_state.pop(_CHAVE_ERRO % slug, None)
     for indice in range(1, len(perguntas) + 1):
         st.session_state.pop("quiz_%s_%d" % (slug, indice), None)
 
@@ -109,6 +159,10 @@ def render_quiz(modulo, slug):
 
     st.subheader("🧠 Quiz do módulo")
 
+    erro = st.session_state.pop(_CHAVE_ERRO % slug, None)
+    if erro:
+        st.error(erro)
+
     # ---------- O resultado ----------
     # Se ha resultado guardado, a tela E o resultado. As perguntas nao
     # sao desenhadas: o gabarito nunca aparece junto com uma pergunta
@@ -131,7 +185,6 @@ def render_quiz(modulo, slug):
     # As chaves levam o slug para que dois modulos nao compartilhem a
     # mesma resposta -- o Streamlit reclama de chaves repetidas, e o
     # certo seria o aluno ver a resposta de um modulo no quiz do outro.
-    respostas = {}
     for indice, pergunta in enumerate(perguntas, start=1):
         st.markdown(
             html_bruto(
@@ -141,7 +194,7 @@ def render_quiz(modulo, slug):
             ),
             unsafe_allow_html=True,
         )
-        escolhida = st.radio(
+        st.radio(
             "Resposta %d" % indice,
             options=list(range(len(pergunta["alternativas"]))),
             format_func=lambda i, alt=pergunta["alternativas"]: alt[i],
@@ -152,45 +205,18 @@ def render_quiz(modulo, slug):
             # aluno via a pergunta "respondida" sem ter respondido.
             index=None,
         )
-        respostas[indice] = escolhida
 
     # ---------- O botao ----------
-    if st.button(
+    # A correcao e a gravacao acontecem no callback. Quando o script roda
+    # de novo, o resultado ja esta no session_state e o formulario e
+    # substituido pelo gabarito.
+    st.button(
         "Ver meu resultado",
         key="enviar_quiz_%s" % slug,
         type="primary",
-    ):
-        # O resultado so e guardado quando TODAS as perguntas tem
-        # resposta. Sem isso, "Ver meu resultado" com metade respondida
-        # contaria as nao respondidas como erradas, e o aluno levaria
-        # uma nota que nao corresponde ao que ele respondeu.
-        faltando = [i for i in respostas if respostas[i] is None]
-        if faltando:
-            st.error(
-                "Responda todas as perguntas antes de ver o resultado. "
-                "Falta: %s."
-                % ", ".join("questão %d" % i for i in faltando)
-            )
-            return False
-
-        acertos = 0
-        for indice, pergunta in enumerate(perguntas, start=1):
-            if respostas.get(indice) == pergunta["certa"]:
-                acertos += 1
-
-        total = len(perguntas)
-
-        # A tentativa e gravada. O historico de tentativas fica no banco:
-        # a tela usa a melhor nota, mas o professor ve todas.
-        if username:
-            salvar_progresso_modulo(username, slug, acertos, total)
-
-        st.session_state[_CHAVE_RESULTADO % slug] = {
-            "respostas": dict(respostas),
-            "acertos": acertos,
-            "total": total,
-        }
-        st.rerun()
+        on_click=_enviar_tentativa,
+        args=(slug, perguntas, username),
+    )
 
     return False
 
@@ -249,9 +275,9 @@ def _desenhar_resultado(resultado, perguntas, slug):
 
     # "Tentar de novo" volta para as perguntas em branco. Sem ele, o
     # aluno que mudou de ideia ficaria preso no gabarito.
-    if st.button(
+    st.button(
         "↩️ Tentar de novo",
         key="tentar_de_novo_%s" % slug,
-    ):
-        _limpar_respostas(slug, perguntas)
-        st.rerun()
+        on_click=_limpar_respostas,
+        args=(slug, perguntas),
+    )

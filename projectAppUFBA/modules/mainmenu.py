@@ -30,6 +30,11 @@ def _html(trecho):
     return html_bruto(trecho)
 
 
+def _selecionar_modulo(slug):
+    """Abre o modulo escolhido no proximo rerun, sem st.rerun manual."""
+    st.session_state["modulo_selecionado"] = slug
+
+
 def _estado_do_aluno():
     """Carrega notas e leituras do usuário em uma única consulta."""
     username = st.session_state.get("username")
@@ -93,6 +98,11 @@ def _card_html(modulo, concluido, lido=False):
     badge_lido = (
         '<span class="ce-badge ce-badge-lido">📖 Lido</span>' if lido else ""
     )
+    badge_especial = (
+        '<span class="ce-badge">🧪 Laboratório</span>'
+        if modulo.get("especial")
+        else ""
+    )
 
     return _html(
         f"""
@@ -108,6 +118,7 @@ def _card_html(modulo, concluido, lido=False):
             <span class="ce-badge">⏱️ {duracao}</span>
             {badge_lido}
             {badge_ok}
+            {badge_especial}
           </div>
         </div>
         """
@@ -163,9 +174,12 @@ def _render_catalogo_modulos():
 
     with st.spinner("Carregando seu progresso..."):
         progresso, lidos = _estado_do_aluno()
+    # Todos os modulos entram na conta, inclusive o laboratorio AES: ele
+    # agora tem leitura e quiz como qualquer outro.
     concluidos = sum(1 for m in modulos if m["slug"] in progresso)
     st.markdown(
-        _caixa_progresso(concluidos, len(modulos)), unsafe_allow_html=True
+        _caixa_progresso(concluidos, len(modulos)),
+        unsafe_allow_html=True,
     )
 
     for linha_inicio in range(0, len(modulos), COLUNAS):
@@ -190,22 +204,28 @@ def _render_catalogo_modulos():
                         _card_html(modulo, slug in progresso, slug in lidos),
                         unsafe_allow_html=True,
                     )
-                    if st.button(
+                    st.button(
                         "Iniciar módulo →",
                         key=f"iniciar_modulo_{slug}",
                         type="primary",
                         width="stretch",
-                    ):
-                        st.session_state["modulo_selecionado"] = slug
-                        st.rerun()
+                        on_click=_selecionar_modulo,
+                        args=(slug,),
+                    )
 
 
 def render_progresso_aluno():
-    """Desenha a pagina "Meu Progresso".
+    """Desenha a pagina "Meu Progresso" dentro do container identificado."""
+    with st.container(key="conteudo_meu_progresso"):
+        _render_progresso_aluno()
 
-    Mostra o que o aluno ja fez de verdade: quais materiais ele
-    terminou de ler (o que libera o quiz) e qual foi a melhor nota de
-    cada quiz. Tudo sai do banco, e nao de um texto de exemplo.
+
+def _render_progresso_aluno():
+    """Mostra o que o aluno ja fez de verdade.
+
+    Quais materiais ele terminou de ler (o que libera o quiz) e qual foi
+    a melhor nota de cada quiz. Tudo sai do banco, e nao de um texto de
+    exemplo.
 
     A pagina esta numa funcao e nao no app.py porque o app.py e um
     script do Streamlit, rodado no nivel do modulo: um "return" la

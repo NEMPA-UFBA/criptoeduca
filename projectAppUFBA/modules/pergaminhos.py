@@ -24,8 +24,9 @@ De onde vem o conteudo:
   - dos exemplos pre-colocados em dados/exemplos_crime.json, que sao
     inseridos no banco quando a pagina e carregada, se ainda nao
     existirem (exemplos ja existentes nao sao sobrescritos);
-  - do que o Professor e a Coordenacao publicam em "Gerenciar Aulas",
-    pelo construtor de blocos que este arquivo desenha.
+  - do que o Professor e a Coordenacao publicam em "Gerenciar Conteudos
+    -> Exemplos de Golpe", pelo construtor de blocos que este arquivo
+    desenha.
 
 Os dois sao a mesma coisa na tela: um pergaminho. Por isso o que a
 coordenacao publica vira parte dos pergaminhos, e nao uma pagina
@@ -632,16 +633,15 @@ def _render_pagina_pergaminhos():
         unsafe_allow_html=True,
     )
 
-    username = st.session_state.get("username", "")
     with st.spinner("Carregando exemplos..."):
-        pergaminhos = carregar_pergaminhos(username)
+        pergaminhos = carregar_pergaminhos()
 
     if not pergaminhos:
         st.info(
             "Nenhum exemplo de crime cadastrado ainda. Os exemplos "
             "pré-colocados vêm do arquivo `dados/exemplos_crime.json`, e o "
             "Professor e a Coordenação publicam os novos em "
-            "\"Gerenciar Aulas\"."
+            "\"Gerenciar Conteúdos → Exemplos de Golpe\"."
         )
         return
 
@@ -807,22 +807,39 @@ def _aplicar_limpezas():
             st.session_state.pop(chave, None)
 
 
+def _adicionar_bloco(prefixo, chave_tipo):
+    # O tipo e lido no callback, e nao capturado no args: dentro do form o
+    # selectbox pode ter mudado sem rerun, e o args ainda teria o valor
+    # antigo.
+    tipo = st.session_state.get(chave_tipo, "paragrafo")
+    _pedir_operacao(prefixo, "inserir", _quantidade(prefixo), tipo)
+
+
+def _mover_bloco(prefixo, posicao, delta):
+    _pedir_operacao(prefixo, "mover", posicao, delta)
+
+
+def _apagar_bloco(prefixo, posicao):
+    _pedir_operacao(prefixo, "apagar", posicao)
+
+
 def _controle_adicionar(prefixo, chave_tipo):
     """O seletor de tipo + o botao que poe um bloco novo no fim da lista."""
     colunas = st.columns([3.4, 2.2, 4.4])
-    tipo = colunas[0].selectbox(
+    colunas[0].selectbox(
         "Tipo do novo bloco",
         options=list(ROTULO_TIPO),
         format_func=lambda t: ROTULO_TIPO[t],
         key=chave_tipo,
     )
-    if colunas[1].form_submit_button(
+    colunas[1].form_submit_button(
         "Adicionar",
         icon=":material/add:",
         key="%sadicionar" % prefixo,
         help="Acrescenta um bloco desse tipo no fim do pergaminho.",
-    ):
-        _pedir_operacao(prefixo, "inserir", _quantidade(prefixo), tipo)
+        on_click=_adicionar_bloco,
+        args=(prefixo, chave_tipo),
+    )
 
 
 def _desenhar_blocos(prefixo):
@@ -869,24 +886,27 @@ def _desenhar_blocos(prefixo):
             # e como todas as linhas tem o mesmo rotulo, a segunda linha
             # ja derrubava a pagina inteira com
             # StreamlitDuplicateElementKey.
-            if linha[1].form_submit_button(
+            linha[1].form_submit_button(
                 "Subir", icon=":material/arrow_upward:",
                 key="%ssobe_%d" % (prefixo, posicao),
                 help="Move este bloco para cima.",
-            ):
-                _pedir_operacao(prefixo, "mover", posicao, -1)
-            if linha[2].form_submit_button(
+                on_click=_mover_bloco,
+                args=(prefixo, posicao, -1),
+            )
+            linha[2].form_submit_button(
                 "Descer", icon=":material/arrow_downward:",
                 key="%sdesce_%d" % (prefixo, posicao),
                 help="Move este bloco para baixo.",
-            ):
-                _pedir_operacao(prefixo, "mover", posicao, 1)
-            if linha[3].form_submit_button(
+                on_click=_mover_bloco,
+                args=(prefixo, posicao, 1),
+            )
+            linha[3].form_submit_button(
                 "Tirar", icon=":material/close:",
                 key="%stira_%d" % (prefixo, posicao),
                 help="Apaga este bloco.",
-            ):
-                _pedir_operacao(prefixo, "apagar", posicao)
+                on_click=_apagar_bloco,
+                args=(prefixo, posicao),
+            )
 
             st.text_area(
                 "Texto do bloco %d" % (posicao + 1),
@@ -908,6 +928,68 @@ def _ler_blocos(prefixo):
     ]
 
 
+def _publicar_exemplo():
+    """Grava um exemplo novo como callback do envio do formulario."""
+    titulo = str(st.session_state.get("pub_titulo", "")).strip()
+    blocos = _ler_blocos("pub_")
+    if not titulo or not blocos:
+        st.session_state["_crime_erro"] = (
+            "Preencha o título do golpe e monte pelo menos um bloco de "
+            "conteúdo."
+        )
+        return
+
+    st.session_state.pop("_crime_erro", None)
+    categoria = st.session_state.get("pub_categoria", "")
+    categoria_livre = st.session_state.get("pub_categoria_livre", "")
+    salvar_conteudo(
+        titulo,
+        resumo_do_bloco(blocos),
+        st.session_state.get("username", ""),
+        str(st.session_state.get("pub_icone", "")).strip() or "📜",
+        (str(categoria_livre).strip() if categoria == "Outro" else categoria),
+        "",
+        "",
+        "",
+        blocos,
+    )
+    st.session_state[CHAVE_LIMPAR_PUBLICACAO] = True
+    st.session_state["_crime_aviso"] = (
+        "Exemplo publicado! Ele já aparece como pergaminho."
+    )
+
+
+def _salvar_exemplo_edicao(pergaminho):
+    """Grava a edicao como callback do envio do formulario."""
+    titulo = str(st.session_state.get("ed_titulo", "")).strip()
+    blocos = _ler_blocos("ed_")
+    if not titulo or not blocos:
+        st.session_state["_crime_erro"] = (
+            "O título e pelo menos um bloco de conteúdo não podem ficar "
+            "vazios."
+        )
+        return
+
+    st.session_state.pop("_crime_erro", None)
+    atualizar_conteudo(
+        pergaminho["id"],
+        titulo,
+        resumo_do_bloco(blocos),
+        str(st.session_state.get("ed_icone", "")).strip() or "📜",
+        str(st.session_state.get("ed_categoria", "")).strip(),
+        "",
+        "",
+        "",
+        blocos,
+    )
+    # crime_em_edicao e _crime_prefill_id nao sao chave de widget, entao
+    # podem ser apagados agora. Os campos nao podem: estao na tela.
+    st.session_state.pop("crime_em_edicao", None)
+    st.session_state.pop("_crime_prefill_id", None)
+    st.session_state[CHAVE_LIMPAR_EDICAO] = True
+    st.session_state["_crime_aviso"] = "Exemplo atualizado."
+
+
 def _formulario_publicar():
     """Formulario de publicacao de um exemplo de crime.
 
@@ -919,12 +1001,11 @@ def _formulario_publicar():
     _iniciar_blocos("pub_", [])
 
     with st.form("form_publicar_crime"):
-        titulo = st.text_input("Título do golpe", key="pub_titulo")
-        icone = st.text_input("Ícone (um emoji)", value="📜", key="pub_icone")
+        st.text_input("Título do golpe", key="pub_titulo")
+        st.text_input("Ícone (um emoji)", value="📜", key="pub_icone")
         categoria = st.selectbox("Categoria", CATEGORIAS, key="pub_categoria")
-        categoria_livre = ""
         if categoria == "Outro":
-            categoria_livre = st.text_input(
+            st.text_input(
                 "Escreva a categoria", key="pub_categoria_livre"
             )
 
@@ -935,33 +1016,11 @@ def _formulario_publicar():
         _controle_adicionar("pub_", "pub_tipo_novo")
         _desenhar_blocos("pub_")
 
-        publicar = st.form_submit_button("Publicar exemplo", type="primary")
-
-    if not publicar:
-        return
-
-    blocos = _ler_blocos("pub_")
-    if not titulo.strip() or not blocos:
-        st.error(
-            "Preencha o título do golpe e monte pelo menos um bloco de "
-            "conteúdo."
+        st.form_submit_button(
+            "Publicar exemplo",
+            type="primary",
+            on_click=_publicar_exemplo,
         )
-        return
-
-    salvar_conteudo(
-        titulo.strip(),
-        resumo_do_bloco(blocos),
-        st.session_state.get("username", ""),
-        icone.strip() or "📜",
-        (categoria_livre.strip() if categoria == "Outro" else categoria),
-        "",
-        "",
-        "",
-        blocos,
-    )
-    st.session_state[CHAVE_LIMPAR_PUBLICACAO] = True
-    st.success("Exemplo publicado! Ele já aparece como pergaminho.")
-    st.rerun()
 
 
 def _preencher_campos_edicao(pergaminho):
@@ -1002,9 +1061,9 @@ def _formulario_editar(pergaminho):
     _preencher_campos_edicao(pergaminho)
 
     with st.form(f"form_editar_crime_{pergaminho['id']}"):
-        titulo = st.text_input("Título do golpe", key="ed_titulo")
-        icone = st.text_input("Ícone (um emoji)", key="ed_icone")
-        categoria = st.text_input("Categoria", key="ed_categoria")
+        st.text_input("Título do golpe", key="ed_titulo")
+        st.text_input("Ícone (um emoji)", key="ed_icone")
+        st.text_input("Categoria", key="ed_categoria")
 
         st.caption(
             "Conteúdo do pergaminho, de cima para baixo. Tipos: %s."
@@ -1013,37 +1072,23 @@ def _formulario_editar(pergaminho):
         _controle_adicionar("ed_", "ed_tipo_novo")
         _desenhar_blocos("ed_")
 
-        salvar = st.form_submit_button("Salvar alterações", type="primary")
-
-    if not salvar:
-        return
-
-    blocos = _ler_blocos("ed_")
-    if not titulo.strip() or not blocos:
-        st.error(
-            "O título e pelo menos um bloco de conteúdo não podem ficar "
-            "vazios."
+        st.form_submit_button(
+            "Salvar alterações",
+            type="primary",
+            on_click=_salvar_exemplo_edicao,
+            args=(pergaminho,),
         )
-        return
 
-    atualizar_conteudo(
-        pergaminho["id"],
-        titulo.strip(),
-        resumo_do_bloco(blocos),
-        icone.strip() or "📜",
-        categoria.strip(),
-        "",
-        "",
-        "",
-        blocos,
+
+def _abrir_edicao_crime(pid):
+    st.session_state["crime_em_edicao"] = pid
+
+
+def _inativar_crime(pid):
+    inativar_conteudo(pid)
+    st.session_state["_crime_aviso"] = (
+        "Exemplo inativado. Ele não aparece mais para o aluno."
     )
-    # crime_em_edicao e _crime_prefill_id nao sao chave de widget, entao
-    # podem ser apagados agora. Os campos nao podem: estao na tela.
-    st.session_state.pop("crime_em_edicao", None)
-    st.session_state.pop("_crime_prefill_id", None)
-    st.session_state[CHAVE_LIMPAR_EDICAO] = True
-    st.success("Exemplo atualizado.")
-    st.rerun()
 
 
 def render_gerenciar_crime():
@@ -1058,8 +1103,21 @@ def render_gerenciar_crime():
     de formulario sao aplicados, sempre num momento em que nenhum campo
     da tela existe ainda. Depois do primeiro widget elas dariam erro.
     """
+    with st.container(key="pagina_gerenciar_exemplos_golpe"):
+        _render_gerenciar_crime()
+
+
+def _render_gerenciar_crime():
+    aplicar_estilo()
     _aplicar_operacao()
     _aplicar_limpezas()
+
+    aviso = st.session_state.pop("_crime_aviso", None)
+    if aviso:
+        st.success(aviso)
+    erro = st.session_state.pop("_crime_erro", None)
+    if erro:
+        st.error(erro)
 
     st.markdown(
         _html(
@@ -1077,8 +1135,7 @@ def render_gerenciar_crime():
     st.divider()
     st.subheader("Exemplos já publicados")
 
-    username = st.session_state.get("username", "")
-    pergaminhos = carregar_pergaminhos(username)
+    pergaminhos = carregar_pergaminhos()
     if not pergaminhos:
         st.info("Nenhum exemplo publicado ainda.")
         return
@@ -1094,12 +1151,9 @@ def render_gerenciar_crime():
             _formulario_editar(alvo)
             st.divider()
 
-    # Se um pedido de bloco foi gravado AGORA, ele so existe na tela na
-    # execucao seguinte -- e nada dispara essa execucao sozinho: o clique
-    # ja gastou a unica delas. Sem este rerun o botao de adicionar,
-    # subir e tirar pareceria nao fazer nada.
-    if st.session_state.get(CHAVE_OPERACAO_BLOCO):
-        st.rerun()
+    # Os botoes de bloco gravam o pedido no callback e o clique ja provoca
+    # o rerun que aplica a operacao no inicio desta pagina. Nao ha rerun
+    # manual aqui.
 
     for pergaminho in pergaminhos:
         pid = pergaminho["id"]
@@ -1130,10 +1184,15 @@ def render_gerenciar_crime():
                     st.write(bloco["texto"])
 
             col1, col2 = st.columns(2)
-            if col1.button("Editar", key=f"editar_crime_{pid}"):
-                st.session_state["crime_em_edicao"] = pid
-                st.rerun()
-            if col2.button("Inativar", key=f"inativar_crime_{pid}"):
-                inativar_conteudo(pid)
-                st.warning("Exemplo inativado. Ele não aparece mais para o aluno.")
-                st.rerun()
+            col1.button(
+                "Editar",
+                key=f"editar_crime_{pid}",
+                on_click=_abrir_edicao_crime,
+                args=(pid,),
+            )
+            col2.button(
+                "Inativar",
+                key=f"inativar_crime_{pid}",
+                on_click=_inativar_crime,
+                args=(pid,),
+            )

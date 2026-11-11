@@ -359,9 +359,9 @@ def _criar_tabelas(conn):
     # exemplo cuja chave já está na tabela não é criado de novo. É o
     # mesmo esquema do admin acima -- o que já existe não é reescrito.
     #
-    # O que o professor edita depois pela página "Gerenciar Aulas" vale
-    # mais do que o que está no arquivo: por isso a semeadura não
-    # sobrescreve uma linha que já existe.
+    # O que o professor edita depois pela página "Gerenciar Conteúdos →
+    # Exemplos de Golpe" vale mais do que o que está no arquivo: por isso a
+    # semeadura não sobrescreve uma linha que já existe.
     _semear_exemplos_crime(c)
 
     conn.commit()
@@ -455,12 +455,30 @@ def _semear_exemplos_crime(c):
 
 #Funções Novas adicionadas
 
+@st.cache_data(ttl=300, show_spinner=False)
+def obter_primeiro_acesso(username):
+    """Le o status de primeiro acesso sem repetir a consulta a cada rerun."""
+    if not username:
+        return 1
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT primeiro_acesso FROM usuarios WHERE username = %s",
+            (username,),
+        )
+        resultado = c.fetchone()
+        conn.rollback()
+    return resultado[0] if resultado else 1
+
+
 def atualizar_primeiro_acesso(username):
     """Atualiza o status de primeiro acesso do aluno para 0 após o primeiro envio ao mural."""
     with conectar() as conn:
         c = conn.cursor()
         c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = %s", (username,))
         conn.commit()
+    obter_primeiro_acesso.clear()
+
 
 def salvar_mensagem_mural(username, mensagem_criptografada):
     """Salva a mensagem associada ao usuário que a enviou"""
@@ -471,14 +489,24 @@ def salvar_mensagem_mural(username, mensagem_criptografada):
             (username, mensagem_criptografada)
         )
         conn.commit()
+    carregar_mural.clear()
 
+
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_mural():
-    """Carrega todas as mensagens ativas para exibição pública"""
+    """Carrega todas as mensagens ativas para exibição pública.
+
+    A lista muda somente quando alguém publica ou inativa uma mensagem.
+    Por isso ela fica em cache e é invalidada pelas duas escritas abaixo,
+    em vez de consultar o banco a cada rerun do mural.
+    """
     with conectar() as conn:
         c = conn.cursor()
         c.execute("SELECT id, username, mensagem_criptografada, data FROM mural WHERE ativo = 1 ORDER BY id DESC")
         dados = c.fetchall()
+        conn.rollback()
     return dados
+
 
 def inativar_mensagem_mural(msg_id):
     """Inativa qualquer mensagem (Apenas para Professores e Admins)"""
@@ -486,6 +514,7 @@ def inativar_mensagem_mural(msg_id):
         c = conn.cursor()
         c.execute("UPDATE mural SET ativo = 0 WHERE id = %s", (msg_id,))
         conn.commit()
+    carregar_mural.clear()
 
 
 def salvar_conteudo(
@@ -517,50 +546,66 @@ def salvar_conteudo(
         c = conn.cursor()
         c.execute(
             "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
-            "categoria, exemplo, sinais, protecao, origem) "
-            "VALUES (%s, %s, %s, 1, '', %s, %s, %s, %s, %s, 'publicado')",
-            (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
+            "categoria, exemplo, sinais, protecao, blocos, origem) "
+            "VALUES (%s, %s, %s, 1, '', %s, %s, %s, %s, %s, %s, 'publicado')",
+            (
+                titulo,
+                corpo,
+                autor,
+                icone,
+                categoria,
+                exemplo,
+                sinais,
+                protecao,
+                blocos_para_texto(blocos),
+            ),
         )
         conn.commit()
     carregar_pergaminhos.clear()
+    carregar_conteudos.clear()
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_conteudos():
     """Carrega todos os conteudos ativos, do mais novo para o mais antigo.
 
     Devolve tuplas no formato antigo (id, titulo, corpo, autor, data),
-    porque a lista de "Gerenciar Aulas" usa esse formato. A pagina dos
-    pergaminhos usa carregar_pergaminhos(), que traz os campos do crime.
+    porque a lista de "Gerenciar Conteúdos → Exemplos de Golpe" usa esse
+    formato. A pagina dos pergaminhos usa carregar_pergaminhos(), que traz
+    os campos do crime.
     """
     with conectar() as conn:
         c = conn.cursor()
         c.execute("SELECT id, titulo, corpo, autor, data FROM conteudos WHERE ativo = 1 ORDER BY id DESC")
         dados = c.fetchall()
+        conn.rollback()
     return dados
 
 
-@st.cache_data(ttl=30, show_spinner=False)
-def carregar_pergaminhos(username):
-    """Sincroniza exemplos novos e carrega os ativos, na ordem gravada.
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_pergaminhos():
+    """Carrega os exemplos ativos, na ordem gravada.
 
     Devolve dicionarios, e nao tuplas, porque a pagina dos pergaminhos
     usa muitos campos de cada exemplo e a tupla de dez posicoes vira
-    uma lista de indices dificil de ler. Exemplos novos do JSON sao
-    inseridos nesta carga; chaves existentes nao sao sobrescritas. A
-    ordem e por id: os pre-colocados vem primeiro, na ordem do arquivo,
-    e o que a coordenacao publica depois entra no fim. O username separa
-    as chaves de cache por sessao; o conteudo continua publico e compartilhado.
+    uma lista de indices dificil de ler. A ordem e por id: os
+    pre-colocados vem primeiro, na ordem do arquivo, e o que a
+    coordenacao publica depois entra no fim.
+
+    Esta funcao e somente leitura. A semeadura dos exemplos do arquivo
+    dados/exemplos_crime.json fica em _criar_tabelas(), que e chamada na
+    preparacao do banco: carregar uma pagina nao deve abrir transacao de
+    escrita no banco.
     """
     with conectar() as conn:
         c = conn.cursor()
-        _semear_exemplos_crime(c)
         c.execute(
             "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
             "sinais, protecao, chave, origem, blocos FROM conteudos "
             "WHERE ativo = 1 ORDER BY id ASC"
         )
         linhas = c.fetchall()
-        conn.commit()
+        conn.rollback()
 
     chaves = (
         "id", "titulo", "corpo", "autor", "data", "icone", "categoria",
@@ -613,6 +658,7 @@ def atualizar_conteudo(
         )
         conn.commit()
     carregar_pergaminhos.clear()
+    carregar_conteudos.clear()
 
 
 def inativar_conteudo(conteudo_id):
@@ -622,6 +668,7 @@ def inativar_conteudo(conteudo_id):
         c.execute("UPDATE conteudos SET ativo = 0 WHERE id = %s", (conteudo_id,))
         conn.commit()
     carregar_pergaminhos.clear()
+    carregar_conteudos.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -629,8 +676,8 @@ def inativar_conteudo(conteudo_id):
 # ---------------------------------------------------------------------------
 #
 # Os modulos originais continuam em dados/modulos.json. A tabela "modulos"
-# guarda somente os que nascem na pagina "Gerenciar Modulos". As funcoes
-# abaixo sao o CRUD dessa tabela.
+# guarda somente os que nascem na pagina "Gerenciar Conteudos -> Modulos".
+# As funcoes abaixo sao o CRUD dessa tabela.
 #
 # O quiz e gravado como JSON de uma lista de:
 #   {"enunciado": "...", "alternativas": ["..."], "certa": 0}
@@ -683,15 +730,16 @@ def _quiz_para_texto(quiz):
     return json.dumps(quiz or [], ensure_ascii=False)
 
 
-@st.cache_data(ttl=30, show_spinner=False)
-def listar_modulos_banco(username):
+@st.cache_data(ttl=300, show_spinner=False)
+def listar_modulos_banco():
     """Devolve os modulos criados na plataforma, do mais antigo ao mais novo.
 
     O quiz volta como lista, e nao como texto: quem chama (o carregador
     dos modulos) espera o mesmo formato dos modulos do JSON.
-    O username particiona o cache por sessao; o catalogo em si continua
-    compartilhado entre os usuarios.
-    O cache e invalidado por salvar_modulo, atualizar_modulo e excluir_modulo.
+
+    O catalogo e publico e o mesmo para todos os perfis, por isso ele tem
+    uma unica entrada de cache -- sem o username na chave. O cache e
+    invalidado por salvar_modulo, atualizar_modulo e excluir_modulo.
     """
     with conectar() as conn:
         try:
@@ -889,7 +937,7 @@ def registrar_leitura(username, modulo):
     modulos_lidos.clear()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def modulo_lido(username, modulo):
     """Diz se o aluno ja terminou de ler o material de um modulo.
 
@@ -908,7 +956,7 @@ def modulo_lido(username, modulo):
     return achou
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def modulos_lidos(username):
     """Devolve o conjunto de modulos que o aluno ja terminou de ler."""
     if not username:
@@ -919,7 +967,7 @@ def modulos_lidos(username):
         return {linha[0] for linha in c.fetchall()}
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_estado_modulos(username):
     """Carrega leituras e progresso do aluno com uma consulta ao banco.
 
@@ -978,7 +1026,7 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
 
     Guarda uma linha por tentativa e nao apaga as anteriores: o historico
     fica para a equipe ver a evolucao do aluno. O que a tela usa e a melhor
-    nota de cada modulo, calculada em carregar_progresso_modulos.
+    nota de cada modulo, calculada em carregar_estado_modulos.
 
     Este e um registro de autoavaliacao -- nao e nota nem avaliacao formal
     de professor.
@@ -994,7 +1042,7 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
     carregar_progresso_modulos.clear()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_progresso_modulos(username):
     """Devolve {slug_do_modulo: melhor resultado} do usuario.
 

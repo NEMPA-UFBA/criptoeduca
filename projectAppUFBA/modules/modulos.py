@@ -176,6 +176,11 @@ def _carregar_modulo(bruto, posicao, erros):
         "duracao": (bruto.get("duracao") or "").strip(),
         "cor": (bruto.get("cor") or "#4F46E5").strip(),
         "pdf": pdf,
+        # Modulos comuns deixam isto vazio. O modulo especial do
+        # laboratorio AES usa "aes": ele tem leitura e quiz normais e,
+        # depois dos dois, libera o botao do laboratorio na pagina do
+        # modulo. So pode ser alterado no JSON, nunca pelo gerenciador.
+        "especial": (bruto.get("especial") or "").strip(),
         "quiz": quiz,
     }
 
@@ -278,8 +283,7 @@ def _modulos_do_banco(erros):
     """
     try:
         from modules.database import listar_modulos_banco
-        username = st.session_state.get("username", "")
-        linhas = listar_modulos_banco(username)
+        linhas = listar_modulos_banco()
     except Exception as erro:
         erros.append(
             "Não consegui carregar os módulos criados na plataforma: %s" % erro
@@ -312,6 +316,7 @@ def _modulos_do_banco(erros):
             "duracao": (linha.get("duracao") or "").strip(),
             "cor": (linha.get("cor") or "#4F46E5").strip(),
             "pdf": (linha.get("pdf") or "").strip(),
+            "especial": "",
             "quiz": linha.get("quiz") or [],
             "origem": "banco",
             "id": linha.get("id"),
@@ -320,12 +325,13 @@ def _modulos_do_banco(erros):
     return prontos
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_modulos():
     """Devolve (modulos, erros).
 
     Junta duas origens: os modulos fixos de dados/modulos.json e os
-    modulos criados pela pagina "Gerenciar Modulos", que ficam na tabela
-    "modulos" do banco. O JSON continua sendo a fonte dos modulos
+    modulos criados pela pagina "Gerenciar Conteudos -> Modulos", que ficam
+    na tabela "modulos" do banco. O JSON continua sendo a fonte dos modulos
     originais; o banco guarda apenas os novos.
 
     modulos e a lista dos modulos que puderam ser lidos; erros e a lista de
@@ -391,11 +397,16 @@ def atualizar_modulo_json(slug_original, campos):
 
     for bruto in dados["modulos"]:
         if isinstance(bruto, dict) and bruto.get("slug") == slug_original:
+            if bruto.get("especial"):
+                return False, (
+                    "Este módulo é especial e só pode ser editado no código."
+                )
             bruto.update(campos)
             try:
                 salvar_json(dados)
             except OSError as erro:
                 return False, "Não consegui gravar dados/modulos.json: %s" % erro
+            carregar_modulos.clear()
             return True, None
     return False, "Módulo não encontrado no arquivo de módulos."
 
@@ -407,6 +418,13 @@ def excluir_modulo_json(slug):
         return False, erros[0] if erros else "Não consegui ler o arquivo de módulos."
     if not isinstance(dados, dict) or not isinstance(dados.get("modulos"), list):
         return False, "O arquivo de módulos está em um formato inesperado."
+
+    for bruto in dados["modulos"]:
+        if isinstance(bruto, dict) and bruto.get("slug") == slug:
+            if bruto.get("especial"):
+                return False, (
+                    "Este módulo é especial e só pode ser excluído no código."
+                )
 
     antes = len(dados["modulos"])
     dados["modulos"] = [
@@ -420,6 +438,7 @@ def excluir_modulo_json(slug):
         salvar_json(dados)
     except OSError as erro:
         return False, "Não consegui gravar dados/modulos.json: %s" % erro
+    carregar_modulos.clear()
     return True, None
 
 

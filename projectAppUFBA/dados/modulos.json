@@ -144,6 +144,60 @@
           "certa": 1
         }
       ]
+    },
+    {
+      "slug": "laboratorio-aes-128-gcm",
+      "titulo": "Laboratório: Criptografia AES-128-GCM",
+      "resumo": "Leia sobre o AES-128-GCM, responda ao quiz e libere o laboratório para cifrar e decifrar mensagens de verdade.",
+      "icone": "🧪",
+      "nivel": "Nível 5",
+      "dificuldade": "Avançado",
+      "duracao": "~15 min",
+      "cor": "#38bdf8",
+      "pdf": "laboratorio-aes-128-gcm.pdf",
+      "especial": "aes",
+      "quiz": [
+        {
+          "enunciado": "No AES-128-GCM, qual é o tamanho da chave usada?",
+          "alternativas": [
+            "64 bits",
+            "128 bits",
+            "256 bits",
+            "512 bits"
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Por que a mesma mensagem, com a mesma frase-chave, gera textos cifrados diferentes a cada vez?",
+          "alternativas": [
+            "Porque o nonce é aleatório e muda a cada mensagem.",
+            "Porque o AES sorteia uma chave nova a cada execução.",
+            "Porque o texto é comprimido antes de ser cifrado.",
+            "Porque a tag de autenticação altera a mensagem original."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "Para que serve a tag de autenticação no GCM?",
+          "alternativas": [
+            "Para compactar o texto cifrado.",
+            "Para verificar se o texto cifrado foi alterado.",
+            "Para substituir a frase-chave.",
+            "Para aumentar o tamanho da chave."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Qual é o papel do PBKDF2 no laboratório?",
+          "alternativas": [
+            "Transformar a frase-chave em uma chave de 16 bytes usando salt e repetições.",
+            "Guardar a mensagem no banco de dados.",
+            "Gerar o nonce automaticamente.",
+            "Publicar a mensagem no mural."
+          ],
+          "certa": 1
+        }
+      ]
     }
   ]
 }

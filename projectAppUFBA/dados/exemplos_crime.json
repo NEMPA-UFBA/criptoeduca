@@ -11,7 +11,7 @@
   //  -- e foram removidos. O material verdadeiro da escola entra
   //  depois, em dois caminhos:
   //
-  //    1. pela página "Gerenciar Aulas", que é o caminho normal;
+  //    1. pela página "Gerenciar Conteúdos → Exemplos de Golpe", que é o caminho normal;
   //    2. aqui, caso queiram os exemplos fixos que vêm no primeiro
   //       boot do app.
   //

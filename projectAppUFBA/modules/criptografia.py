@@ -1,6 +1,8 @@
-"""Criptografia do mural: AES-128-GCM com chave derivada da frase do usuario.
+"""Criptografia de alto nivel do laboratorio: AES-128-GCM com chave derivada
+da frase do usuario.
 
-O que fica gravado no banco e so o envelope abaixo, nunca a chave:
+O envelope abaixo e o que o laboratorio mostra e usa para decifrar. Nada
+deste modulo grava no banco por conta propria:
 
     aes-gcm-v1$<iteracoes>$<salt_b64>$<nonce_b64>$<ciphertext+tag_b64>
 
@@ -105,9 +107,9 @@ def decifrar(payload, chave):
 def ciphertext_visivel(payload):
     """Devolve so o ciphertext+tag, sem versao/iteracoes/salt/nonce.
 
-    E o que o mural mostra na tela. O envelope completo continua no banco,
-    porque e ele que o decifrar precisa. Se o payload nao estiver no formato
-    esperado (mensagem antiga, por exemplo), devolve o texto como veio.
+    E o que o laboratorio mostra na tela. O envelope completo continua
+    disponivel para quem quiser testar a decifracao. Se o payload nao
+    estiver no formato esperado, devolve o texto como veio.
     """
     partes = payload.split("$", 4)
     if len(partes) != 5 or partes[0] != PREFIXO:
