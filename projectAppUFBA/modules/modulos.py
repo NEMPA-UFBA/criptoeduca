@@ -35,6 +35,24 @@ PASTA_PDFS = os.path.join(BASE_DIR, "static", "modulos")
 # e chave de botao, entao nao pode ter espaco, acento nem barra.
 RE_SLUG = re.compile(r"^[a-z0-9-]+$")
 
+# As categorias do catalogo, na ordem em que as abas aparecem. "Outros" e a
+# caixa de entrada dos modulos criados por professores que nao escolheram uma
+# categoria -- ela so vira aba quando tem algum modulo dentro.
+CATEGORIAS = (
+    "Criptografia",
+    "Segurança Digital",
+    "Legislação e Impacto",
+    "Matemática Aplicada",
+    "Outros",
+)
+CATEGORIAS_EXIBIDAS = CATEGORIAS[:4]
+CATEGORIA_PADRAO = "Outros"
+ORDEM_CATEGORIAS = {categoria: indice for indice, categoria in enumerate(CATEGORIAS)}
+
+# Modulos sem "ordem" no JSON (ou criados na plataforma) vao para o fim da
+# categoria, depois dos numerados.
+ORDEM_PADRAO = 900
+
 
 def _tirar_comentarios(texto):
     """Remove as linhas de comentario (// no inicio da linha).
@@ -114,6 +132,22 @@ def _carregar_questao(questao, onde, erros):
     }
 
 
+def _normalizar_categoria(valor):
+    """Devolve uma categoria conhecida; o que nao estiver na lista vai para Outros."""
+    categoria = (valor or "").strip()
+    return categoria if categoria in ORDEM_CATEGORIAS else CATEGORIA_PADRAO
+
+
+def _normalizar_ordem(valor):
+    """Le a ordem de exibicao, tolerando texto e valores invalidos no JSON."""
+    if isinstance(valor, bool):
+        return ORDEM_PADRAO
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return ORDEM_PADRAO
+
+
 def _carregar_modulo(bruto, posicao, erros):
     """Valida um modulo. Devolve o modulo pronto, ou None se estiver ruim.
 
@@ -175,6 +209,10 @@ def _carregar_modulo(bruto, posicao, erros):
         "dificuldade": (bruto.get("dificuldade") or "").strip(),
         "duracao": (bruto.get("duracao") or "").strip(),
         "cor": (bruto.get("cor") or "#4F46E5").strip(),
+        # A categoria e o que separa o catalogo em abas. Um valor
+        # desconhecido nao quebra a tela: o modulo cai em "Outros".
+        "categoria": _normalizar_categoria(bruto.get("categoria")),
+        "ordem": _normalizar_ordem(bruto.get("ordem")),
         "pdf": pdf,
         # Modulos comuns deixam isto vazio. O modulo especial do
         # laboratorio AES usa "aes": ele tem leitura e quiz normais e,
@@ -315,6 +353,8 @@ def _modulos_do_banco(erros):
             "dificuldade": (linha.get("dificuldade") or "").strip(),
             "duracao": (linha.get("duracao") or "").strip(),
             "cor": (linha.get("cor") or "#4F46E5").strip(),
+            "categoria": _normalizar_categoria(linha.get("categoria")),
+            "ordem": _normalizar_ordem(linha.get("ordem")),
             "pdf": (linha.get("pdf") or "").strip(),
             "especial": "",
             "quiz": linha.get("quiz") or [],
@@ -378,6 +418,18 @@ def carregar_modulos():
             continue
         slugs_vistos.add(modulo["slug"])
         modulos.append(modulo)
+
+    # A ordem do catalogo: primeiro a categoria (na ordem das abas), depois a
+    # ordem declarada no JSON. Os modulos sem ordem vao para o fim, e os
+    # criados na plataforma ficam entre eles, na ordem em que foram criados.
+    modulos.sort(
+        key=lambda modulo: (
+            ORDEM_CATEGORIAS.get(modulo.get("categoria"), len(CATEGORIAS)),
+            modulo.get("ordem", ORDEM_PADRAO),
+            modulo.get("id") or 0,
+            modulo.get("titulo", ""),
+        )
+    )
 
     return modulos, erros
 

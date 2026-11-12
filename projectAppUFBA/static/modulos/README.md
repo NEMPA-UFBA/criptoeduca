@@ -13,25 +13,37 @@ Veja o [README dos dados](../../dados/README.md).
 O nome do arquivo tem que ser **exatamente** o `slug` do módulo declarado em
 `dados/modulos.json`, com a extensão `.pdf`:
 
-| Módulo | Arquivo esperado |
-|---|---|
-| Fundamentos de Segurança e Criptografia | `fundamentos-seguranca-criptografia.pdf` |
-| Os Fundamentos da Criptografia e Segurança Digital | `criptografia.pdf` |
-| Phishing e Engenharia Social | `phishing-e-engenharia-social.pdf` |
-| Pagamentos Eletrônicos e Pix Seguro | `pagamentos-e-pix-seguro.pdf` |
-| Laboratório: Criptografia AES-128-GCM | `laboratorio-aes-128-gcm.pdf` |
-| Senhas Fortes e Autenticação | `senhas-e-autenticacao.pdf` |
+| Módulo | Aba | Arquivo esperado |
+|---|---|---|
+| Definição e História | Criptografia | `definicao-e-historia.pdf` |
+| Cifras Clássicas | Criptografia | `cifras-classicas.pdf` |
+| Laboratório: Criptografia AES-128-GCM | Criptografia | `laboratorio-aes-128-gcm.pdf` |
+| Senhas Fortes e Autenticação | Segurança Digital | `senhas-e-autenticacao.pdf` |
+| Criptografia Assimétrica | Segurança Digital | `criptografia-assimetrica.pdf` |
+| Phishing e Engenharia Social | Segurança Digital | `phishing-e-engenharia-social.pdf` |
+| Pagamentos Eletrônicos e Pix Seguro | Segurança Digital | `pagamentos-e-pix-seguro.pdf` |
+| LGPD | Legislação e Impacto | `lgpd.pdf` |
+| Aritmética Modular | Matemática Aplicada | `aritmetica-modular.pdf` |
 
 O `slug` serve para três coisas ao mesmo tempo: chave do botão na tela,
 identificador na rota da página e nome do arquivo. Por isso ele não pode ter
 acento, espaço nem caractere especial.
 
-**Os PDFs já estão nesta pasta**, como material de teste: são versões
-geradas automaticamente, com o texto real do tema, para que a exibição
-dentro do app possa ser conferida antes de o material definitivo ser
-escrito. Substitua cada arquivo pelo PDF verdadeiro, com o **mesmo nome**,
-e nada mais precisa ser feito — a página do módulo passa a mostrar o novo
-conteúdo na hora.
+**Os PDFs dos módulos novos são placeholders propositais.** Eles estão em
+branco, avisando que o conteúdo definitivo será publicado pela equipe, para
+que a estrutura, a leitura e o quiz possam ser testados antes dos textos de
+Yasmim, Alana e Daniel. Quando o material verdadeiro chegar, substitua cada
+arquivo pelo PDF final, com o **mesmo nome**, e nada mais precisa ser feito —
+a página do módulo passa a mostrar o novo conteúdo na hora.
+
+Os módulos 1 a 5 e a Aritmética Modular usam um **quiz de teste** com uma
+pergunta; a resposta está no próprio aviso do PDF. O laboratório AES e os
+módulos complementares (Phishing e Pix) continuam com o material e os quizzes
+que já existiam.
+
+Os arquivos `criptografia.pdf` e `fundamentos-seguranca-criptografia.pdf`
+continuam na pasta como fonte do conteúdo que havia antes da reorganização;
+eles não são mais referenciados por nenhum módulo.
 
 O módulo `laboratorio-aes-128-gcm` é especial: o PDF dele é o material de
 leitura que libera o quiz e, depois do quiz, o botão do laboratório de

@@ -26,10 +26,15 @@ from modules.database import (
     salvar_mensagem_mural,
 )
 
-# O alfabeto da cifra. Fora dele, o caractere passa intacto -- e por isso
-# que a mensagem ainda pode ter "<" ou ">", que sao escapados na hora de
-# montar o HTML.
-ALFABETO = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?"
+# O alfabeto da cifra. A mensagem e bloqueada se tiver qualquer caractere
+# fora desta lista; assim o texto cifrado nunca carrega simbolos que a cifra
+# nao sabe representar.
+ALFABETO = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÀÂÃÉÊÍÓÔÕÚÜÇáàâãéêíóôõúüç.,:!?()[]{}@#$%&+_=<> "
+
+
+def caracteres_fora_do_alfabeto(texto):
+    """Devolve os caracteres da mensagem que nao existem no alfabeto."""
+    return sorted(set(texto) - set(ALFABETO))
 
 
 def gerar_cifra_usuario(username):
@@ -50,9 +55,14 @@ def gerar_cifra_usuario(username):
 
 
 def criptografar_texto(texto, username):
-    """Aplica a cifra de substituicao do usuario ao texto."""
+    """Aplica a cifra de substituicao do usuario ao texto.
+
+    Todo caractere precisa existir em ALFABETO. A validacao acontece antes,
+    no formulario, para a mensagem ser recusada com uma explicacao em vez de
+    chegar aqui pela metade.
+    """
     mapa = gerar_cifra_usuario(username)
-    return "".join(mapa.get(char, char) for char in texto.lower())
+    return "".join(mapa[char] for char in texto)
 
 
 def _css():
@@ -132,6 +142,17 @@ def _publicar_mensagem(username_atual, versao_form):
     if not mensagem.strip():
         st.session_state[_CHAVE_ERRO] = (
             "Escreva alguma mensagem antes de enviar."
+        )
+        return
+
+    invalidos = caracteres_fora_do_alfabeto(mensagem)
+    if invalidos:
+        lista = ", ".join(repr(char) for char in invalidos[:10])
+        if len(invalidos) > 10:
+            lista += ", ..."
+        st.session_state[_CHAVE_ERRO] = (
+            "A mensagem tem caracteres fora do alfabeto da cifra: %s. "
+            "Remova esses caracteres e tente novamente." % lista
         )
         return
 
@@ -223,6 +244,10 @@ def _render_sessao_interativa(modo_voluntario=False):
         st.text_area(
             "Digite sua mensagem secreta para o mural:",
             key=f"mural_mensagem_{chave_form}",
+            help=(
+                "Aceita letras (com acentos), números, espaço e os sinais do "
+                "alfabeto da cifra. Emojis e quebras de linha não são aceitos."
+            ),
         )
         st.form_submit_button(
             "Criptografar com sua Chave e Enviar",
@@ -244,10 +269,10 @@ def _render_sessao_interativa(modo_voluntario=False):
             col_msg, col_botoes = st.columns([4, 1])
 
             with col_msg:
-                # A mensagem entra em HTML cru, entao precisa de escape. A
-                # cifra nao cobre "<" nem ">": o alfabeto dela e so letras,
-                # numeros e " .,!?", e o mapa devolve qualquer caractere
-                # fora do alfabeto sem trocar.
+                # A mensagem entra em HTML cru, entao precisa de escape mesmo
+                # depois de cifrada: o alfabeto agora inclui "<" e ">", que a
+                # cifra troca por outros caracteres, mas o escape continua
+                # sendo a protecao contra qualquer HTML vindo do banco.
                 st.markdown(f"""
                     <div class="mural-item">
                         <span style="color: #94a3b8; font-size: 0.85rem;">🕒 {data}</span><br>

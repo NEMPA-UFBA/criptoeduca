@@ -9,7 +9,7 @@ navegador. O objetivo e experimentar a cifra de alto nivel
 
 import streamlit as st
 
-from modules.criptografia import cifrar, ciphertext_visivel, decifrar
+from modules.criptografia import cifrar, decifrar
 
 
 _CHAVE_ERRO_CIFRAR = "_aes_erro_cifrar"
@@ -22,8 +22,8 @@ def _cifrar_mensagem():
     """Cifra a mensagem como callback do botao.
 
     Os widgets existem na tela quando o callback roda, entao os valores sao
-    lidos do session_state. O envelope fica pronto para o campo de decifrar
-    no rerun seguinte.
+    lidos do session_state. O texto cifrado fica guardado apenas na sessao e
+    sera usado pelo campo de decifrar no rerun seguinte.
     """
     mensagem = st.session_state.get("aes_lab_mensagem", "")
     chave = st.session_state.get("aes_lab_chave", "")
@@ -39,26 +39,25 @@ def _cifrar_mensagem():
         )
         return
 
-    envelope = cifrar(mensagem, chave)
     st.session_state[_CHAVE_ERRO_CIFRAR] = None
-    st.session_state["aes_lab_envelope"] = envelope
-    st.session_state["aes_lab_visivel"] = ciphertext_visivel(envelope)
-    st.session_state["aes_lab_envelope_input"] = envelope
+    st.session_state["aes_lab_texto_cifrado"] = cifrar(mensagem, chave)
+    st.session_state.pop("aes_lab_chave_dec", None)
+    st.session_state.pop(_CHAVE_ERRO_DECIFRAR, None)
     st.session_state[_CHAVE_TEXTO_DECIFRADO] = None
     st.session_state[_CHAVE_AVISO_CIFRAR] = (
-        "Mensagem cifrada. Nada foi publicado."
+        "Mensagem cifrada."
     )
 
 
 def _decifrar_mensagem():
-    """Decifra o envelope como callback do botao."""
-    envelope_input = st.session_state.get("aes_lab_envelope_input", "")
+    """Decifra o texto gerado nesta sessao como callback do botao."""
+    texto_cifrado = st.session_state.get("aes_lab_texto_cifrado", "")
     chave_dec = st.session_state.get("aes_lab_chave_dec", "")
 
     st.session_state[_CHAVE_TEXTO_DECIFRADO] = None
-    if not envelope_input.strip():
+    if not texto_cifrado:
         st.session_state[_CHAVE_ERRO_DECIFRAR] = (
-            "Cole o texto cifrado antes de decifrar."
+            "Cifre uma mensagem antes de decifrar."
         )
         return
     if not chave_dec.strip():
@@ -68,7 +67,7 @@ def _decifrar_mensagem():
         return
 
     try:
-        texto = decifrar(envelope_input.strip(), chave_dec)
+        texto = decifrar(texto_cifrado, chave_dec)
     except ValueError:
         st.session_state[_CHAVE_ERRO_DECIFRAR] = (
             "Este texto não está no formato AES-GCM."
@@ -112,12 +111,12 @@ def render_laboratorio_aes():
 
     st.subheader("🔒 Criptografar")
     st.text_area(
-        "Mensagem para cifrar:",
+        "Texto:",
         key="aes_lab_mensagem",
-        placeholder="Escreva algo que você queira cifrar...",
+        placeholder="Escreva o texto que você quer cifrar...",
     )
     st.text_input(
-        "Frase-chave:",
+        "Chave:",
         type="password",
         key="aes_lab_chave",
         help="A chave não é armazenada. Sem ela, a mensagem é irrecuperável.",
@@ -136,29 +135,21 @@ def render_laboratorio_aes():
     if aviso:
         st.success(aviso)
 
-    envelope = st.session_state.get("aes_lab_envelope")
-    if envelope:
-        st.markdown("**Ciphertext (texto cifrado, sem o envelope):**")
-        st.code(
-            st.session_state.get("aes_lab_visivel")
-            or ciphertext_visivel(envelope),
-            language=None,
-        )
-        with st.expander("Ver o envelope completo (usado para decifrar)"):
-            st.code(envelope, language=None)
-            st.caption(
-                "Copie o envelope inteiro para testar a decifração abaixo."
-            )
+    texto_cifrado = st.session_state.get("aes_lab_texto_cifrado")
+    if not texto_cifrado:
+        return
+
+    st.markdown("**Texto cifrado:**")
+    st.code(texto_cifrado, language=None)
+    st.caption(
+        "Para conferir, digite a mesma chave abaixo. O texto cifrado fica "
+        "guardado apenas nesta sessão."
+    )
 
     st.divider()
     st.subheader("🔓 Decifrar")
-    st.text_area(
-        "Cole o texto cifrado completo:",
-        key="aes_lab_envelope_input",
-        placeholder="aes-gcm-v1$...",
-    )
     st.text_input(
-        "Frase-chave usada para cifrar:",
+        "Chave para decifrar:",
         type="password",
         key="aes_lab_chave_dec",
     )

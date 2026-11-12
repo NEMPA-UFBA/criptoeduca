@@ -3,7 +3,7 @@ import re
 import streamlit as st
 from modules.database import obter_primeiro_acesso
 from modules.sessaoInterativa import render_sessao_interativa
-from modules.mainmenu import render_modulos
+from modules.mainmenu import render_modulos, render_navegacao_modulos
 from modules.paginaModulo import render_pagina_modulo
 from modules.pergaminhos import render_pergaminhos
 from modules.gerenciar_conteudos import render_gerenciar_conteudos
@@ -302,6 +302,13 @@ else:
         st.session_state["gerenciar_conteudos_aba"] = "Módulos"
 
     pagina = st.sidebar.radio("Navegação", opcoes, key="menu")
+
+    # A hierarquia dos modulos aparece na propria lateralidade: recolhida,
+    # logo abaixo do menu, com as categorias e os modulos de cada uma. So
+    # existe quando a pagina aberta e a dos modulos, para nao poluir as
+    # outras telas.
+    if pagina == "Módulos de Aprendizado":
+        render_navegacao_modulos()
 
     st.sidebar.divider()
     if st.sidebar.button("🚪 Sair / Logout", key="botao_sair"):

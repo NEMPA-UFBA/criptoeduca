@@ -127,6 +127,7 @@ def _render_conteudo_modulo(modulo, slug):
     icone = html.escape(modulo.get("icone", "📘"))
     titulo = html.escape(modulo.get("titulo", ""))
     resumo = html.escape(modulo.get("resumo", ""))
+    categoria = html.escape(modulo.get("categoria", ""))
     nivel = html.escape(modulo.get("nivel", ""))
     dificuldade = html.escape(modulo.get("dificuldade", ""))
     duracao = html.escape(modulo.get("duracao", ""))
@@ -143,6 +144,7 @@ def _render_conteudo_modulo(modulo, slug):
               <h2>{icone} {titulo}</h2>
               <p>{resumo}</p>
               <div class="ce-tags">
+                <span class="ce-badge">🗂️ {categoria}</span>
                 <span class="ce-badge ce-badge-nivel">{nivel}</span>
                 <span class="ce-badge">📖 {dificuldade}</span>
                 <span class="ce-badge">⏱️ {duracao}</span>

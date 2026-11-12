@@ -164,18 +164,6 @@ def _criar_tabelas(conn):
     if "ativo" not in colunas_mural:
         c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
-    # --- MURAL: APOSENTA A CIFRA ANTIGA ---
-    # As mensagens gravadas antes do AES-128-GCM usavam uma cifra de
-    # substituicao derivada do username -- reversivel por qualquer pessoa.
-    # Elas nao sao apagadas (o padrao do projeto e inativar, nao excluir),
-    # mas deixam de aparecer no mural. O filtro e idempotente: toda mensagem
-    # nova comeca com "aes-gcm-", entao nunca e afetada por este UPDATE.
-    c.execute(
-        "UPDATE mural SET ativo = 0 "
-        "WHERE mensagem_criptografada IS NULL "
-        "   OR mensagem_criptografada NOT LIKE 'aes-gcm-%'"
-    )
-
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
     # para os alunos. Segue o mesmo padrao do mural: nada e apagado, a linha
@@ -231,6 +219,22 @@ def _criar_tabelas(conn):
             c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS %s %s"
                       % (nome_coluna, definicao))
 
+    # A LGPD deixou de ser pergaminho: virou o Modulo 5, uma aula teorica.
+    # As linhas antigas nao sao apagadas (o texto pode ter sido editado pela
+    # coordenacao), apenas inativadas, para nao aparecerem mais na pagina
+    # "Exemplos de Crimes Digitais". O UPDATE e idempotente.
+    c.execute(
+        "UPDATE conteudos SET ativo = 0 WHERE chave = ANY(%s)",
+        (
+            [
+                "lei-geral-protecao-dados",
+                "principios-da-lgpd",
+                "responsabilidade-protecao-dados",
+                "importancia-lgpd-organizacoes",
+            ],
+        ),
+    )
+
     # --- MODULOS CRIADOS PELA PLATAFORMA ---
     #
     # Os modulos originais continuam em dados/modulos.json. Esta tabela
@@ -256,6 +260,8 @@ def _criar_tabelas(conn):
             cor TEXT DEFAULT '#4F46E5',
             pdf TEXT DEFAULT '',
             quiz TEXT DEFAULT '[]',
+            categoria TEXT DEFAULT 'Outros',
+            ordem INTEGER DEFAULT 900,
             autor TEXT NOT NULL,
             ativo INTEGER DEFAULT 1,
             data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -278,6 +284,8 @@ def _criar_tabelas(conn):
         ("cor", "TEXT DEFAULT '#4F46E5'"),
         ("pdf", "TEXT DEFAULT ''"),
         ("quiz", "TEXT DEFAULT '[]'"),
+        ("categoria", "TEXT DEFAULT 'Outros'"),
+        ("ordem", "INTEGER DEFAULT 900"),
         ("autor", "TEXT DEFAULT ''"),
         ("ativo", "INTEGER DEFAULT 1"),
         ("data", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
@@ -746,8 +754,8 @@ def listar_modulos_banco():
             with conn.cursor(cursor_factory=RealDictCursor) as c:
                 c.execute(
                     "SELECT id, slug, titulo, resumo, icone, nivel, dificuldade, "
-                    "duracao, cor, pdf, quiz, autor, data FROM modulos "
-                    "WHERE ativo = 1 ORDER BY id ASC"
+                    "duracao, cor, pdf, quiz, categoria, ordem, autor, data "
+                    "FROM modulos WHERE ativo = 1 ORDER BY id ASC"
                 )
                 linhas = c.fetchall()
             # Consulta so de leitura: encerra a transacao para a conexao
@@ -779,19 +787,24 @@ def salvar_modulo(
     pdf,
     quiz,
     autor,
+    categoria="Outros",
 ):
     """Cria um modulo novo. Devolve (id, None) ou (None, motivo).
 
     O "motivo" e uma chave curta que a tela traduz em portugues:
     "slug_duplicado" ou o texto do erro inesperado.
+
+    A categoria e validada pelo chamador (a tela usa a lista de
+    modules/modulos.py). O valor fica no banco para o catalogo saber em que
+    aba o modulo aparece.
     """
     with conectar() as conn:
         c = conn.cursor()
         try:
             c.execute(
                 "INSERT INTO modulos (slug, titulo, resumo, icone, nivel, "
-                "dificuldade, duracao, cor, pdf, quiz, autor, ativo) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1) "
+                "dificuldade, duracao, cor, pdf, quiz, autor, categoria, ativo) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1) "
                 "RETURNING id",
                 (
                     slug,
@@ -805,6 +818,7 @@ def salvar_modulo(
                     pdf,
                     _quiz_para_texto(quiz),
                     autor,
+                    categoria,
                 ),
             )
             novo_id = c.fetchone()[0]
@@ -834,6 +848,7 @@ def atualizar_modulo(
     quiz,
     solicitante,
     tipo,
+    categoria="Outros",
 ):
     """Reescreve um modulo do banco respeitando quem criou.
 
@@ -854,20 +869,22 @@ def atualizar_modulo(
             cor,
             pdf,
             _quiz_para_texto(quiz),
+            categoria,
         )
         try:
             if tipo == "Administrador":
                 c.execute(
                     "UPDATE modulos SET slug = %s, titulo = %s, resumo = %s, "
                     "icone = %s, nivel = %s, dificuldade = %s, duracao = %s, "
-                    "cor = %s, pdf = %s, quiz = %s WHERE id = %s",
+                    "cor = %s, pdf = %s, quiz = %s, categoria = %s "
+                    "WHERE id = %s",
                     parametros + (modulo_id,),
                 )
             else:
                 c.execute(
                     "UPDATE modulos SET slug = %s, titulo = %s, resumo = %s, "
                     "icone = %s, nivel = %s, dificuldade = %s, duracao = %s, "
-                    "cor = %s, pdf = %s, quiz = %s "
+                    "cor = %s, pdf = %s, quiz = %s, categoria = %s "
                     "WHERE id = %s AND autor = %s",
                     parametros + (modulo_id, solicitante),
                 )

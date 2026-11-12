@@ -19,7 +19,8 @@ Há dois arquivos aqui, e os dois seguem a mesma regra:
 2. Copie um bloco de módulo que já existe (o do Módulo 1 serve de modelo) e
    cole no fim da lista `"modulos"`.
 3. Troque os valores: `slug`, `titulo`, `resumo`, `icone`, `nivel`,
-   `dificuldade`, `duracao`, `cor`, `pdf` e as perguntas do `quiz`.
+   `dificuldade`, `duracao`, `cor`, `categoria`, `ordem`, `pdf` e as
+   perguntas do `quiz`.
 4. Coloque o PDF do material em `static/modulos/`, com o mesmo nome do
    `slug` (ex.: `slug: "senhas-e-autenticacao"` → arquivo
    `static/modulos/senhas-e-autenticacao.pdf`).
@@ -27,6 +28,41 @@ Há dois arquivos aqui, e os dois seguem a mesma regra:
 
 O arquivo já vem comentado, com a explicação de cada campo. Os comentários
 são linhas inteiras que começam com `//`.
+
+## As abas do catálogo
+
+O Mapa de Missões separa os módulos em quatro abas fixas, nesta ordem:
+
+| Aba | `categoria` |
+|---|---|
+| Criptografia | `"Criptografia"` |
+| Segurança Digital | `"Segurança Digital"` |
+| Legislação e Impacto | `"Legislação e Impacto"` |
+| Matemática Aplicada | `"Matemática Aplicada"` |
+
+A categoria é o que coloca o módulo na aba certa. Um valor desconhecido (ou
+um módulo criado pela tela sem categoria escolhida) cai em **Outros**, que
+só vira aba quando tem algum módulo dentro — assim o catálogo não ganha uma
+aba vazia para uma exceção.
+
+O campo `ordem` decide a posição dentro da aba: menor aparece primeiro. Os
+módulos numerados usam 1, 2, 3...; os complementares e o laboratório usam
+números altos (50, 51, 60) para ficarem depois. Sem `ordem`, o módulo vai
+para o fim da aba.
+
+Os módulos criados pela tela também escolhem a categoria no formulário, e o
+valor fica gravado no banco.
+
+## Uma observação sobre a LGPD
+
+A LGPD era um conjunto de pergaminhos em `exemplos_crime.json`. Agora ela é
+o **Módulo 5**, uma aula teórica com PDF próprio. O PDF atual é um
+placeholder em branco, como o dos outros módulos novos; o texto definitivo
+será publicado pela equipe. Os pergaminhos antigos de LGPD saíram deste
+arquivo; em bancos que já tinham os exemplos, eles são inativados (não
+apagados) pela preparação do banco, para não aparecerem mais na página
+**Exemplos de Crimes Digitais**. O texto que estava neles continua preservado
+no banco, inativo.
 
 ## Pelo app
 

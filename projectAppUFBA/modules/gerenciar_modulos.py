@@ -22,6 +22,8 @@ from modules.database import (
 from modules.estilo import aplicar_estilo, html_bruto
 from modules.mainmenu import _card_html
 from modules.modulos import (
+    CATEGORIA_PADRAO,
+    CATEGORIAS,
     PASTA_PDFS,
     RE_SLUG,
     atualizar_modulo_json,
@@ -172,6 +174,9 @@ def _iniciar(prefixo, modulo=None):
     st.session_state[_k(prefixo, "dificuldade")] = modulo.get("dificuldade", "")
     st.session_state[_k(prefixo, "duracao")] = modulo.get("duracao", "")
     st.session_state[_k(prefixo, "cor")] = modulo.get("cor", "#4F46E5")
+    st.session_state[_k(prefixo, "categoria")] = modulo.get(
+        "categoria", CATEGORIA_PADRAO
+    )
 
     quiz = modulo.get("quiz") or []
     st.session_state[_k(prefixo, "quiz_n")] = len(quiz)
@@ -309,6 +314,10 @@ def _coletar(prefixo):
             str(st.session_state.get(_k(prefixo, "cor"), "")).strip()
             or "#4F46E5"
         ),
+        "categoria": (
+            str(st.session_state.get(_k(prefixo, "categoria"), "")).strip()
+            or CATEGORIA_PADRAO
+        ),
         "quiz": quiz,
     }
     return dados, problemas
@@ -338,6 +347,8 @@ def _slug_em_uso(slug, original=None):
 def _validar(dados, problemas, original=None):
     if not dados["titulo"]:
         return "Dê um título ao módulo."
+    if dados["categoria"] not in CATEGORIAS:
+        return "Escolha uma categoria válida para o módulo."
     if not dados["slug"] or not RE_SLUG.match(dados["slug"]):
         return (
             "O slug só pode ter letra minúscula, número e hífen "
@@ -396,6 +407,7 @@ def _atualizar_banco(modulo_id, dados, pdf):
         dados["quiz"],
         _username(),
         _tipo(),
+        dados["categoria"],
     )
 
 
@@ -461,6 +473,15 @@ def _campos_modulo(prefixo, modulo=None):
         if slug_gerado:
             st.caption("Sem slug: vai virar `%s`." % slug_gerado)
     st.text_area("Resumo", key=_k(prefixo, "resumo"), height=90)
+    st.selectbox(
+        "Categoria (aba do catálogo)",
+        options=CATEGORIAS,
+        key=_k(prefixo, "categoria"),
+        help=(
+            "Define em qual aba do Mapa de Missões o módulo aparece. "
+            "'Outros' só cria uma aba quando existe algum módulo nela."
+        ),
+    )
 
     _secao("Aparência no mapa")
     coluna_campos, coluna_previa = st.columns([3, 2], gap="large")
@@ -534,6 +555,7 @@ def _criar_modulo():
         "",
         dados["quiz"],
         _username(),
+        dados["categoria"],
     )
     if novo_id is None:
         if motivo == "slug_duplicado":
@@ -614,6 +636,7 @@ def _salvar_edicao(modulo):
             "dificuldade": dados["dificuldade"],
             "duracao": dados["duracao"],
             "cor": dados["cor"],
+            "categoria": dados["categoria"],
             "pdf": pdf or "",
             "quiz": _quiz_para_json(dados["quiz"]),
         })
@@ -921,7 +944,8 @@ def _render_gerenciar_modulos():
             expanded=False,
         ):
             st.caption(
-                "Origem: %s · Autor: %s" % (rotulo_origem, autor)
+                "Origem: %s · Autor: %s · Categoria: %s"
+                % (rotulo_origem, autor, modulo.get("categoria") or "—")
             )
             if modulo.get("resumo"):
                 st.write(modulo["resumo"])

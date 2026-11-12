@@ -7,7 +7,8 @@ Projeto de Pesquisa (FENIC) — NEMPA/UFBA e Colégio Estadual Álpio Franca.
 > "via Aritmética Modular". O código do repositório não usa Aritmética Modular
 > em lugar nenhum — nenhuma biblioteca de criptografia assimétrica, nenhum
 > cálculo modular. O que existe é bcrypt para senhas, uma chave diária
-> derivada por HMAC-SHA256 e AES-128-GCM no mural. A descrição foi corrigida
+> derivada por HMAC-SHA256 e AES-128-GCM no laboratório de criptografia. A
+> descrição foi corrigida
 > para não prometer uma técnica que o app não implementa.
 
 ---
@@ -109,7 +110,7 @@ projectAppUFBA/
     ├── quiz.py                # o quiz do módulo, com gabarito
     ├── pergaminhos.py         # os pergaminhos: exemplos de crimes digitais
     ├── estilo.py              # folha de estilo da identidade visual
-    ├── criptografia.py        # AES-128-GCM do mural (cifrar/decifrar)
+    ├── criptografia.py        # AES-128-GCM do laboratório (cifrar/decifrar)
     └── sessaoInterativa.py    # mural com chave por mensagem
 ```
 
@@ -122,9 +123,16 @@ campo, e a documentação completa está em
 [`dados/README.md`](projectAppUFBA/dados/README.md).
 
 Cada módulo tem `slug`, `titulo`, `resumo`, `icone`, `nivel`,
-`dificuldade`, `duracao`, `cor`, `pdf` e `quiz`. O `slug` serve para três
-coisas ao mesmo tempo: chave do botão na tela, identificador na página e
-nome do arquivo de PDF (`static/modulos/<slug>.pdf`).
+`dificuldade`, `duracao`, `cor`, `categoria`, `ordem`, `pdf` e `quiz`. O
+`slug` serve para três coisas ao mesmo tempo: chave do botão na tela,
+identificador na página e nome do arquivo de PDF
+(`static/modulos/<slug>.pdf`).
+
+`categoria` escolhe a aba do catálogo (**Criptografia**, **Segurança
+Digital**, **Legislação e Impacto** ou **Matemática Aplicada**; o que não
+estiver na lista cai em **Outros**), e `ordem` decide a posição dentro da
+aba. Os módulos criados pela tela também escolhem a categoria, gravada na
+tabela `modulos`.
 
 O campo `certa` do quiz aceita o **número** da alternativa (contando a
 partir de 1) ou o **texto** dela — o número é mais seguro para quem digita
@@ -161,10 +169,20 @@ Um módulo quebrado é descartado, e os outros continuam aparecendo.
 
 A home é o **Mapa de Missões**: cards em grade, com ícone, nível,
 dificuldade, tempo estimado, e uma caixa de progresso ("X de Y módulos
-concluídos"). O botão "Iniciar módulo" grava o `slug` em `st.session_state` e
-a mesma rota da sidebar passa a desenhar a página do módulo; o botão "Voltar
-ao mapa" apaga o `slug` e a home volta. Não é uma segunda página no menu: é
-a mesma rota com um estado.
+concluídos"). Os módulos ficam em **abas por categoria** — Criptografia,
+Segurança Digital, Legislação e Impacto e Matemática Aplicada —, e cada aba
+mostra quantos módulos dela já foram concluídos. A categoria **Outros** só
+vira aba quando existe algum módulo nela.
+
+A hierarquia também aparece na lateralidade: com a página de módulos aberta,
+um expander recolhido na sidebar (**"Ir para um módulo"**) lista as
+categorias e os módulos de cada uma, e leva direto ao módulo escolhido. É o
+mesmo estado da página, sem uma segunda rota.
+
+O botão "Iniciar módulo" grava o `slug` em `st.session_state` e a mesma rota
+da sidebar passa a desenhar a página do módulo; o botão "Voltar ao mapa"
+apaga o `slug` e a home volta. Não é uma segunda página no menu: é a mesma
+rota com um estado.
 
 A página do módulo já tem o cabeçalho (título, resumo, badges), a seção de
 material e a seção de quiz. **O PDF não aparece na página do módulo** —
@@ -179,9 +197,11 @@ Quem escreve o conteúdo do curso edita `dados/modulos.json` e coloca os
 PDFs em `static/modulos/`. Nenhuma mudança de código é necessária para
 adicionar, remover ou reescrever um módulo.
 
-Os quatro PDFs de teste já estão em `static/modulos/`, com o nome igual ao
-`slug` de cada módulo. Substituir o arquivo pelo PDF verdadeiro, com o
-**mesmo nome**, já resolve: a página passa a mostrar o novo conteúdo.
+Os PDFs de teste já estão em `static/modulos/`, com o nome igual ao `slug`
+de cada módulo. Os módulos 1 a 5 e a Aritmética Modular usam **PDFs em branco
+propositais** e um **quiz de teste** com uma pergunta; o material definitivo
+será publicado pela equipe. O laboratório AES e os módulos complementares
+continuam com o conteúdo que já existia.
 
 ### `modules/pergaminhos.py` e `dados/exemplos_crime.json`
 
@@ -294,12 +314,11 @@ Duas armadilhas do `st.markdown` com HTML, ambas medidas no navegador:
 Por isso `estilo.html_bruto()` tira a indentação e remove as linhas em
 branco de todo HTML montado pelo app.
 
-### `modules/criptografia.py` e o mural
+### `modules/criptografia.py` e o laboratório AES
 
-O mural usa **AES-128-GCM**, com a chave derivada da frase que o autor
-digita. Não é mais a cifra de substituição que existia antes: aquela derivava
-a "chave" do `username`, então qualquer pessoa podia refazer o mapa e ler
-tudo.
+O laboratório AES usa **AES-128-GCM**, com a chave derivada da frase que a
+pessoa digita. O texto cifrado é um único bloco base64url; o laboratório não
+grava nada no banco e mostra apenas esse bloco na tela.
 
 O caminho de uma mensagem:
 
@@ -309,29 +328,24 @@ O caminho de uma mensagem:
    mensagem com a mesma chave gera ciphertexts diferentes.
 3. O **GCM** cifra e autentica: chave errada ou ciphertext alterado levantam
    `InvalidTag` em vez de devolver texto errado.
-4. O banco guarda só o envelope
-   `aes-gcm-v1$<iteracoes>$<salt>$<nonce>$<ciphertext+tag>`, em base64. A
-   chave nunca é gravada. Na tela, o mural mostra só o `ciphertext+tag`; o
-   envelope completo fica no banco, porque é ele que a decifração precisa.
+4. Iterações, salt, nonce e ciphertext+tag são empacotados dentro do próprio
+   bloco base64. A chave nunca é gravada. O texto cifrado fica apenas na
+   sessão do navegador.
 
 A chave pode ter qualquer tamanho; o formulário só exige que não seja vazia.
 Chaves curtas são fáceis de adivinhar, então a tela recomenda uma frase longa.
 
-O prefixo e o número de iterações ficam dentro do envelope para que uma
-mudança futura de parâmetros não torne as mensagens antigas ilegíveis. O
-número de iterações lido do banco tem limite de sanidade, para um envelope
-forjado não travar a página.
+O número de iterações fica dentro do bloco para que uma mudança futura de
+parâmetros não torne mensagens antigas ilegíveis. O formato antigo com campos
+separados por `$` continua sendo aceito na decifração. O número de iterações
+lido do bloco tem limite de sanidade, para um texto forjado não travar a
+página.
 
 **Por que não ECB.** O ECB cifra cada bloco de 16 bytes isoladamente: o mesmo
 bloco de texto vira o mesmo bloco cifrado, a mesma mensagem com a mesma chave
 dá sempre o mesmo resultado, e não há IV nem autenticação. É o modo que os
 materiais de segurança usam como exemplo de *como não fazer*. O GCM custa o
 mesmo esforço de código e não ensina a lição errada.
-
-As mensagens gravadas com a cifra antiga são **inativadas** no boot
-(`UPDATE mural SET ativo = 0 WHERE ... NOT LIKE 'aes-gcm-%'`), e não apagadas:
-o histórico fica no banco, mas não aparece no mural. O filtro é idempotente,
-porque toda mensagem nova começa com `aes-gcm-`.
 
 ### `modules/database.py`
 
@@ -425,8 +439,9 @@ Vale ser explícito, porque parte do que parece proteção não é.
 ### Feito
 
 - Senhas com **bcrypt**, nunca texto puro, nunca no código.
-- **Mural com AES-128-GCM**: a chave vem da frase do autor via PBKDF2, o
-  nonce é aleatório e o GCM autentica o texto. O banco guarda só o ciphertext.
+- **Laboratório com AES-128-GCM**: a chave vem da frase digitada via PBKDF2,
+  o nonce é aleatório e o GCM autentica o texto. O laboratório não grava no
+  banco.
 - **Índice único de e-mail**: o mesmo e-mail não pode abrir duas contas.
 - **Rate limit** no login e na chave do Professor, com janela deslizante real
   (medida, não só teórica).
