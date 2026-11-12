@@ -1,15 +1,20 @@
+import html
 import re
 
 import streamlit as st
-from modules.database import obter_primeiro_acesso
+from modules.database import obter_primeiro_acesso, obter_dados_perfil
+from modules.perfilWidget import render_widget_perfil
 from modules.sessaoInterativa import render_sessao_interativa
-from modules.mainmenu import render_modulos, render_navegacao_modulos
+from modules.mainmenu import (
+    render_modulos,
+    render_navegacao_modulos,
+    render_progresso_aluno,
+)
 from modules.paginaModulo import render_pagina_modulo
 from modules.pergaminhos import render_pergaminhos
 from modules.gerenciar_conteudos import render_gerenciar_conteudos
 from modules.leitura import CHAVE_LEITURA, render_pagina_leitura
 from modules.modulos import carregar_modulos
-from modules.mainmenu import render_progresso_aluno
 from modules.login import (
     render_login,
     obter_chave_professor_diaria,
@@ -200,6 +205,57 @@ else:
                 transition: none;
             }
         }
+        /* ---------- Moldura do avatar ---------- */
+        /* [class*=...] pega a moldura da barra lateral e também a do diálogo de perfil. */
+        [class*="st-key-moldura_avatar"] {
+            position: relative;
+            margin: 0.4rem auto 0.2rem;      /* centraliza o bloco na barra */
+            padding: 8px;
+        }
+        [class*="st-key-moldura_avatar"] img {
+            display: block;
+            border-radius: 12px;
+            padding: 3px;                    /* anel escuro entre foto e borda */
+            border: 3px solid transparent;
+            background:
+                linear-gradient(#0f172a, #0f172a) padding-box,
+                linear-gradient(135deg, #4F46E5, #38bdf8) border-box;
+            box-shadow: 0 0 16px rgba(79, 70, 229, 0.45),
+                        0 0 4px rgba(56, 189, 248, 0.35);
+        }
+        /* Cantos de mira (superior esquerdo e inferior direito) */
+        [class*="st-key-moldura_avatar"]::before,
+        [class*="st-key-moldura_avatar"]::after {
+            content: "";
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #38bdf8;
+            pointer-events: none;
+        }
+        [class*="st-key-moldura_avatar"]::before {
+            top: 0; left: 0;
+            border-right: none; border-bottom: none;
+        }
+        [class*="st-key-moldura_avatar"]::after {
+            bottom: 0; right: 0;
+            border-left: none; border-top: none;
+        }
+        /* Some com o botão de "tela cheia" que aparece em cima da foto no hover */
+        [class*="st-key-moldura_avatar"] [data-testid="stElementToolbar"] {
+            display: none;
+        }
+
+        /* Etiqueta em pixel abaixo da foto */
+        .ce-avatar-tag {
+            font-family: "PressStart2P", monospace;
+            font-size: 8px;
+            letter-spacing: 0;
+            -webkit-font-smoothing: none;
+            color: #7dd3fc;
+            text-align: center;
+            margin: 0 0 0.6rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -255,11 +311,37 @@ else:
             unsafe_allow_html=True,
         )
 
-    # Barra lateral
-    st.sidebar.title("Criptoeduca")
-    st.sidebar.write(f"Usuário: **{st.session_state['nome_usuario']}**")
-    st.sidebar.write(f"Perfil: **{tipo}**")
+    # logo após o bloco de CSS da tela logada
+    msg = st.session_state.pop("toast_notificacao", None)
+    if msg:
+        st.toast(msg)
 
+    # Barra lateral
+    username_atual = st.session_state.get("username")
+    dados = obter_dados_perfil(username_atual)
+
+    with st.sidebar:
+        st.title("Criptoeduca")
+        if dados:
+            nome_db, foto_bytes = dados
+            if foto_bytes:
+                with st.container(
+                    key="moldura_avatar",
+                    width=118,
+                    horizontal_alignment="center",
+                ):
+                    st.image(foto_bytes, width=96)
+                st.markdown(
+                    f'<p class="ce-avatar-tag">{html.escape(tipo.upper())}</p>',
+                    unsafe_allow_html=True,
+                )
+            # Botão que abre a janela modal de edição
+            if st.button(
+                f"👤 {st.session_state.get('nome_usuario', nome_db)} ({st.session_state.get('tipo_usuario', '')})",
+                key="btn_abrir_perfil",
+                use_container_width=True,
+            ):
+                render_widget_perfil()
     # Menus condicionais baseados no perfil do usuário.
     # O Administrador precisa da propria lista: antes ele caia no else e
     # recebia o menu do Aluno, porque so o Professor era distinguido.

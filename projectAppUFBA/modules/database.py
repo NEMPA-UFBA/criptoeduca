@@ -114,23 +114,21 @@ def _criar_tabelas(conn):
             email TEXT NOT NULL,
             tipo TEXT NOT NULL,
             password TEXT NOT NULL,
+            foto_perfil BYTEA,
             primeiro_acesso INTEGER DEFAULT 1
         )
     ''')
 
     # 2. Inspeciona as colunas existentes na tabela
-    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'usuarios'")
-    colunas_existentes = [coluna[1] for coluna in c.fetchall()]
-
+    #c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'usuarios'")
+    # colunas_existentes = [coluna[1] for coluna in c.fetchall()]
+    # #apagado por redundancia, pois o comando abaixo ja cria as colunas caso nao existam, entao não precisa inspecionar
+   
     # 3. Adiciona as colunas faltantes sem apagar dados
-    if "primeiro_acesso" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primeiro_acesso INTEGER DEFAULT 1")
-
-    if "email" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''")
-
-    if "tipo" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'Aluno'")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primeiro_acesso INTEGER DEFAULT 1")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'Aluno'")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_perfil BYTEA")
         
     # --- E-MAIL ÚNICO ---
     # Índice único em vez de UNIQUE na definição da tabela: o SQLite não tem
@@ -351,6 +349,15 @@ def _criar_tabelas(conn):
             PRIMARY KEY (username, modulo)
         )
     """)
+   #Criação da tabela de seguidores, que registra quem segue quem. A chave primária é composta pelos dois usernames, garantindo que não haja duplicatas.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS seguidores (
+            seguidor_username TEXT NOT NULL,
+            seguido_username TEXT NOT NULL,
+            data_inicio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (seguidor_username, seguido_username)
+        )
+    ''')
 
     # Garante a restrição única para tabelas criadas anteriormente sem a chave primária
     try:
@@ -1152,3 +1159,86 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
             # Duas submissões com o mesmo e-mail ao mesmo tempo: o índice único
             # barrou mesmo com a checagem acima. Mesma resposta da checagem.
             return "email_duplicado"
+
+@st.cache_data(ttl=300, show_spinner=False)
+def obter_dados_perfil(username):
+    """Consulta puramente relacional para resgatar apenas o nome e a foto de perfil do usuário."""
+    if not username:
+        return None
+    with conectar() as conn:
+        c = conn.cursor()
+        # Busca estritamente as 2 colunas necessárias (sem carregar o e-mail)
+        c.execute("SELECT nome, foto_perfil FROM usuarios WHERE username = %s", (username,))
+        resultado = c.fetchone()
+        if not resultado:
+             return None
+        nome, foto = resultado
+        return nome, (bytes(foto) if foto is not None else None)
+
+def atualizar_perfil(username, nova_senha, senha_atual, novo_nome): # Função para atualizar o usuário
+    with conectar() as conn: # Inicia o contexto conectando-se ao PostgreSQL de forma otimizada
+        c = conn.cursor() # Instancia o ponteiro de navegação no banco
+       # Se o usuário preencheu campos para trocar a senha
+        if nova_senha and senha_atual:
+            # Puxa o hash da senha antiga salva no banco[cite: 1, 5]
+            c.execute("SELECT password FROM usuarios WHERE username = %s", (username,))
+            hash_do_banco = c.fetchone()[0].encode('utf-8')
+            
+            # MÉTODO SEGURO: Verifica se a senha atual digitada confere com o hash original[cite: 1, 5]
+            if not bcrypt.checkpw(senha_atual.encode('utf-8'), hash_do_banco):
+                # Recusa a alteração se a senha antiga estiver errada
+                return "senha_atual_incorreta"
+            
+            # Se passou, criptografa a NOVA senha[cite: 1, 5]
+            salt = bcrypt.gensalt()
+            novo_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), salt).decode('utf-8')
+            c.execute(
+                "UPDATE usuarios SET nome=%s, password=%s WHERE username=%s",
+                (novo_nome, novo_hash, username)
+            )
+        else:
+            # Atualiza apenas informações gerais e foto (sem mexer na senha)
+            c.execute(
+                "UPDATE usuarios SET nome=%s WHERE username=%s",
+                (novo_nome, username)
+            )
+        conn.commit() # Confirma efetivamente a gravação da transação na base de dados
+        obter_dados_perfil.clear() # Limpa o cache de perfil para refletir as mudanças
+        c.close() # Destrói o cursor liberando recursos locais do servidor
+
+def buscar_usuarios(termo): # Função para ler registros parecidos com o termo de busca
+    with conectar() as conn: # Empresta a conexão do Pool
+        c = conn.cursor() # Cria o cursor de execução
+        # Realiza uma busca tolerante a maiúsculas/minúsculas usando o comparador ILIKE do PostgreSQL limitando sobrecarga a 20 linhas
+        c.execute("SELECT nome, tipo FROM usuarios WHERE nome ILIKE %s LIMIT 20", (f"%{termo}%",))
+        resultados = c.fetchall() # Descarrega em memória local todos os registros capturados pela query
+        c.close() # Encerra o objeto cursor
+        return resultados # Retorna a lista contendo as tuplas do formato (nome, tipo)
+
+def seguir_usuario(seguidor, seguido):
+    with conectar() as conn:
+        c = conn.cursor()
+        # Utiliza ON CONFLICT para não gerar erro caso o usuário clique duas vezes (PostgreSQL nativo)
+        c.execute("""
+            INSERT INTO seguidores (seguidor_username, seguido_username) 
+            VALUES (%s, %s)
+            ON CONFLICT (seguidor_username, seguido_username) DO NOTHING
+        """, (seguidor, seguido))
+        conn.commit()
+
+def buscar_usuarios(termo):
+    with conectar() as conn:
+        c = conn.cursor()
+        # Ajuste o SELECT para retornar o username (chave primária) usado na ação de seguir
+        c.execute("SELECT username, nome, tipo FROM usuarios WHERE nome ILIKE %s LIMIT 20", (f"%{termo}%",))
+        return c.fetchall()
+
+def atualizar_foto(username, foto_bytes):
+    foto_db = psycopg2.Binary(foto_bytes) if foto_bytes else None
+    with conectar() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE usuarios SET foto_perfil = %s WHERE username = %s",
+            (foto_db, username),
+        )
+        conn.commit()
+        obter_dados_perfil.clear()  # Limpa o cache para refletir a nova foto
