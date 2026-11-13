@@ -19,7 +19,8 @@ Há dois arquivos aqui, e os dois seguem a mesma regra:
 2. Copie um bloco de módulo que já existe (o do Módulo 1 serve de modelo) e
    cole no fim da lista `"modulos"`.
 3. Troque os valores: `slug`, `titulo`, `resumo`, `icone`, `nivel`,
-   `dificuldade`, `duracao`, `cor`, `pdf` e as perguntas do `quiz`.
+   `dificuldade`, `duracao`, `cor`, `categoria`, `ordem`, `pdf` e as
+   perguntas do `quiz`.
 4. Coloque o PDF do material em `static/modulos/`, com o mesmo nome do
    `slug` (ex.: `slug: "senhas-e-autenticacao"` → arquivo
    `static/modulos/senhas-e-autenticacao.pdf`).
@@ -28,13 +29,54 @@ Há dois arquivos aqui, e os dois seguem a mesma regra:
 O arquivo já vem comentado, com a explicação de cada campo. Os comentários
 são linhas inteiras que começam com `//`.
 
+## As abas do catálogo
+
+O Mapa de Missões separa os módulos em quatro abas fixas, nesta ordem:
+
+| Aba | `categoria` |
+|---|---|
+| Criptografia | `"Criptografia"` |
+| Segurança Digital | `"Segurança Digital"` |
+| Legislação e Impacto | `"Legislação e Impacto"` |
+| Matemática Aplicada | `"Matemática Aplicada"` |
+
+A categoria é o que coloca o módulo na aba certa. Um valor desconhecido (ou
+um módulo criado pela tela sem categoria escolhida) cai em **Outros**, que
+só vira aba quando tem algum módulo dentro — assim o catálogo não ganha uma
+aba vazia para uma exceção.
+
+O campo `ordem` decide a posição dentro da aba: menor aparece primeiro. Os
+módulos numerados usam 1, 2, 3...; os complementares e o laboratório usam
+números altos (50, 51, 60) para ficarem depois. Sem `ordem`, o módulo vai
+para o fim da aba.
+
+Os módulos criados pela tela também escolhem a categoria no formulário, e o
+valor fica gravado no banco.
+
+## Uma observação sobre a LGPD
+
+A LGPD era um conjunto de pergaminhos em `exemplos_crime.json`. Agora ela é
+o **Módulo 5**, uma aula teórica com PDF próprio. O PDF atual é um
+placeholder em branco, como o dos outros módulos novos; o texto definitivo
+será publicado pela equipe. Os pergaminhos antigos de LGPD saíram deste
+arquivo; em bancos que já tinham os exemplos, eles são inativados (não
+apagados) pela preparação do banco, para não aparecerem mais na página
+**Exemplos de Crimes Digitais**. O texto que estava neles continua preservado
+no banco, inativo.
+
 ## Pelo app
 
 Professor e Administrador também podem criar módulos pela página
-**Gerenciar Módulos**. Esses módulos novos ficam no banco (tabela
+**Gerenciar Conteúdos → Módulos**. Esses módulos novos ficam no banco (tabela
 `modulos`), não neste arquivo. O JSON continua sendo a origem dos
 módulos originais; o Administrador pode editá-los pela tela, e quem
 criou um módulo novo pode editar e excluir o próprio.
+
+O módulo `laboratorio-aes-128-gcm` é a exceção: ele tem `"especial": "aes"`
+e **só pode ser alterado neste arquivo** (e no PDF em
+`static/modulos/`). Ele aparece no gerenciador como somente leitura, sem
+os botões de editar e excluir. O fluxo dele é normal — leitura, quiz e,
+depois dos dois, o botão que abre o laboratório AES-128-GCM.
 
 ## O que acontece se o arquivo tiver erro
 
@@ -80,8 +122,8 @@ digitação de uma frase longa.
 Os arquivos do material ficam em `static/modulos/`, e não nesta pasta,
 porque é de lá que o app serve os arquivos ao navegador. O campo `pdf` do
 módulo é só o **nome do arquivo** (o caminho completo também funciona).
-Quando o Professor envia um PDF pela página **Gerenciar Módulos**, o app
-grava o arquivo aqui com o nome do `slug`.
+Quando o Professor envia um PDF pela página **Gerenciar Conteúdos →
+Módulos**, o app grava o arquivo aqui com o nome do `slug`.
 
 Se o PDF não estiver lá, a página do módulo avisa que o material está em
 preparação — o app continua funcionando.

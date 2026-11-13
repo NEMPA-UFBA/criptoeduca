@@ -1,103 +1,202 @@
 {
   "modulos": [
     {
-      "slug": "fundamentos-seguranca-criptografia",
-      "titulo": "Fundamentos de Segurança e Criptografia",
-      "resumo": "O que a criptografia protege, o que são as cifras clássicas e por que a segurança digital é uma necessidade do dia a dia.",
+      "slug": "definicao-e-historia",
+      "titulo": "Definição e História",
+      "resumo": "Como a criptografia nasceu, o papel da máquina Enigma e de Alan Turing na Segunda Guerra Mundial e por que compartilhar a chave é o ponto fraco da criptografia simétrica.",
       "icone": "🔐",
-      "nivel": "Nível 1",
+      "nivel": "Módulo 1",
       "dificuldade": "Iniciante",
-      "duracao": "~15 min",
-      "cor": "#4F46E5",
-      "pdf": "fundamentos-seguranca-criptografia.pdf",
+      "duracao": "~10 min",
+      "cor": "#38bdf8",
+      "categoria": "Criptografia",
+      "ordem": 1,
+      "pdf": "definicao-e-historia.pdf",
       "quiz": [
         {
-          "enunciado": "Qual é a definição correta de criptografia conforme os conceitos básicos apresentados?",
+          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
           "alternativas": [
-            "Um sistema que usa codificação para transmitir mensagens de forma segura apenas para o destinatário legítimo.",
-            "Um método exclusivo para apagar dados de computadores em redes públicas.",
-            "Um tipo de tradução automática entre diferentes idiomas falados."
-          ],
-          "certa": 1
-        },
-        {
-          "enunciado": "Quais são os dois elementos fundamentais exigidos em um sistema de criptografia?",
-          "alternativas": [
-            "Ter uma senha de 8 dígitos e usar letras maiúsculas.",
-            "A capacidade de reverter o texto criptografado à forma original e o destinatário conseguir entendê-lo sem explicações prévias.",
-            "Um antivírus atualizado e um certificado digital de segurança."
+            "Sim, o material completo j? est? nesta p?gina.",
+            "N?o, o material est? em prepara??o.",
+            "S? ? poss?vel saber depois de responder ao quiz."
           ],
           "certa": 2
-        },
-        {
-          "enunciado": "Como funciona o mecanismo básico de funcionamento da Cifra de César?",
-          "alternativas": [
-            "Pela troca aleatória de palavras inteiras usando um dicionário secreto.",
-            "Pela substituição de cada letra do alfabeto por outra com base em um deslocamento fixo.",
-            "Pela inversão de trás para frente da frase inteira."
-          ],
-          "certa": 2
-        },
-        {
-          "enunciado": "Se aplicarmos a Cifra de César com um deslocamento de 1 posição para a frente na letra 'A', qual será o resultado?",
-          "alternativas": [
-            "Z",
-            "B",
-            "C"
-          ],
-          "certa": 2
-        },
-        {
-          "enunciado": "No exemplo estudado, ao criptografar a palavra 'Casaco' com um deslocamento de 4 letras, qual foi o resultado obtido?",
-          "alternativas": [
-            "HEWFHT",
-            "FDXDVH",
-            "GEWEGS"
-          ],
-          "certa": 3
         }
       ]
     },
     {
-      "slug": "os-fundamentos-da-criptografia-e-seguranca-digital",
-      "titulo": "Os Fundamentos da Criptografia e Seguranca Digital",
-      "resumo": "Este módulo oferece um panorama claro e acessível sobre a evolução histórica e técnica da segurança da informação. A partir do caso clássico da Máquina Enigma e da atuação de Alan Turing na Segunda Guerra Mundial, o texto examina as limitações e os desafios de compartilhamento da criptografia simétrica. Em seguida, introduz o conceito de criptografia assimétrica — utilizando a analogia intuitiva do cadeado — e detalha o funcionamento do algoritmo RSA, explicando como números primos e aritmética modular sustentam a segurança dos sistemas digitais modernos.",
-      "icone": "🔐",
-      "nivel": "Nível 2",
+      "slug": "cifras-classicas",
+      "titulo": "Cifras Clássicas",
+      "resumo": "A Cifra de César e as cifras de substituição: como uma letra vira outra, o que é deslocamento e por que esse método já não protege uma mensagem hoje.",
+      "icone": "🏛️",
+      "nivel": "Módulo 2",
       "dificuldade": "Iniciante",
       "duracao": "~15 min",
-      "cor": "#38bdf8",
-      "pdf": "criptografia.pdf",
+      "cor": "#f59e0b",
+      "categoria": "Criptografia",
+      "ordem": 2,
+      "pdf": "cifras-classicas.pdf",
       "quiz": [
         {
-          "enunciado": "Qual era a principal função da máquina enigma na segunda guerra mundial?",
+          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
           "alternativas": [
-            "Transportar mensagens físicas.",
-            "Criar códigos de programação.",
-            "Proteger mensagens militares.",
-            "Detectar aviões inimigos."
-          ],
-          "certa": 3
-        },
-        {
-          "enunciado": "Qual é o principal problema da criptografia simétrica?",
-          "alternativas": [
-            "A chave muda a língua da mensagem.",
-            "A mensagem só pode ter números.",
-            "A chave secreta precisa ser compartilhada com segurança.",
-            "As mensagens não podem ser cifradas."
-          ],
-          "certa": 3
-        },
-        {
-          "enunciado": "Para que serve a chave pública, na criptografia assimétrica, quando alguém quer enviar uma mensagem secreta para outra pessoa?",
-          "alternativas": [
-            "Para revelar a chave privada.",
-            "Para cifrar a mensagem destinada a ele.",
-            "Para substituir todas as senhas pessoais.",
-            "Para abrir a mensagem recebida."
+            "Sim, o material completo j? est? nesta p?gina.",
+            "N?o, o material est? em prepara??o.",
+            "S? ? poss?vel saber depois de responder ao quiz."
           ],
           "certa": 2
+        }
+      ]
+    },
+    {
+      "slug": "senhas-e-autenticacao",
+      "titulo": "Senhas Fortes e Autenticação",
+      "resumo": "Como criar senhas que aguentam ataque, por que a mesma senha não pode ser repetida e o que é autenticação em duas etapas.",
+      "icone": "🔑",
+      "nivel": "Módulo 3",
+      "dificuldade": "Iniciante",
+      "duracao": "~15 min",
+      "cor": "#22c55e",
+      "categoria": "Segurança Digital",
+      "ordem": 3,
+      "pdf": "senhas-e-autenticacao.pdf",
+      "quiz": [
+        {
+          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "alternativas": [
+            "Sim, o material completo j? est? nesta p?gina.",
+            "N?o, o material est? em prepara??o.",
+            "S? ? poss?vel saber depois de responder ao quiz."
+          ],
+          "certa": 2
+        }
+      ]
+    },
+    {
+      "slug": "criptografia-assimetrica",
+      "titulo": "Criptografia Assimétrica",
+      "resumo": "Duas chaves em vez de uma: a chave pública, a chave privada, a analogia do cadeado e como o RSA usa números primos para proteger mensagens.",
+      "icone": "🔓",
+      "nivel": "Módulo 4",
+      "dificuldade": "Intermediário",
+      "duracao": "~15 min",
+      "cor": "#4F46E5",
+      "categoria": "Segurança Digital",
+      "ordem": 4,
+      "pdf": "criptografia-assimetrica.pdf",
+      "quiz": [
+        {
+          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "alternativas": [
+            "Sim, o material completo j? est? nesta p?gina.",
+            "N?o, o material est? em prepara??o.",
+            "S? ? poss?vel saber depois de responder ao quiz."
+          ],
+          "certa": 2
+        }
+      ]
+    },
+    {
+      "slug": "lgpd",
+      "titulo": "LGPD",
+      "resumo": "A Lei Geral de Proteção de Dados: o que são dados pessoais, quais são os princípios da lei, quais direitos o titular tem e quem responde quando os dados vazam.",
+      "icone": "⚖️",
+      "nivel": "Módulo 5",
+      "dificuldade": "Intermediário",
+      "duracao": "~15 min",
+      "cor": "#8b5cf6",
+      "categoria": "Legislação e Impacto",
+      "ordem": 5,
+      "pdf": "lgpd.pdf",
+      "quiz": [
+        {
+          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "alternativas": [
+            "Sim, o material completo j? est? nesta p?gina.",
+            "N?o, o material est? em prepara??o.",
+            "S? ? poss?vel saber depois de responder ao quiz."
+          ],
+          "certa": 2
+        }
+      ]
+    },
+    {
+      "slug": "aritmetica-modular",
+      "titulo": "Aritmética Modular",
+      "resumo": "Conteúdo em preparação. Este módulo ainda não tem material escrito; a pergunta do quiz serve apenas para testar o fluxo de leitura e resposta.",
+      "icone": "🔢",
+      "nivel": "Módulo extra",
+      "dificuldade": "Iniciante",
+      "duracao": "~5 min",
+      "cor": "#38bdf8",
+      "categoria": "Matemática Aplicada",
+      "ordem": 1,
+      "pdf": "aritmetica-modular.pdf",
+      "quiz": [
+        {
+          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "alternativas": [
+            "Sim, o material completo j? est? nesta p?gina.",
+            "N?o, o material est? em prepara??o.",
+            "S? ? poss?vel saber depois de responder ao quiz."
+          ],
+          "certa": 2
+        }
+      ]
+    },
+    {
+      "slug": "laboratorio-aes-128-gcm",
+      "titulo": "Laboratório: Criptografia AES-128-GCM",
+      "resumo": "Leia sobre o AES-128-GCM, responda ao quiz e libere o laboratório para cifrar e decifrar mensagens de verdade.",
+      "icone": "🧪",
+      "nivel": "Laboratório",
+      "dificuldade": "Avançado",
+      "duracao": "~15 min",
+      "cor": "#38bdf8",
+      "categoria": "Criptografia",
+      "ordem": 60,
+      "pdf": "laboratorio-aes-128-gcm.pdf",
+      "especial": "aes",
+      "quiz": [
+        {
+          "enunciado": "No AES-128-GCM, qual é o tamanho da chave usada?",
+          "alternativas": [
+            "64 bits",
+            "128 bits",
+            "256 bits",
+            "512 bits"
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Por que a mesma mensagem, com a mesma frase-chave, gera textos cifrados diferentes a cada vez?",
+          "alternativas": [
+            "Porque o nonce é aleatório e muda a cada mensagem.",
+            "Porque o AES sorteia uma chave nova a cada execução.",
+            "Porque o texto é comprimido antes de ser cifrado.",
+            "Porque a tag de autenticação altera a mensagem original."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "Para que serve a tag de autenticação no GCM?",
+          "alternativas": [
+            "Para compactar o texto cifrado.",
+            "Para verificar se o texto cifrado foi alterado.",
+            "Para substituir a frase-chave.",
+            "Para aumentar o tamanho da chave."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Qual é o papel do PBKDF2 no laboratório?",
+          "alternativas": [
+            "Transformar a frase-chave em uma chave de 16 bytes usando salt e repetições.",
+            "Guardar a mensagem no banco de dados.",
+            "Gerar o nonce automaticamente.",
+            "Publicar a mensagem no mural."
+          ],
+          "certa": 1
         }
       ]
     },
@@ -106,10 +205,12 @@
       "titulo": "Phishing e Engenharia Social",
       "resumo": "As mensagens que usam o medo e a urgência para hackear pessoas, e os sinais que denunciam a farsa antes do prejuízo.",
       "icone": "🎣",
-      "nivel": "Nível 3",
+      "nivel": "Complementar",
       "dificuldade": "Intermediário",
       "duracao": "~25 min",
       "cor": "#f59e0b",
+      "categoria": "Segurança Digital",
+      "ordem": 50,
       "pdf": "phishing-e-engenharia-social.pdf",
       "quiz": [
         {
@@ -128,10 +229,12 @@
       "titulo": "Pagamentos Eletrônicos e Pix Seguro",
       "resumo": "Como funcionam os golpes do Pix, do QR Code falsificado e da falsa central do banco, e o que fazer quando um golpe acontece.",
       "icone": "💳",
-      "nivel": "Nível 4",
+      "nivel": "Complementar",
       "dificuldade": "Avançado",
       "duracao": "~20 min",
       "cor": "#22c55e",
+      "categoria": "Segurança Digital",
+      "ordem": 51,
       "pdf": "pagamentos-e-pix-seguro.pdf",
       "quiz": [
         {

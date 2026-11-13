@@ -581,6 +581,11 @@ def _formulario_cadastro():
 
 
 def render_login():
+    with st.container(key="pagina_login"):
+        _render_login()
+
+
+def _render_login():
 
     st.markdown("""
     <style>
@@ -975,7 +980,9 @@ def render_login():
     )
     aba_login, aba_cadastro = st.tabs(["Entrar", "Criar Conta"])
     with aba_login:
-        _formulario_login()
+        with st.container(key="aba_login"):
+            _formulario_login()
 
     with aba_cadastro:
-        _formulario_cadastro()
+        with st.container(key="aba_cadastro"):
+            _formulario_cadastro()

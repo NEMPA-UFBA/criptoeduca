@@ -20,7 +20,10 @@ from modules.database import (
     salvar_modulo,
 )
 from modules.estilo import aplicar_estilo, html_bruto
+from modules.mainmenu import _card_html
 from modules.modulos import (
+    CATEGORIA_PADRAO,
+    CATEGORIAS,
     PASTA_PDFS,
     RE_SLUG,
     atualizar_modulo_json,
@@ -31,10 +34,81 @@ from modules.modulos import (
 
 MAX_PERGUNTAS = 20
 
+# Limite do material em PDF. O st.file_uploader barra o arquivo grande no
+# navegador (max_upload_size), e _salvar_pdf confere de novo no servidor:
+# a checagem do widget e do cliente, e nao deve ser a unica barreira.
+MAX_PDF_MB = 20
+
+# Chave da sessao que diz se o formulario de criacao esta aberto. Fica em
+# uma chave propria porque o "expanded" do st.expander nao e um widget: ele
+# nao guarda estado entre execucoes, e clicar no cabecalho do expander nao
+# reroda o script. Quem abre e fecha e o botao, para o formulario nao
+# recolher sozinho no meio da digitacao.
+CHAVE_FORM_NOVO = "form_novo_modulo_aberto"
+
+# CSS proprio da pagina, no mesmo padrao do CSS_PERGAMINHOS (cada pagina
+# guarda o que e so dela; modules/estilo.py fica com a identidade comum).
+CSS_GERENCIAR_MODULOS = """
+<style>
+/* Rotulo de secao do formulario. O prefixo .stMarkdown p e obrigatorio:
+   o Streamlit escreve ".stMarkdown p { font-size: ... }" (0,1,1), que
+   ganha de um ".ce-secao" sozinho (0,1,0) -- a mesma armadilha explicada
+   em modules/estilo.py. */
+.stMarkdown p.ce-secao {
+    color: #7dd3fc;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 0.2rem 0 0.9rem 0;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.28);
+}
+/* A previa usa o card verdadeiro (.ce-card) para o professor ver
+   exatamente o que vai aparecer no mapa. O card real tem min-height de
+   380px, pensado para a fileira de cards; na previa isso viraria um
+   bloco enorme e vazio. */
+.ce-previa .ce-card {
+    min-height: auto;
+}
+.ce-previa {
+    border: 1px dashed rgba(148, 163, 184, 0.28);
+    border-radius: 14px;
+    padding: 0.9rem;
+    background: rgba(15, 23, 42, 0.35);
+}
+.stMarkdown p.ce-previa-titulo {
+    color: #94a3b8;
+    font-size: 0.78rem;
+    margin: 0 0 0.6rem 0;
+}
+@media (max-width: 640px) {
+    .stMarkdown p.ce-secao {
+        font-size: 0.68rem;
+    }
+    .ce-previa {
+        padding: 0.65rem;
+    }
+}
+</style>
+"""
+
 
 def _html(trecho):
     """Atalho para html_bruto (ver a explicacao em modules/estilo.py)."""
     return html_bruto(trecho)
+
+
+def _secao(titulo):
+    """Desenha um rotulo de secao do formulario.
+
+    O titulo e sempre literal do codigo (nunca digitado pelo usuario),
+    por isso nao precisa de html.escape.
+    """
+    st.markdown(
+        _html('<p class="ce-secao">%s</p>' % titulo),
+        unsafe_allow_html=True,
+    )
 
 
 def _tipo():
@@ -46,7 +120,13 @@ def _username():
 
 
 def _pode_gerenciar(modulo):
-    """Admin gerencia tudo; os demais so os modulos que criaram no banco."""
+    """Admin gerencia tudo; os demais so os modulos que criaram no banco.
+
+    Modulos especiais (o laboratorio AES) sao definidos no codigo e nao
+    podem ser editados nem excluidos por esta tela, nem pelo Administrador.
+    """
+    if modulo.get("especial"):
+        return False
     if _tipo() == "Administrador":
         return True
     return (
@@ -94,6 +174,9 @@ def _iniciar(prefixo, modulo=None):
     st.session_state[_k(prefixo, "dificuldade")] = modulo.get("dificuldade", "")
     st.session_state[_k(prefixo, "duracao")] = modulo.get("duracao", "")
     st.session_state[_k(prefixo, "cor")] = modulo.get("cor", "#4F46E5")
+    st.session_state[_k(prefixo, "categoria")] = modulo.get(
+        "categoria", CATEGORIA_PADRAO
+    )
 
     quiz = modulo.get("quiz") or []
     st.session_state[_k(prefixo, "quiz_n")] = len(quiz)
@@ -112,7 +195,6 @@ def _iniciar(prefixo, modulo=None):
 
 def _editor_quiz(prefixo):
     """Editor simples: uma caixa por pergunta, alternativas em linhas."""
-    st.markdown("**Quiz do módulo**")
     st.caption("Deixe 0 perguntas para criar um módulo sem quiz.")
 
     quantidade = int(st.number_input(
@@ -125,7 +207,16 @@ def _editor_quiz(prefixo):
 
     for indice in range(quantidade):
         with st.container(border=True):
-            st.caption("Pergunta %d" % (indice + 1))
+            # O numero da pergunta usa o mesmo selo dos cards do mapa
+            # (.ce-badge), em vez de um caption solto: fica claro onde
+            # uma pergunta comeca e a outra termina.
+            st.markdown(
+                _html(
+                    '<span class="ce-badge">Pergunta %d</span>'
+                    % (indice + 1)
+                ),
+                unsafe_allow_html=True,
+            )
             st.text_input(
                 "Enunciado",
                 key=_k(prefixo, "q_enunciado_%d" % indice),
@@ -223,6 +314,10 @@ def _coletar(prefixo):
             str(st.session_state.get(_k(prefixo, "cor"), "")).strip()
             or "#4F46E5"
         ),
+        "categoria": (
+            str(st.session_state.get(_k(prefixo, "categoria"), "")).strip()
+            or CATEGORIA_PADRAO
+        ),
         "quiz": quiz,
     }
     return dados, problemas
@@ -252,6 +347,8 @@ def _slug_em_uso(slug, original=None):
 def _validar(dados, problemas, original=None):
     if not dados["titulo"]:
         return "Dê um título ao módulo."
+    if dados["categoria"] not in CATEGORIAS:
+        return "Escolha uma categoria válida para o módulo."
     if not dados["slug"] or not RE_SLUG.match(dados["slug"]):
         return (
             "O slug só pode ter letra minúscula, número e hífen "
@@ -275,6 +372,13 @@ def _salvar_pdf(upload, slug, pdf_atual):
     """
     if upload is None:
         return pdf_atual, None
+
+    tamanho = len(upload.getbuffer())
+    if tamanho > MAX_PDF_MB * 1024 * 1024:
+        return pdf_atual, (
+            "O PDF passa do limite de %d MB. Envie um arquivo menor."
+            % MAX_PDF_MB
+        )
 
     nome = "%s.pdf" % slug
     caminho = os.path.join(PASTA_PDFS, nome)
@@ -303,11 +407,52 @@ def _atualizar_banco(modulo_id, dados, pdf):
         dados["quiz"],
         _username(),
         _tipo(),
+        dados["categoria"],
+    )
+
+
+def _previa_card(prefixo):
+    """Mostra o card do mapa com os valores que estao no formulario.
+
+    O desenho vem do proprio modules/mainmenu.py (_card_html), e nao de
+    uma copia: assim a previa nunca diverge do card que o aluno ve. O
+    _card_html ja passa tudo por html.escape.
+    """
+    def valor(nome, padrao):
+        return (
+            str(st.session_state.get(_k(prefixo, nome), "")).strip() or padrao
+        )
+
+    modulo = {
+        "titulo": valor("titulo", "Título do módulo"),
+        "resumo": valor("resumo", "Resumo do módulo."),
+        "icone": valor("icone", "📘"),
+        "nivel": valor("nivel", "Nível"),
+        "dificuldade": valor("dificuldade", "Dificuldade"),
+        "duracao": valor("duracao", "Duração"),
+        "cor": valor("cor", "#4F46E5"),
+    }
+
+    st.markdown(
+        _html(
+            '<div class="ce-previa">'
+            '<p class="ce-previa-titulo">Prévia do card no mapa</p>'
+            + _card_html(modulo, False)
+            + '</div>'
+        ),
+        unsafe_allow_html=True,
     )
 
 
 def _campos_modulo(prefixo, modulo=None):
-    """Desenha os campos comuns a criacao e a edicao. Devolve o upload."""
+    """Desenha os campos comuns a criacao e a edicao. Devolve o upload.
+
+    Os campos ficam agrupados em quatro secoes. A previa do card le os
+    widgets ja desenhados (st.session_state), por isso ela vem depois
+    deles: assim mostra o titulo/cor/icone que estao na tela naquele
+    momento, sem precisar de um botao de "atualizar".
+    """
+    _secao("Identificação")
     st.text_input("Título", key=_k(prefixo, "titulo"))
     st.text_input(
         "Slug (identificador)",
@@ -317,19 +462,44 @@ def _campos_modulo(prefixo, modulo=None):
             "Deixe em branco para gerar a partir do título."
         ),
     )
+    slug_digitado = str(
+        st.session_state.get(_k(prefixo, "slug"), "")
+    ).strip()
+    if not slug_digitado:
+        titulo_digitado = str(
+            st.session_state.get(_k(prefixo, "titulo"), "")
+        ).strip()
+        slug_gerado = gerar_slug(titulo_digitado)
+        if slug_gerado:
+            st.caption("Sem slug: vai virar `%s`." % slug_gerado)
     st.text_area("Resumo", key=_k(prefixo, "resumo"), height=90)
-
-    coluna_icone, coluna_cor = st.columns(2)
-    coluna_icone.text_input("Ícone (um emoji)", key=_k(prefixo, "icone"))
-    coluna_cor.color_picker("Cor do card", key=_k(prefixo, "cor"))
-
-    coluna_nivel, coluna_dificuldade, coluna_duracao = st.columns(3)
-    coluna_nivel.text_input("Nível", key=_k(prefixo, "nivel"))
-    coluna_dificuldade.text_input(
-        "Dificuldade", key=_k(prefixo, "dificuldade")
+    st.selectbox(
+        "Categoria (aba do catálogo)",
+        options=CATEGORIAS,
+        key=_k(prefixo, "categoria"),
+        help=(
+            "Define em qual aba do Mapa de Missões o módulo aparece. "
+            "'Outros' só cria uma aba quando existe algum módulo nela."
+        ),
     )
-    coluna_duracao.text_input("Duração", key=_k(prefixo, "duracao"))
 
+    _secao("Aparência no mapa")
+    coluna_campos, coluna_previa = st.columns([3, 2], gap="large")
+    with coluna_campos:
+        coluna_icone, coluna_cor = st.columns(2)
+        coluna_icone.text_input("Ícone (um emoji)", key=_k(prefixo, "icone"))
+        coluna_cor.color_picker("Cor do card", key=_k(prefixo, "cor"))
+
+        coluna_nivel, coluna_dificuldade, coluna_duracao = st.columns(3)
+        coluna_nivel.text_input("Nível", key=_k(prefixo, "nivel"))
+        coluna_dificuldade.text_input(
+            "Dificuldade", key=_k(prefixo, "dificuldade")
+        )
+        coluna_duracao.text_input("Duração", key=_k(prefixo, "duracao"))
+    with coluna_previa:
+        _previa_card(prefixo)
+
+    _secao("Material")
     pdf_atual = (modulo or {}).get("pdf", "")
     if pdf_atual:
         st.caption("PDF atual: `%s`" % pdf_atual)
@@ -338,84 +508,239 @@ def _campos_modulo(prefixo, modulo=None):
         "Material em PDF",
         type=["pdf"],
         key=_k(prefixo, "pdf"),
+        max_upload_size=MAX_PDF_MB,
         help=(
-            "O arquivo é gravado em static/modulos/ com o nome do slug. "
-            "Sem upload, o PDF atual é mantido."
+            "O arquivo é gravado em static/modulos/ com o nome do slug, "
+            "até %d MB. Sem upload, o PDF atual é mantido." % MAX_PDF_MB
         ),
     )
 
+    _secao("Quiz")
     _editor_quiz(prefixo)
     return upload
 
 
+def _abrir_form_novo():
+    st.session_state[CHAVE_FORM_NOVO] = True
+
+
+def _recolher_form_novo():
+    st.session_state[CHAVE_FORM_NOVO] = False
+
+
+def _criar_modulo():
+    """Cria o modulo a partir dos widgets, como callback do botao."""
+    prefixo = "novo_modulo"
+    dados, problemas = _coletar(prefixo)
+    erro = _validar(dados, problemas)
+    if erro:
+        st.session_state["_aviso_modulos"] = ("error", erro)
+        return
+
+    upload = st.session_state.get(_k(prefixo, "pdf"))
+
+    # A linha e criada primeiro, sem PDF. O arquivo so e gravado depois
+    # que o slug passou pelo banco: se a criacao falhar, um PDF enviado
+    # nao sobrescreve o material de outro modulo que por acaso use o
+    # mesmo nome.
+    novo_id, motivo = salvar_modulo(
+        dados["slug"],
+        dados["titulo"],
+        dados["resumo"],
+        dados["icone"],
+        dados["nivel"],
+        dados["dificuldade"],
+        dados["duracao"],
+        dados["cor"],
+        "",
+        dados["quiz"],
+        _username(),
+        dados["categoria"],
+    )
+    if novo_id is None:
+        if motivo == "slug_duplicado":
+            erro = "Já existe um módulo com esse slug. Escolha outro."
+        else:
+            erro = "Não consegui criar o módulo: %s" % motivo
+        st.session_state["_aviso_modulos"] = ("error", erro)
+        return
+
+    # O catalogo e cacheado; a escrita no banco precisa derrubar a copia
+    # antiga para o modulo novo aparecer no mapa imediatamente.
+    carregar_modulos.clear()
+
+    if upload is not None:
+        pdf, erro_pdf = _salvar_pdf(upload, dados["slug"], "")
+        if erro_pdf:
+            st.session_state["_aviso_modulos"] = (
+                "warning",
+                "Módulo criado, mas o PDF não foi salvo: %s" % erro_pdf,
+            )
+        else:
+            ok, motivo = _atualizar_banco(novo_id, dados, pdf)
+            if not ok:
+                try:
+                    os.remove(os.path.join(PASTA_PDFS, pdf))
+                except OSError:
+                    pass
+                st.session_state["_aviso_modulos"] = (
+                    "warning",
+                    "Módulo criado, mas não consegui anexar o PDF: %s"
+                    % motivo,
+                )
+
+    st.session_state["_limpar_novo_modulo"] = True
+    st.session_state[CHAVE_FORM_NOVO] = False
+    if "_aviso_modulos" not in st.session_state:
+        st.session_state["_aviso_modulos"] = (
+            "success",
+            "Módulo criado!",
+        )
+
+
+def _salvar_edicao(modulo):
+    """Valida e grava a edicao, como callback do botao."""
+    prefixo = _prefixo_edicao(modulo)
+    dados, problemas = _coletar(prefixo)
+    erro = _validar(dados, problemas, original=modulo)
+    if erro:
+        st.session_state["_aviso_modulos"] = ("error", erro)
+        return
+
+    upload = st.session_state.get(_k(prefixo, "pdf"))
+    pdf, erro_pdf = _salvar_pdf(
+        upload, dados["slug"], modulo.get("pdf", "")
+    )
+    if erro_pdf:
+        st.session_state["_aviso_modulos"] = ("error", erro_pdf)
+        return
+
+    if modulo.get("origem") == "banco":
+        ok, motivo = _atualizar_banco(modulo["id"], dados, pdf)
+        if not ok:
+            if motivo == "sem_permissao":
+                erro = "Você só pode editar os módulos que criou."
+            elif motivo == "slug_duplicado":
+                erro = "Já existe um módulo com esse slug."
+            else:
+                erro = "Não consegui salvar: %s" % motivo
+            st.session_state["_aviso_modulos"] = ("error", erro)
+            return
+    else:
+        ok, motivo = atualizar_modulo_json(modulo["slug"], {
+            "slug": dados["slug"],
+            "titulo": dados["titulo"],
+            "resumo": dados["resumo"],
+            "icone": dados["icone"],
+            "nivel": dados["nivel"],
+            "dificuldade": dados["dificuldade"],
+            "duracao": dados["duracao"],
+            "cor": dados["cor"],
+            "categoria": dados["categoria"],
+            "pdf": pdf or "",
+            "quiz": _quiz_para_json(dados["quiz"]),
+        })
+        if not ok:
+            st.session_state["_aviso_modulos"] = (
+                "error",
+                "Não consegui salvar o módulo: %s" % motivo,
+            )
+            return
+
+    carregar_modulos.clear()
+    st.session_state["_limpar_edicao_modulo"] = True
+    st.session_state.pop("modulo_em_edicao", None)
+    st.session_state["_aviso_modulos"] = (
+        "success",
+        "Módulo atualizado.",
+    )
+
+
+def _cancelar_edicao():
+    st.session_state["_limpar_edicao_modulo"] = True
+    st.session_state.pop("modulo_em_edicao", None)
+
+
+def _abrir_edicao(referencia):
+    st.session_state["_limpar_edicao_modulo"] = True
+    st.session_state["modulo_em_edicao"] = referencia
+    st.session_state.pop("modulo_excluindo", None)
+
+
+def _pedir_exclusao(referencia):
+    st.session_state.pop("modulo_em_edicao", None)
+    st.session_state["modulo_excluindo"] = referencia
+
+
+def _executar_exclusao(modulo):
+    if modulo.get("origem") == "banco":
+        ok, motivo = excluir_modulo(modulo["id"], _username(), _tipo())
+        if not ok:
+            if motivo == "sem_permissao":
+                erro = "Você só pode excluir os módulos que criou."
+            else:
+                erro = "Não consegui excluir: %s" % motivo
+            st.session_state["_aviso_modulos"] = ("error", erro)
+            return
+    else:
+        ok, motivo = excluir_modulo_json(modulo["slug"])
+        if not ok:
+            st.session_state["_aviso_modulos"] = (
+                "error",
+                "Não consegui excluir: %s" % motivo,
+            )
+            return
+
+    carregar_modulos.clear()
+    st.session_state["_limpar_edicao_modulo"] = True
+    st.session_state.pop("modulo_excluindo", None)
+    st.session_state["_aviso_modulos"] = ("success", "Módulo excluído.")
+
+
+def _cancelar_exclusao():
+    st.session_state.pop("modulo_excluindo", None)
+
+
 def _formulario_novo():
     prefixo = "novo_modulo"
+
+    # Recolhido por padrao: a pagina abre com a lista de modulos visivel,
+    # e nao com um formulario longo empurrando tudo para baixo. Quem
+    # controla o estado e o botao, e nao o cabecalho do st.expander --
+    # clicar no cabecalho nao reroda o script, entao o expander voltaria
+    # a fechar no primeiro rerun de qualquer tecla.
+    if not st.session_state.get(CHAVE_FORM_NOVO, False):
+        st.button(
+            "Criar novo módulo",
+            type="primary",
+            key="abrir_form_novo",
+            icon=":material/add:",
+            on_click=_abrir_form_novo,
+        )
+        return
+
     _iniciar(prefixo)
 
     with st.expander("➕ Criar novo módulo", expanded=True):
         st.caption(
             "O módulo novo é gravado no banco e já aparece no mapa de missões."
         )
-        upload = _campos_modulo(prefixo)
+        _campos_modulo(prefixo)
 
-        if st.button("Criar módulo", type="primary", key="criar_modulo_novo"):
-            dados, problemas = _coletar(prefixo)
-            erro = _validar(dados, problemas)
-            if erro:
-                st.error(erro)
-                return
-
-            # A linha e criada primeiro, sem PDF. O arquivo so e gravado
-            # depois que o slug passou pelo banco: se a criacao falhar, um
-            # PDF enviado nao sobrescreve o material de outro modulo que
-            # por acaso use o mesmo nome.
-            novo_id, motivo = salvar_modulo(
-                dados["slug"],
-                dados["titulo"],
-                dados["resumo"],
-                dados["icone"],
-                dados["nivel"],
-                dados["dificuldade"],
-                dados["duracao"],
-                dados["cor"],
-                "",
-                dados["quiz"],
-                _username(),
-            )
-            if novo_id is None:
-                if motivo == "slug_duplicado":
-                    st.error("Já existe um módulo com esse slug. Escolha outro.")
-                else:
-                    st.error("Não consegui criar o módulo: %s" % motivo)
-                return
-
-            if upload is not None:
-                pdf, erro_pdf = _salvar_pdf(upload, dados["slug"], "")
-                if erro_pdf:
-                    st.session_state["_aviso_modulos"] = (
-                        "warning",
-                        "Módulo criado, mas o PDF não foi salvo: %s" % erro_pdf,
-                    )
-                else:
-                    ok, motivo = _atualizar_banco(novo_id, dados, pdf)
-                    if not ok:
-                        try:
-                            os.remove(os.path.join(PASTA_PDFS, pdf))
-                        except OSError:
-                            pass
-                        st.session_state["_aviso_modulos"] = (
-                            "warning",
-                            "Módulo criado, mas não consegui anexar o PDF: %s"
-                            % motivo,
-                        )
-
-            st.session_state["_limpar_novo_modulo"] = True
-            if "_aviso_modulos" not in st.session_state:
-                st.session_state["_aviso_modulos"] = (
-                    "success",
-                    "Módulo criado!",
-                )
-            st.rerun()
+        coluna_criar, coluna_recolher = st.columns([2, 1])
+        coluna_criar.button(
+            "Criar módulo",
+            type="primary",
+            key="criar_modulo_novo",
+            icon=":material/add:",
+            on_click=_criar_modulo,
+        )
+        coluna_recolher.button(
+            "Recolher",
+            key="recolher_form_novo",
+            icon=":material/close:",
+            on_click=_recolher_form_novo,
+        )
 
 
 def _prefixo_edicao(modulo):
@@ -437,6 +762,13 @@ def _quiz_para_json(quiz):
 
 
 def _formulario_editar(modulo):
+    if modulo.get("especial"):
+        st.error(
+            "Este módulo é especial e só pode ser editado no código "
+            "(dados/modulos.json e o PDF em static/modulos/)."
+        )
+        return
+
     prefixo = _prefixo_edicao(modulo)
     _iniciar(prefixo, modulo)
 
@@ -452,69 +784,33 @@ def _formulario_editar(modulo):
             % (modulo.get("autor") or "—")
         )
 
-    upload = _campos_modulo(prefixo, modulo)
+    _campos_modulo(prefixo, modulo)
 
     coluna_salvar, coluna_cancelar = st.columns(2)
-    if coluna_salvar.button(
+    coluna_salvar.button(
         "Salvar alterações",
         type="primary",
         key="salvar_%s" % prefixo,
-    ):
-        dados, problemas = _coletar(prefixo)
-        erro = _validar(dados, problemas, original=modulo)
-        if erro:
-            st.error(erro)
-            return
-
-        pdf, erro_pdf = _salvar_pdf(
-            upload, dados["slug"], modulo.get("pdf", "")
-        )
-        if erro_pdf:
-            st.error(erro_pdf)
-            return
-
-        if modulo.get("origem") == "banco":
-            ok, motivo = _atualizar_banco(modulo["id"], dados, pdf)
-            if not ok:
-                if motivo == "sem_permissao":
-                    st.error("Você só pode editar os módulos que criou.")
-                elif motivo == "slug_duplicado":
-                    st.error("Já existe um módulo com esse slug.")
-                else:
-                    st.error("Não consegui salvar: %s" % motivo)
-                return
-        else:
-            ok, motivo = atualizar_modulo_json(modulo["slug"], {
-                "slug": dados["slug"],
-                "titulo": dados["titulo"],
-                "resumo": dados["resumo"],
-                "icone": dados["icone"],
-                "nivel": dados["nivel"],
-                "dificuldade": dados["dificuldade"],
-                "duracao": dados["duracao"],
-                "cor": dados["cor"],
-                "pdf": pdf or "",
-                "quiz": _quiz_para_json(dados["quiz"]),
-            })
-            if not ok:
-                st.error("Não consegui salvar o módulo: %s" % motivo)
-                return
-
-        st.session_state["_limpar_edicao_modulo"] = True
-        st.session_state.pop("modulo_em_edicao", None)
-        st.session_state["_aviso_modulos"] = (
-            "success",
-            "Módulo atualizado.",
-        )
-        st.rerun()
-
-    if coluna_cancelar.button("Cancelar edição", key="cancelar_%s" % prefixo):
-        st.session_state["_limpar_edicao_modulo"] = True
-        st.session_state.pop("modulo_em_edicao", None)
-        st.rerun()
+        icon=":material/save:",
+        on_click=_salvar_edicao,
+        args=(modulo,),
+    )
+    coluna_cancelar.button(
+        "Cancelar edição",
+        key="cancelar_%s" % prefixo,
+        icon=":material/close:",
+        on_click=_cancelar_edicao,
+    )
 
 
 def _confirmar_exclusao(modulo):
+    if modulo.get("especial"):
+        st.error(
+            "Este módulo é especial e só pode ser excluído no código "
+            "(dados/modulos.json)."
+        )
+        return
+
     st.warning(
         "Excluir o módulo **%s**? Essa ação não pode ser desfeita."
         % modulo.get("titulo", "")
@@ -531,33 +827,20 @@ def _confirmar_exclusao(modulo):
 
     chave = modulo.get("id") if modulo.get("origem") == "banco" else modulo.get("slug")
     coluna_sim, coluna_nao = st.columns(2)
-    if coluna_sim.button(
+    coluna_sim.button(
         "Sim, excluir",
         type="primary",
         key="confirmar_exclusao_%s" % chave,
-    ):
-        if modulo.get("origem") == "banco":
-            ok, motivo = excluir_modulo(modulo["id"], _username(), _tipo())
-            if not ok:
-                if motivo == "sem_permissao":
-                    st.error("Você só pode excluir os módulos que criou.")
-                else:
-                    st.error("Não consegui excluir: %s" % motivo)
-                return
-        else:
-            ok, motivo = excluir_modulo_json(modulo["slug"])
-            if not ok:
-                st.error("Não consegui excluir: %s" % motivo)
-                return
-
-        st.session_state["_limpar_edicao_modulo"] = True
-        st.session_state.pop("modulo_excluindo", None)
-        st.session_state["_aviso_modulos"] = ("success", "Módulo excluído.")
-        st.rerun()
-
-    if coluna_nao.button("Cancelar", key="cancelar_exclusao_%s" % chave):
-        st.session_state.pop("modulo_excluindo", None)
-        st.rerun()
+        icon=":material/delete:",
+        on_click=_executar_exclusao,
+        args=(modulo,),
+    )
+    coluna_nao.button(
+        "Cancelar",
+        key="cancelar_exclusao_%s" % chave,
+        icon=":material/close:",
+        on_click=_cancelar_exclusao,
+    )
 
 
 def _achar_modulo(modulos, referencia):
@@ -581,6 +864,11 @@ def _achar_modulo(modulos, referencia):
 
 def render_gerenciar_modulos():
     """Pagina de gerenciamento dos modulos, para Professor e Administrador."""
+    with st.container(key="pagina_gerenciar_modulos"):
+        _render_gerenciar_modulos()
+
+
+def _render_gerenciar_modulos():
     aplicar_estilo()
 
     # A pagina so e alcancavel pelo menu de Professor/Administrador, mas
@@ -589,6 +877,8 @@ def render_gerenciar_modulos():
     if _tipo() not in ("Professor", "Administrador"):
         st.error("Acesso restrito a professores e administradores.")
         return
+
+    st.markdown(CSS_GERENCIAR_MODULOS, unsafe_allow_html=True)
 
     # As limpezas vem antes de qualquer widget: mexer em chave de widget
     # depois que ele nasceu, na mesma execucao, levanta erro no Streamlit.
@@ -605,7 +895,7 @@ def render_gerenciar_modulos():
         _html(
             """
             <p class="ce-pixel">GERENCIAR MÓDULOS</p>
-            <p class="ce-subtitulo">Crie módulos novos ou edite os que já existem. Quem criou um módulo pode editá-lo e excluí-lo; o Administrador pode gerenciar todos.</p>
+            <p class="ce-subtitulo">Crie módulos novos ou edite os que já existem. Quem criou um módulo pode editá-lo e excluí-lo; o Administrador pode gerenciar todos. O laboratório AES é um módulo especial e só pode ser alterado no código.</p>
             """
         ),
         unsafe_allow_html=True,
@@ -654,7 +944,8 @@ def render_gerenciar_modulos():
             expanded=False,
         ):
             st.caption(
-                "Origem: %s · Autor: %s" % (rotulo_origem, autor)
+                "Origem: %s · Autor: %s · Categoria: %s"
+                % (rotulo_origem, autor, modulo.get("categoria") or "—")
             )
             if modulo.get("resumo"):
                 st.write(modulo["resumo"])
@@ -665,6 +956,14 @@ def render_gerenciar_modulos():
                     modulo.get("pdf") or "sem PDF",
                 )
             )
+
+            if modulo.get("especial"):
+                st.caption(
+                    "🧪 Módulo especial definido no código. Para alterar o "
+                    "material ou o quiz, edite `dados/modulos.json` e o PDF "
+                    "em `static/modulos/`."
+                )
+                continue
 
             if not _pode_gerenciar(modulo):
                 st.caption(
@@ -681,19 +980,18 @@ def render_gerenciar_modulos():
             referencia = (origem, chave)
             coluna_editar, coluna_excluir = st.columns(2)
 
-            if coluna_editar.button(
+            coluna_editar.button(
                 "Editar",
                 key="editar_%s_%s" % (origem, chave),
-            ):
-                st.session_state["_limpar_edicao_modulo"] = True
-                st.session_state["modulo_em_edicao"] = referencia
-                st.session_state.pop("modulo_excluindo", None)
-                st.rerun()
+                icon=":material/edit:",
+                on_click=_abrir_edicao,
+                args=(referencia,),
+            )
 
-            if coluna_excluir.button(
+            coluna_excluir.button(
                 "Excluir",
                 key="excluir_%s_%s" % (origem, chave),
-            ):
-                st.session_state.pop("modulo_em_edicao", None)
-                st.session_state["modulo_excluindo"] = referencia
-                st.rerun()
+                icon=":material/delete:",
+                on_click=_pedir_exclusao,
+                args=(referencia,),
+            )

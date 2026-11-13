@@ -1,8 +1,8 @@
 import streamlit as st
-from io import BytesIO
 import html
+import re
 from modules.database import (
-    conectar,
+    obter_primeiro_acesso,
     modulos_lidos,
     carregar_progresso_modulos,
     obter_dados_perfil,
@@ -12,13 +12,16 @@ from modules.perfilWidget import (
     cancelar_selecao,
 )
 from modules.sessaoInterativa import render_sessao_interativa
-from modules.mainmenu import render_modulos
+from modules.mainmenu import (
+    render_modulos,
+    render_navegacao_modulos,
+    render_progresso_aluno,
+)
 from modules.paginaModulo import render_pagina_modulo
-from modules.pergaminhos import render_pergaminhos, render_gerenciar_crime
-from modules.gerenciar_modulos import render_gerenciar_modulos
+from modules.pergaminhos import render_pergaminhos
+from modules.gerenciar_conteudos import render_gerenciar_conteudos
 from modules.leitura import CHAVE_LEITURA, render_pagina_leitura
 from modules.modulos import carregar_modulos
-from modules.mainmenu import render_progresso_aluno
 from modules.login import (
     render_login,
     obter_chave_professor_diaria,
@@ -26,6 +29,12 @@ from modules.login import (
     limpar_sessao_do_usuario,
 )
 from modules.anuncio_simulado import render_anuncio_simulado
+
+def _chave_da_pagina(nome):
+    """Converte o rótulo do menu em uma key estável para o container."""
+    chave = re.sub(r"[^a-zA-Z0-9]+", "_", nome or "").strip("_").lower()
+    return "pagina_%s" % (chave or "inicio")
+
 
 # Configuração global
 st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
@@ -37,6 +46,17 @@ st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
 #
 # Sem esta pergunta, um toque errado no "Sair" derrubava a sessão na hora e a
 # pessoa perdia a página em que estava.
+def _sair_da_conta():
+    # Os dados da pessoa saem junto com ela. Sem isto o próximo a usar
+    # esta aba encontrava o username, o módulo aberto e a leitura em
+    # curso do usuário anterior (ver limpar_sessao_do_usuario em
+    # modules/login.py). Só as chaves simples são apagadas aqui: o menu
+    # lateral está desenhado nesta tela, e as chaves de widget são
+    # varridas no login seguinte.
+    limpar_sessao_do_usuario()
+    st.session_state["usuario_logado"] = False
+
+
 @st.dialog("Sair da conta?", width="small")
 def _confirmar_saida():
     st.write("Você vai voltar para a tela de login.")
@@ -45,18 +65,17 @@ def _confirmar_saida():
         f"({st.session_state['tipo_usuario']})"
     )
     confirmar, cancelar = st.columns(2)
-    if confirmar.button("Sair", type="primary", width="stretch"):
-        # Os dados da pessoa saem junto com ela. Sem isto o próximo a
-        # usar esta aba encontrava o username, o módulo aberto e a
-        # leitura em curso do usuário anterior (ver
-        # limpar_sessao_do_usuario em modules/login.py). Só as chaves
-        # simples são apagadas aqui: o menu lateral está desenhado nesta
-        # tela, e as chaves de widget são varridas no login seguinte.
-        limpar_sessao_do_usuario()
-        st.session_state["usuario_logado"] = False
-        st.rerun()
-    if cancelar.button("Cancelar", width="stretch"):
-        st.rerun()
+    confirmar.button(
+        "Sair",
+        type="primary",
+        width="stretch",
+        on_click=_sair_da_conta,
+    )
+    cancelar.button(
+        "Cancelar",
+        width="stretch",
+        on_click=lambda: None,
+    )
 
 
 if "usuario_logado" not in st.session_state:
@@ -267,12 +286,12 @@ else:
         and tipo == "Aluno"
         and "primeiro_acesso" not in st.session_state
     ):
-        with conectar() as conn:
-            c = conn.cursor()
-            c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = %s", (st.session_state["username"],))
-            res = c.fetchone()
-        if res:
-            st.session_state["primeiro_acesso"] = res[0]
+        # A leitura fica em cache: enquanto o aluno ainda nao publicou no
+        # mural, o app roda varias vezes (cada tecla do formulario) e nao
+        # pode consultar o banco em todas elas.
+        st.session_state["primeiro_acesso"] = obter_primeiro_acesso(
+            st.session_state["username"]
+        )
 
     # --- PRIMEIRO ACESSO: COERÊNCIA DO MENU ---
     #
@@ -327,17 +346,21 @@ else:
           with st.container(key="cabecalho_sidebar", horizontal_alignment="center", gap="small"):
             st.title("Criptoeduca")
             if foto_bytes:
-             with st.container(key="moldura_avatar", width=118, horizontal_alignment="center"):
-                st.image(foto_bytes, width=96)
-             st.markdown(
-                f'<p class="ce-avatar-tag">{html.escape(tipo.upper())}</p>',
-                 unsafe_allow_html=True,
-             )
+                with st.container(
+                    key="moldura_avatar",
+                    width=118,
+                    horizontal_alignment="center",
+                ):
+                    st.image(foto_bytes, width=96)
+                st.markdown(
+                    f'<p class="ce-avatar-tag">{html.escape(tipo.upper())}</p>',
+                    unsafe_allow_html=True,
+                )
             # Botão que abre a janela modal de edição
             if st.button(
                 f"👤 {st.session_state.get('nome_usuario', nome_db)} ({st.session_state.get('tipo_usuario', '')})",
                 key="btn_abrir_perfil",
-                use_container_width=True
+                use_container_width=True,
             ):
                 cancelar_selecao()   
                 render_widget_perfil()
@@ -352,13 +375,14 @@ else:
     #
     # "Conteúdos" do Aluno virou "Exemplos de Crimes Digitais": os
     # pergaminhos. O material que a coordenação publica em "Gerenciar
-    # Aulas" não disappeared -- ele virou o miolo dos pergaminhos. Por
-    # isso o Aluno não tem mais uma página de avisos: tem a página dos
-    # golpes, e o que a coordenação escreveu aparece lá dentro.
+    # Conteúdos > Exemplos de Golpe" não desapareceu -- ele virou o miolo
+    # dos pergaminhos. Por isso o Aluno não tem mais uma página de avisos:
+    # tem a página dos golpes, e o que a coordenação escreveu aparece lá
+    # dentro.
     if tipo == "Administrador":
-        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Gerenciar Módulos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     elif tipo == "Professor":
-        opcoes = ["Painel Geral", "Turma", "Gerenciar Aulas", "Gerenciar Módulos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     else:
         opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado"]
 
@@ -370,7 +394,25 @@ else:
         st.session_state["menu"] = opcoes[0]
         del st.session_state["voltar_para_menu"]
 
+    # Sessoes antigas podem ter "Gerenciar Aulas" ou "Gerenciar Modulos"
+    # gravado no menu. Os dois itens viraram um so; sem esta migracao o
+    # radio receberia um valor que nao esta mais na lista de opcoes.
+    menu_antigo = st.session_state.get("menu")
+    if menu_antigo == "Gerenciar Aulas":
+        st.session_state["menu"] = "Gerenciar Conteúdos"
+        st.session_state["gerenciar_conteudos_aba"] = "Exemplos de Golpe"
+    elif menu_antigo == "Gerenciar Módulos":
+        st.session_state["menu"] = "Gerenciar Conteúdos"
+        st.session_state["gerenciar_conteudos_aba"] = "Módulos"
+
     pagina = st.sidebar.radio("Navegação", opcoes, key="menu")
+
+    # A hierarquia dos modulos aparece na propria lateralidade: recolhida,
+    # logo abaixo do menu, com as categorias e os modulos de cada uma. So
+    # existe quando a pagina aberta e a dos modulos, para nao poluir as
+    # outras telas.
+    if pagina == "Módulos de Aprendizado":
+        render_navegacao_modulos()
 
     st.sidebar.divider()
     if st.sidebar.button("🚪 Sair / Logout", key="botao_sair"):
@@ -392,11 +434,10 @@ else:
         render_sessao_interativa(modo_voluntario=False)
         st.stop()
 
-    # Todas as paginas ocupam o mesmo placeholder. Ao trocar de menu, ele
-    # substitui o conteudo anterior antes que a nova pagina faca suas cargas.
-    pagina_conteudo = st.empty()
-    pagina_conteudo.empty()
-    with pagina_conteudo.container():
+    # Cada pagina tem seu proprio container com key. A key e o que permite
+    # ao Streamlit identificar o DOM daquela tela na transicao e descartar
+    # o anterior, em vez de deixar restos esmaecidos da pagina de origem.
+    with st.container(key=_chave_da_pagina(pagina)):
         # Conteudo condicional.
         # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
         # tres do Aluno, entao Professor e Administrador escolhiam uma pagina e
@@ -441,18 +482,12 @@ else:
                 st.title("👥 Turma")
                 st.caption("Página da turma do professor.")
 
-        elif pagina == "Gerenciar Aulas":
-            # A publicacao da coordenacao virou a publicacao dos exemplos de
-            # crime: e o que o Professor e o Administrador escrevem aqui que
-            # vira pergaminho na pagina do aluno. O nome do item do menu
-            # continua "Gerenciar Aulas" porque e ele que o pessoal ja
-            # conhece.
-            render_gerenciar_crime()
-
-        elif pagina == "Gerenciar Módulos":
-            # Modulos criados aqui vao para o banco; os originais continuam
-            # em dados/modulos.json. A pagina aplica a hierarquia de autoria.
-            render_gerenciar_modulos()
+        elif pagina == "Gerenciar Conteúdos":
+            # A pagina reune os dois editores que antes eram itens
+            # separados: "Exemplos de Golpe" (pergaminhos) e "Modulos"
+            # (modulos de aprendizado). Modulos criados no editor vao para
+            # o banco; os originais continuam em dados/modulos.json.
+            render_gerenciar_conteudos()
 
         elif pagina == "Notas dos Alunos":
             st.title("🧮 Notas dos Alunos")
@@ -493,8 +528,9 @@ else:
 
         elif pagina == "Exemplos de Crimes Digitais":
             # A pagina dos pergaminhos. Substitui a antiga "Conteúdos": o que a
-            # coordenação publica em "Gerenciar Aulas" aparece aqui, dentro de um
-            # pergaminho, em vez de uma lista de avisos.
+            # coordenação publica em "Gerenciar Conteúdos → Exemplos de Golpe"
+            # aparece aqui, dentro de um pergaminho, em vez de uma lista de
+            # avisos.
             render_pergaminhos()
 
         elif pagina == "Meu Progresso":
