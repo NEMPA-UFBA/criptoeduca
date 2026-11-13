@@ -7,7 +7,10 @@ from modules.database import (
     carregar_progresso_modulos,
     obter_dados_perfil,
 )
-from modules.perfilWidget import render_widget_perfil
+from modules.perfilWidget import (
+    render_widget_perfil,
+    cancelar_selecao,
+)
 from modules.sessaoInterativa import render_sessao_interativa
 from modules.mainmenu import render_modulos
 from modules.paginaModulo import render_pagina_modulo
@@ -117,6 +120,16 @@ else:
         .st-key-menu [data-testid="stRadioOption"]:active {
             background-color: rgba(79, 70, 229, 0.42);
         }
+        /* ---------- Cabeçalho da barra lateral ---------- */
+        .st-key-cabecalho_sidebar h1 {
+        text-align: center;
+        width: 100%;
+        padding-bottom: 0.25rem;
+        }
+.st-key-cabecalho_sidebar .ce-avatar-tag {
+    text-align: center;
+    margin: 0 0 0.4rem;
+}
 
         /* ---------- Botão de sair ---------- */
         /* Vermelho, que é o sinal convencional para sair. E o hover muda a cor
@@ -311,6 +324,7 @@ else:
         nome_db, foto_bytes = dados
         
         with st.sidebar:
+          with st.container(key="cabecalho_sidebar", horizontal_alignment="center", gap="small"):
             st.title("Criptoeduca")
             if foto_bytes:
              with st.container(key="moldura_avatar", width=118, horizontal_alignment="center"):
@@ -325,6 +339,7 @@ else:
                 key="btn_abrir_perfil",
                 use_container_width=True
             ):
+                cancelar_selecao()   
                 render_widget_perfil()
     # Menus condicionais baseados no perfil do usuário.
     # O Administrador precisa da propria lista: antes ele caia no else e

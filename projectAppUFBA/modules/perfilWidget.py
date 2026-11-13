@@ -21,7 +21,7 @@ CSS_GRADE = """
     transform: translateY(-2px);
 }
 /* avatar escolhido: borda ciano com brilho, igual à moldura */
-.st-key-grade_avatares [class*="_ativo"] img {
+ .st-key-grade_avatares [data-testid="stColumn"]:has([data-testid="stBaseButton-primary"]) img {
     border-color: #38bdf8;
     box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
 }
@@ -34,9 +34,44 @@ CSS_GRADE = """
 .st-key-grade_avatares [data-testid="stElementToolbar"] {
     display: none;
 }
+.st-key-grade_avatares { gap: 15px; }
+/* define o valor uma vez, no container mais externo */
+.st-key-container_aba_perfil {
+    --espaco: 65px;
+}
+
+/* formulário ↔ galeria */
+.st-key-container_aba_perfil [data-testid="stHorizontalBlock"] {
+    gap: var(--espaco);
+    flex-wrap: nowrap;
+}
+
+/* imagem ↔ imagem (troque o 100px que você tem hoje) */
+.st-key-grade_avatares [data-testid="stHorizontalBlock"] {
+    gap: var(--espaco);
+}
+/* coluna do formulário: 1 parte */
+.st-key-container_aba_perfil [data-testid="stColumn"]:first-child {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+}
+
+/* coluna da galeria: 2 partes */
+.st-key-container_aba_perfil [data-testid="stColumn"]:last-child {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+}
+/* coloque esta regra DEPOIS das regras */
+.st-key-grade_avatares [data-testid="stColumn"]:nth-child(n) {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+}
 @media (prefers-reduced-motion: reduce) {
     .st-key-grade_avatares img { transition: none; }
-}
+    }
 </style>
 """
 
@@ -81,9 +116,14 @@ def acao_seguir_callback(seguidor, seguido):
     seguir_usuario(seguidor, seguido)
     st.session_state["toast_notificacao"] = f"Você começou a seguir {seguido}!" # Define notificação via flag
 
-def selecionar_avatar(rel_path):
-    st.session_state["avatar_selecionado"] = rel_path
-    st.session_state["remover_foto"] = False
+def alternar_avatar(rel_path):
+    if st.session_state.get("avatar_selecionado") == rel_path:
+        st.session_state.pop("avatar_selecionado", None)
+    else:
+        st.session_state["avatar_selecionado"] = rel_path
+
+def cancelar_selecao():
+    st.session_state.pop("avatar_selecionado", None)
 
 def validar_forca_senha(senha):
     tem_maiuscula = any(c.isupper() for c in senha)
@@ -136,28 +176,29 @@ def seletor_avatar():
         pagina = st.number_input("Página", 1, total_paginas, 1, key=f"pag_{subpasta}")
     inicio = (pagina - 1) * POR_PAGINA
     pagina_arquivos = arquivos_disponiveis[inicio:inicio + POR_PAGINA]
- 
-    for i in range(0, len(pagina_arquivos), COLUNAS_GRADE):
-        colunas = st.columns(COLUNAS_GRADE)
-        for coluna, arquivo in zip(colunas, pagina_arquivos[i:i + COLUNAS_GRADE]):
-            caminho = os.path.join(BASE_AVATARES, subpasta, arquivo)
-            rel = f"{subpasta}/{arquivo}"
-            em_uso = (rel == selecionado)
-            with coluna:
-                st.image(gerar_miniatura(caminho, os.path.getmtime(caminho)), width=TAM_MINIATURA)
-                st.button(
-                    "✓ Em uso" if em_uso else "Usar",
-                    key=f"btn_{rel}",
-                    type="primary" if em_uso else "secondary",
-                    on_click=selecionar_avatar,
-                    args=(rel,),
-                )
+
+    with st.container(key="grade_avatares"):
+        for i in range(0, len(pagina_arquivos), COLUNAS_GRADE):
+            colunas = st.columns(COLUNAS_GRADE)
+            for coluna, arquivo in zip(colunas, pagina_arquivos[i:i + COLUNAS_GRADE]):
+                caminho = os.path.join(BASE_AVATARES, subpasta, arquivo)
+                rel = f"{subpasta}/{arquivo}"
+                em_uso = (rel == selecionado)
+                with coluna:
+                    st.image(gerar_miniatura(caminho, os.path.getmtime(caminho)), width=TAM_MINIATURA)
+                    st.button(
+                        "✓ Em uso" if em_uso else "Usar",
+                        key=f"btn_{rel}",
+                        type="primary" if em_uso else "secondary",
+                        on_click=alternar_avatar,
+                        args=(rel,),
+                    )
 def marcar_remocao():
     st.session_state["avatar_selecionado"] = None
-    st.session_state["remover_foto"] = True
+    st.session_state["remover_foto"] = True  
 
 # --- RENDERIZAÇÃO DO WIDGET ---
-@st.dialog("⚙️ Editar Perfil e Buscar Comunidade", width="large") # Transforma e dimensiona a função como janela modal larga e fixa
+@st.dialog("⚙️ Editar Perfil e Buscar Comunidade", width="large", on_dismiss=cancelar_selecao) # Transforma e dimensiona a função como janela modal larga e fixa
 
 def render_widget_perfil(): # Define a renderização do conteúdo de sobreposição
     username_atual = st.session_state['username']
