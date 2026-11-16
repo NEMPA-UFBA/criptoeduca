@@ -3,77 +3,17 @@ import os
 import io
 import math
 from PIL import Image
+
+from modules.estilo import aplicar_css
 # Importa módulos de renderização da UI
 # Puxa do gerenciador de banco de dados otimizado as tarefas de atualização e leitura
-from modules.database import atualizar_perfil, obter_dados_perfil, atualizar_foto
+from modules.database import (
+    atualizar_perfil, obter_dados_perfil, atualizar_foto,
+    buscar_usuarios, seguir_usuario, deixar_de_seguir, listar_seguidos,
+)
 
 
-CSS_GRADE = """
-<style>
-/* miniaturas: cantos arredondados e borda discreta no tom do painel */
-.st-key-grade_avatares img {
-    border-radius: 10px;
-    border: 2px solid #24334a;
-    transition: border-color 0.2s ease, transform 0.2s ease;
-}
-.st-key-grade_avatares img:hover {
-    border-color: #4F46E5;
-    transform: translateY(-2px);
-}
-/* avatar escolhido: borda ciano com brilho, igual à moldura */
- .st-key-grade_avatares [data-testid="stColumn"]:has([data-testid="stBaseButton-primary"]) img {
-    border-color: #38bdf8;
-    box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
-}
-/* botões "Usar" baixinhos */
-.st-key-grade_avatares button {
-    min-height: 1.5rem;
-    padding: 0 0.3rem;
-    font-size: 0.72rem;
-}
-.st-key-grade_avatares [data-testid="stElementToolbar"] {
-    display: none;
-}
-.st-key-grade_avatares { gap: 15px; }
-/* define o valor uma vez, no container mais externo */
-.st-key-container_aba_perfil {
-    --espaco: 65px;
-}
-
-/* formulário ↔ galeria */
-.st-key-container_aba_perfil [data-testid="stHorizontalBlock"] {
-    gap: var(--espaco);
-    flex-wrap: nowrap;
-}
-
-/* imagem ↔ imagem (troque o 100px que você tem hoje) */
-.st-key-grade_avatares [data-testid="stHorizontalBlock"] {
-    gap: var(--espaco);
-}
-/* coluna do formulário: 1 parte */
-.st-key-container_aba_perfil [data-testid="stColumn"]:first-child {
-    flex: 1 1 0;
-    width: auto;
-    min-width: 0;
-}
-
-/* coluna da galeria: 2 partes */
-.st-key-container_aba_perfil [data-testid="stColumn"]:last-child {
-    flex: 1 1 0;
-    width: auto;
-    min-width: 0;
-}
-/* coloque esta regra DEPOIS das regras */
-.st-key-grade_avatares [data-testid="stColumn"]:nth-child(n) {
-    flex: 0 0 auto;
-    width: auto;
-    min-width: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-    .st-key-grade_avatares img { transition: none; }
-    }
-</style>
-"""
+# O CSS desta tela fica em static/css/perfil.css (ver aplicar_css em modules/estilo.py).
 
 RAIZ_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_AVATARES = os.path.join(RAIZ_PROJETO, "static", "avatares")
@@ -127,16 +67,34 @@ def validar_forca_senha(senha):
     tem_numero = any(c.isdigit() for c in senha)
     return tem_maiuscula and tem_minuscula and tem_numero
 
+# Sem st.toast aqui, de proposito. Verificado no navegador: um toast chamado
+# no callback de um botao DENTRO de um dialogo nao aparece (o Streamlit avisa
+# que mostrar elementos nesse momento "nao e oficialmente suportado"). O
+# retorno visual ja existe: "Seguir" vira "✓ Seguindo", e quem deixa de ser
+# seguido sai da lista.
+def _seguir(seguidor, seguido):
+    seguir_usuario(seguidor, seguido)
+
+
+def _deixar_de_seguir(seguidor, seguido):
+    deixar_de_seguir(seguidor, seguido)
+
+# O aviso vai por "toast_notificacao" e e mostrado pelo app.py, e nao com
+# st.toast aqui: verificado no navegador, um toast chamado no callback de um
+# botao dentro de um dialogo nao aparece. A chave e apagada pelo app.py logo
+# que o toast e mostrado. O st.rerun() faz o app inteiro redesenhar (e nao so
+# o dialogo), para a foto nova aparecer tambem na barra lateral.
 def salvar_foto_callback(username, rel_path):
     atualizar_foto(username, preparar_avatar(rel_path))
     st.session_state.pop("avatar_selecionado", None)
-    st.session_state["toast_notificacao"] = "Foto de perfil atualizada!" # Define notificação via flag
+    st.session_state["toast_notificacao"] = "Foto de perfil atualizada!"
     st.rerun()
- 
+
+
 def remover_foto_callback(username):
     atualizar_foto(username, None)
     st.session_state.pop("avatar_selecionado", None)
-    st.session_state["toast_notificacao"] = "Foto de perfil removida!" # Define notificação via flag
+    st.session_state["toast_notificacao"] = "Foto de perfil removida!"
     st.rerun()
 
 def seletor_avatar():
@@ -189,22 +147,33 @@ def seletor_avatar():
                         on_click=alternar_avatar,
                         args=(rel,),
                     )
-def marcar_remocao():
-    st.session_state["avatar_selecionado"] = None
-    st.session_state["remover_foto"] = True  
 
 # --- RENDERIZAÇÃO DO WIDGET ---
 @st.dialog("👤 Meu Perfil", width="large", on_dismiss=cancelar_selecao)
 def render_widget_perfil():
     username_atual = st.session_state['username']
+    aplicar_css("perfil.css")
+
+    aba_perfil, aba_seguir = st.tabs(
+        ["👤 Meu perfil", "🤝 Seguir usuários"],
+        key="abas_widget_perfil",
+        on_change="rerun",
+    )
+    if aba_perfil.open:
+        with aba_perfil:
+            _render_aba_perfil(username_atual)
+    if aba_seguir.open:
+        with aba_seguir:
+            _render_aba_seguir(username_atual)
+
+
+def _render_aba_perfil(username_atual):
     tipo_usuario = st.session_state.get('tipo_usuario', '')
     somente_leitura = tipo_usuario == 'Administrador'
 
-    # Busca dados estritamente transacional sem onerar a inicialização do app
     dados_atuais = obter_dados_perfil(username_atual)
     nome_atual, foto_bytes = dados_atuais if dados_atuais else ("", None)
 
-    st.html(CSS_GRADE)
     # Contêiner raiz com chave unívoca para forçar limpeza do DOM na transição
     with st.container(key="container_aba_perfil"):
         col_form, col_foto = st.columns([1, 2])
@@ -288,5 +257,52 @@ def render_widget_perfil():
                         on_click=remover_foto_callback,
                         args=(username_atual,),
                     )
-                    if st.session_state.get("remover_foto"):
-                        st.warning("A foto será removida ao salvar as modificações.")
+
+def _render_aba_seguir(username_atual):
+    seguidos = listar_seguidos(username_atual)
+
+    termo = st.text_input(
+        "Buscar por nome ou username",
+        type="search",
+        live="300ms",
+        placeholder="Digite pelo menos 2 letras",
+    )
+    resultados = buscar_usuarios(termo, excluir=username_atual)
+    if len((termo or "").strip()) >= 2 and not resultados:
+        st.caption("Nenhum usuário encontrado.")
+
+    with st.container(key="resultados_seguir"):
+        for username, nome, tipo, foto in resultados:
+            ja_sigo = username in seguidos
+            col_foto, col_info, col_botao = st.columns(
+                [1, 6, 2], vertical_alignment="center"
+            )
+            if foto:
+                col_foto.image(foto, width=40)
+            else:
+                col_foto.markdown("👤")
+            col_info.markdown(f"**{nome}** · `{username}` · {tipo}")
+            col_botao.button(
+                "✓ Seguindo" if ja_sigo else "Seguir",
+                key=f"seguir_{username}",
+                disabled=ja_sigo,
+                on_click=_seguir,
+                args=(username_atual, username),
+            )
+
+    st.divider()
+    st.subheader(f"Quem você segue ({len(seguidos)})")
+    if not seguidos:
+        st.caption("Você ainda não segue ninguém.")
+        return
+
+    st.markdown(" · ".join(f"`{u}`" for u in seguidos))
+    alvo = st.selectbox(
+        "Deixar de seguir:", seguidos, index=None, placeholder="Selecione"
+    )
+    st.button(
+        "Deixar de seguir",
+        disabled=alvo is None,
+        on_click=_deixar_de_seguir,
+        args=(username_atual, alvo),
+    )

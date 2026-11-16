@@ -19,6 +19,7 @@ import random
 
 import streamlit as st
 
+from modules.estilo import aplicar_css
 from modules.database import (
     atualizar_primeiro_acesso,
     carregar_cifras_compartilhadas,
@@ -26,13 +27,23 @@ from modules.database import (
     inativar_mensagem_mural,
     salvar_compartilhamento_cifra,
     salvar_mensagem_mural,
-    usuario_existe,
+    listar_seguidos,
 )
 
 # O alfabeto da cifra. A mensagem e bloqueada se tiver qualquer caractere
 # fora desta lista; assim o texto cifrado nunca carrega simbolos que a cifra
 # nao sabe representar.
 ALFABETO = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÀÂÃÉÊÍÓÔÕÚÜÇáàâãéêíóôõúüç.,:!?()[]{}@#$%&+_=<> "
+
+# O mesmo alfabeto como expressao regular, para o NAVEGADOR recusar a mensagem
+# antes do envio (parametro validate do st.text_input). So os caracteres que
+# tem significado dentro de [...] sao escapados; testado nos tres modos de
+# regex do navegador (sem flag, u e v). A validacao no servidor continua em
+# _publicar_mensagem, porque a do navegador pode ser contornada.
+_ESCAPAR_NA_REGEX = set("()[]{}/\\|-^")
+PADRAO_ALFABETO = "^[" + "".join(
+    "\\" + c if c in _ESCAPAR_NA_REGEX else c for c in ALFABETO
+) + "]+$"
 
 # Categorias usadas pelo filtro do dicionário. A ordem de ALFABETO não pode
 # mudar: ela define o mapa de substituição já usado nas mensagens publicadas.
@@ -79,94 +90,8 @@ def criptografar_texto(texto, username):
 
 
 def _css():
-    st.markdown("""
-        <style>
-        /* Caixa de destaque da chave de criptografia */
-        .cifra-box {
-            background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(15, 23, 42, 0.2));
-            border: 1px solid rgba(79, 70, 229, 0.3);
-            padding: 1.5rem;
-            border-radius: 12px;
-            margin-bottom: 1.5rem;
-        }
-
-        /* Estilizacao dos blocos do mural e caixas de texto */
-        .stTextArea textarea {
-            background-color: #0f172a !important;
-            color: #f8fafc !important;
-            border: 1px solid #334155 !important;
-            border-radius: 8px !important;
-        }
-
-        /* Dicionário: grade que acompanha a largura da tela. No desktop
-           mantém as quatro colunas; no celular reduz para duas e, em telas
-           muito estreitas, para uma. */
-        .mural-dic-grade {
-            column-count: 4;
-            column-gap: 1rem;
-            margin-top: 0.75rem;
-        }
-        .mural-dic-item {
-            display: flex;
-            align-items: center;
-            gap: 0.35rem;
-            min-width: 0;
-            padding: 0.18rem 0;
-            font-size: 0.9rem;
-            line-height: 1.3;
-            break-inside: avoid;
-        }
-        .mural-dic-orig {
-            color: #e2e8f0;
-            min-width: 2.2rem;
-            text-align: center;
-        }
-        .mural-dic-seta {
-            color: #94a3b8;
-            flex: 0 0 auto;
-        }
-        .mural-dic-cifra {
-            color: #38bdf8;
-            font-weight: 700;
-            overflow-wrap: anywhere;
-        }
-        .mural-dic-grade code {
-            background: rgba(56, 189, 248, 0.10);
-            border-radius: 4px;
-            padding: 0 0.22rem;
-        }
-        @media (max-width: 900px) {
-            .mural-dic-grade {
-                column-count: 3;
-            }
-        }
-        @media (max-width: 700px) {
-            .mural-dic-grade {
-                column-count: 2;
-                column-gap: 0.6rem;
-            }
-            .mural-dic-item {
-                font-size: 0.82rem;
-            }
-        }
-        @media (max-width: 380px) {
-            .mural-dic-grade {
-                column-count: 1;
-            }
-        }
-
-        /* Efeito visual para as mensagens cifradas no mural */
-        .mural-item {
-            background-color: rgba(30, 41, 59, 0.4);
-            border-left: 4px solid #4F46E5;
-            padding: 1rem;
-            border-radius: 0 8px 8px 0;
-            margin-bottom: 0.75rem;
-            font-family: monospace;
-            overflow-wrap: anywhere;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # O CSS do mural fica em static/css/mural.css.
+    aplicar_css("mural.css")
 
 
 def _mostrar_dicionario(username_atual, cifras_compartilhadas):
@@ -176,10 +101,17 @@ def _mostrar_dicionario(username_atual, cifras_compartilhadas):
         if username != username_atual
     ]
 
-    with st.expander(
+    # on_change="rerun" + .open: o conteudo (cerca de 120 itens de HTML e o
+    # filtro) so e montado com o expander aberto. Antes ele era montado a
+    # cada clique no mural, mesmo fechado.
+    expander = st.expander(
         "🔍 Ver o dicionário completo da Cifra",
-        expanded=False,
-    ):
+        key=f"exp_dicionario_{username_atual}",
+        on_change="rerun",
+    )
+    if not expander.open:
+        return
+    with expander:
         if len(donos) > 1:
             dono_dicionario = st.selectbox(
                 "Dicionário exibido:",
@@ -256,56 +188,63 @@ def _mostrar_dicionario(username_atual, cifras_compartilhadas):
 
 
 def _compartilhar_cifra(username_atual):
-    """Formulario para compartilhar a cifra com outro username."""
-    with st.expander("🤝 Compartilhar cifra", expanded=False):
+    """Compartilha a cifra com alguém que a pessoa já segue."""
+    # Mesmo esquema do dicionario: so consulta quem a pessoa segue quando o
+    # expander esta aberto.
+    expander = st.expander(
+        "🤝 Compartilhar cifra",
+        key=f"exp_compartilhar_{username_atual}",
+        on_change="rerun",
+    )
+    if not expander.open:
+        return
+    with expander:
+        seguidos = listar_seguidos(username_atual)
+        if not seguidos:
+            st.info(
+                "Você ainda não segue ninguém. Abra **Meu Perfil → Seguir "
+                "usuários**, siga alguém e volte aqui para compartilhar."
+            )
+            return
+
         st.write(
-            "Digite o username de outra pessoa para permitir que ela veja o "
+            "Escolha uma pessoa que você segue para permitir que ela veja o "
             "seu dicionário no mural. A cifra das mensagens dela continua "
             "sendo a dela."
         )
-
         with st.form(f"form_compartilhar_cifra_{username_atual}"):
-            destinatario = st.text_input(
-                "Username de quem vai receber:",
-                placeholder="ex.: aluno_teste",
+            destinatario = st.selectbox(
+                "Compartilhar com:",
+                options=seguidos,
+                index=None,
+                placeholder="Selecione um usuário que você segue",
             )
             enviado = st.form_submit_button("Compartilhar cifra")
 
         if enviado:
-            destinatario = destinatario.strip()
-
             if not destinatario:
-                st.error("Digite o username de quem vai receber sua cifra.")
-            elif destinatario == username_atual:
-                st.error("Você não pode compartilhar a cifra com você mesmo.")
-            elif not usuario_existe(destinatario):
-                st.error(f"O username '{destinatario}' não foi encontrado.")
+                st.error("Selecione um usuário para compartilhar sua cifra.")
             else:
                 salvar_compartilhamento_cifra(username_atual, destinatario)
-                st.success(
-                    f"Sua cifra foi compartilhada com {destinatario}."
-                )
-
-
-# Chaves de feedback exibido depois do callback. O callback roda antes de
-# a tela existir, entao ele nao pode chamar st.error/st.success diretamente.
-_CHAVE_ERRO = "_mural_erro"
-_CHAVE_AVISO = "_mural_aviso"
+                st.success(f"Sua cifra foi compartilhada com {destinatario}.")
 
 
 def _voltar_ao_menu():
     st.session_state["voltar_para_menu"] = True
 
 
-def _publicar_mensagem(username_atual, versao_form):
-    """Cifra, grava e limpa o formulario como callback do envio."""
-    chave_mensagem = f"mural_mensagem_{username_atual}_{versao_form}"
-    mensagem = st.session_state.get(chave_mensagem, "")
+def _publicar_mensagem(username_atual):
+    """Cifra e grava a mensagem, como callback do envio.
 
-    if not mensagem.strip():
-        st.session_state[_CHAVE_ERRO] = (
-            "Escreva alguma mensagem antes de enviar."
-        )
+    O aviso sai com st.toast direto do callback, sem guardar nada no
+    session_state. Mensagem invalida normalmente nem chega aqui: o navegador
+    a recusa pelo validate do campo. Esta checagem fica para quem contornar
+    o navegador.
+    """
+    mensagem = (st.session_state.get("mural_mensagem") or "").strip()
+
+    if not mensagem:
+        st.toast("Escreva alguma mensagem antes de enviar.", icon="⚠️")
         return
 
     invalidos = caracteres_fora_do_alfabeto(mensagem)
@@ -313,13 +252,12 @@ def _publicar_mensagem(username_atual, versao_form):
         lista = ", ".join(repr(char) for char in invalidos[:10])
         if len(invalidos) > 10:
             lista += ", ..."
-        st.session_state[_CHAVE_ERRO] = (
-            "A mensagem tem caracteres fora do alfabeto da cifra: %s. "
-            "Remova esses caracteres e tente novamente." % lista
+        st.toast(
+            "A mensagem tem caracteres fora do alfabeto da cifra: %s." % lista,
+            icon="⚠️",
         )
         return
 
-    st.session_state.pop(_CHAVE_ERRO, None)
     msg_cifrada = criptografar_texto(mensagem, username_atual)
     salvar_mensagem_mural(username_atual, msg_cifrada)
 
@@ -327,26 +265,17 @@ def _publicar_mensagem(username_atual, versao_form):
         atualizar_primeiro_acesso(username_atual)
         st.session_state["primeiro_acesso"] = 0
 
-    # Uma versao nova do form troca a key do text_area no proximo rerun,
-    # deixando o campo em branco sem clear_on_submit (que apagaria o texto
-    # tambem quando a validacao falhasse).
-    st.session_state["mural_form_versao"] = versao_form + 1
-    st.session_state.pop(chave_mensagem, None)
-    st.session_state[_CHAVE_AVISO] = (
-        "Mensagem cifrada publicada no mural!"
-    )
+    st.toast("Mensagem cifrada publicada no mural!")
 
 
 def _remover_minha_mensagem(msg_id):
     inativar_mensagem_mural(msg_id)
-    st.session_state[_CHAVE_AVISO] = "Sua mensagem foi removida!"
+    st.toast("Sua mensagem foi removida!")
 
 
 def _inativar_mensagem_gestor(msg_id):
     inativar_mensagem_mural(msg_id)
-    st.session_state[_CHAVE_AVISO] = (
-        f"Mensagem {msg_id} inativada pela moderação."
-    )
+    st.toast(f"Mensagem {msg_id} inativada pela moderação.")
 
 
 def render_sessao_interativa(modo_voluntario=False):
@@ -366,13 +295,6 @@ def _render_sessao_interativa(modo_voluntario=False):
         )
 
     st.title("🔐 Mural de Criptografia")
-
-    erro = st.session_state.pop(_CHAVE_ERRO, None)
-    if erro:
-        st.error(erro)
-    aviso = st.session_state.pop(_CHAVE_AVISO, None)
-    if aviso:
-        st.success(aviso)
 
     cifras_compartilhadas = carregar_cifras_compartilhadas(username_atual)
 
@@ -398,28 +320,31 @@ def _render_sessao_interativa(modo_voluntario=False):
             "mensagem aparecer no mural, tudo fica liberado."
         )
 
-    # A versao no key do form e o que limpa os campos depois de um envio
-    # bem-sucedido. clear_on_submit=True limparia tambem quando a
-    # validacao falha, e a pessoa perderia o que escreveu.
-    if "mural_form_versao" not in st.session_state:
-        st.session_state["mural_form_versao"] = 0
-    versao_form = st.session_state["mural_form_versao"]
-    chave_form = f"{username_atual}_{versao_form}"
-
-    with st.form(f"form_mural_interativo_{chave_form}"):
-        st.text_area(
+    # clear_on_submit limpa o campo depois do envio. Antes isso era evitado
+    # porque apagaria o texto tambem quando a validacao falhava; agora a
+    # validacao acontece no navegador (validate), que nem envia uma mensagem
+    # invalida, entao o texto so e limpo quando a mensagem foi aceita.
+    # text_input, e nao text_area: o mural ja nao aceitava quebra de linha.
+    # max_chars limita o que vai para o banco e para a memoria.
+    with st.form(f"form_mural_{username_atual}", clear_on_submit=True):
+        st.text_input(
             "Digite sua mensagem secreta para o mural:",
-            key=f"mural_mensagem_{chave_form}",
+            key="mural_mensagem",
+            max_chars=500,
+            validate=(
+                PADRAO_ALFABETO,
+                "Use só letras (com acentos), números, espaço e os sinais "
+                "do alfabeto da cifra. Emojis não são aceitos.",
+            ),
             help=(
                 "Aceita letras (com acentos), números, espaço e os sinais do "
-                "alfabeto da cifra. Emojis e quebras de linha não são aceitos."
+                "alfabeto da cifra. Emojis não são aceitos."
             ),
         )
         st.form_submit_button(
             "Criptografar com sua Chave e Enviar",
-            key=f"mural_enviar_{chave_form}",
             on_click=_publicar_mensagem,
-            args=(username_atual, versao_form),
+            args=(username_atual,),
         )
 
     st.markdown("---")

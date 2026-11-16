@@ -12,75 +12,11 @@ import streamlit as st
 from modules.criptografia import cifrar, decifrar
 
 
-_CHAVE_ERRO_CIFRAR = "_aes_erro_cifrar"
-_CHAVE_AVISO_CIFRAR = "_aes_aviso_cifrar"
-_CHAVE_ERRO_DECIFRAR = "_aes_erro_decifrar"
-_CHAVE_TEXTO_DECIFRADO = "_aes_texto_decifrado"
-
-
-def _cifrar_mensagem():
-    """Cifra a mensagem como callback do botao.
-
-    Os widgets existem na tela quando o callback roda, entao os valores sao
-    lidos do session_state. O texto cifrado fica guardado apenas na sessao e
-    sera usado pelo campo de decifrar no rerun seguinte.
-    """
-    mensagem = st.session_state.get("aes_lab_mensagem", "")
-    chave = st.session_state.get("aes_lab_chave", "")
-
-    if not mensagem.strip():
-        st.session_state[_CHAVE_ERRO_CIFRAR] = (
-            "Escreva alguma mensagem antes de cifrar."
-        )
-        return
-    if not chave.strip():
-        st.session_state[_CHAVE_ERRO_CIFRAR] = (
-            "Digite uma frase-chave antes de cifrar."
-        )
-        return
-
-    st.session_state[_CHAVE_ERRO_CIFRAR] = None
-    st.session_state["aes_lab_texto_cifrado"] = cifrar(mensagem, chave)
-    st.session_state.pop("aes_lab_chave_dec", None)
-    st.session_state.pop(_CHAVE_ERRO_DECIFRAR, None)
-    st.session_state[_CHAVE_TEXTO_DECIFRADO] = None
-    st.session_state[_CHAVE_AVISO_CIFRAR] = (
-        "Mensagem cifrada."
-    )
-
-
-def _decifrar_mensagem():
-    """Decifra o texto gerado nesta sessao como callback do botao."""
-    texto_cifrado = st.session_state.get("aes_lab_texto_cifrado", "")
-    chave_dec = st.session_state.get("aes_lab_chave_dec", "")
-
-    st.session_state[_CHAVE_TEXTO_DECIFRADO] = None
-    if not texto_cifrado:
-        st.session_state[_CHAVE_ERRO_DECIFRAR] = (
-            "Cifre uma mensagem antes de decifrar."
-        )
-        return
-    if not chave_dec.strip():
-        st.session_state[_CHAVE_ERRO_DECIFRAR] = (
-            "Digite a frase-chave antes de decifrar."
-        )
-        return
-
-    try:
-        texto = decifrar(texto_cifrado, chave_dec)
-    except ValueError:
-        st.session_state[_CHAVE_ERRO_DECIFRAR] = (
-            "Este texto não está no formato AES-GCM."
-        )
-        return
-    except Exception:
-        st.session_state[_CHAVE_ERRO_DECIFRAR] = (
-            "Chave incorreta ou mensagem adulterada."
-        )
-        return
-
-    st.session_state[_CHAVE_ERRO_DECIFRAR] = None
-    st.session_state[_CHAVE_TEXTO_DECIFRADO] = texto
+# A unica coisa guardada na sessao e o texto cifrado: ele precisa existir
+# entre um clique e outro para poder ser decifrado depois. Mensagens de erro
+# e de sucesso sao desenhadas direto, na mesma execucao do envio do
+# formulario, e por isso nao precisam de chave no session_state.
+_CHAVE_TEXTO_CIFRADO = "aes_lab_texto_cifrado"
 
 
 def _explicacao():
@@ -100,8 +36,16 @@ def _explicacao():
         )
 
 
+@st.fragment
 def render_laboratorio_aes():
-    """Desenha o laboratorio, sem gravar nada no banco."""
+    """Desenha o laboratorio, sem gravar nada no banco.
+
+    E um fragmento: cifrar e decifrar redesenham so o laboratorio, e nao a
+    pagina inteira. Os dois formularios validam na mesma execucao do envio,
+    sem callback, entao os avisos aparecem direto, sem guardar nada na sessao.
+    O texto decifrado aparece so logo depois do envio e nao fica guardado:
+    o texto aberto nao permanece na memoria do servidor.
+    """
     st.info(
         "🧪 **Laboratório de criptografia de alto nível.** Aqui você pode "
         "cifrar e decifrar mensagens com **AES-128-GCM**. Nada é publicado "
@@ -110,32 +54,28 @@ def render_laboratorio_aes():
     _explicacao()
 
     st.subheader("🔒 Criptografar")
-    st.text_area(
-        "Texto:",
-        key="aes_lab_mensagem",
-        placeholder="Escreva o texto que você quer cifrar...",
-    )
-    st.text_input(
-        "Chave:",
-        type="password",
-        key="aes_lab_chave",
-        help="A chave não é armazenada. Sem ela, a mensagem é irrecuperável.",
-    )
+    with st.form("aes_lab_form_cifrar"):
+        mensagem = st.text_area(
+            "Texto:",
+            placeholder="Escreva o texto que você quer cifrar...",
+        )
+        chave = st.text_input(
+            "Chave:",
+            type="password",
+            help="A chave não é armazenada. Sem ela, a mensagem é irrecuperável.",
+        )
+        cifrar_agora = st.form_submit_button("Criptografar", type="primary")
 
-    st.button(
-        "Criptografar",
-        key="aes_lab_btn_cifrar",
-        type="primary",
-        on_click=_cifrar_mensagem,
-    )
-    erro = st.session_state.pop(_CHAVE_ERRO_CIFRAR, None)
-    if erro:
-        st.error(erro)
-    aviso = st.session_state.pop(_CHAVE_AVISO_CIFRAR, None)
-    if aviso:
-        st.success(aviso)
+    if cifrar_agora:
+        if not mensagem.strip():
+            st.error("Escreva alguma mensagem antes de cifrar.")
+        elif not chave.strip():
+            st.error("Digite uma frase-chave antes de cifrar.")
+        else:
+            st.session_state[_CHAVE_TEXTO_CIFRADO] = cifrar(mensagem, chave)
+            st.success("Mensagem cifrada.")
 
-    texto_cifrado = st.session_state.get("aes_lab_texto_cifrado")
+    texto_cifrado = st.session_state.get(_CHAVE_TEXTO_CIFRADO)
     if not texto_cifrado:
         return
 
@@ -148,22 +88,21 @@ def render_laboratorio_aes():
 
     st.divider()
     st.subheader("🔓 Decifrar")
-    st.text_input(
-        "Chave para decifrar:",
-        type="password",
-        key="aes_lab_chave_dec",
-    )
+    # clear_on_submit: a chave digitada nao fica no campo depois do envio.
+    with st.form("aes_lab_form_decifrar", clear_on_submit=True):
+        chave_dec = st.text_input("Chave para decifrar:", type="password")
+        decifrar_agora = st.form_submit_button("Decifrar", type="primary")
 
-    st.button(
-        "Decifrar",
-        key="aes_lab_btn_decifrar",
-        type="primary",
-        on_click=_decifrar_mensagem,
-    )
-    erro = st.session_state.pop(_CHAVE_ERRO_DECIFRAR, None)
-    if erro:
-        st.error(erro)
-    texto = st.session_state.get(_CHAVE_TEXTO_DECIFRADO)
-    if texto is not None:
-        st.success("Mensagem decifrada:")
-        st.code(texto, language=None)
+    if decifrar_agora:
+        if not chave_dec.strip():
+            st.error("Digite a frase-chave antes de decifrar.")
+            return
+        try:
+            texto = decifrar(texto_cifrado, chave_dec)
+        except ValueError:
+            st.error("Este texto não está no formato AES-GCM.")
+        except Exception:
+            st.error("Chave incorreta ou mensagem adulterada.")
+        else:
+            st.success("Mensagem decifrada:")
+            st.code(texto, language=None)

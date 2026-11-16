@@ -22,7 +22,10 @@ def _mostrar_notificacao() -> None:
     )
 
 
-@st.fragment(run_every="5s")
+# 30 s, e nao 5 s: sao 4 verificacoes por usuario em vez de 24 ate o aviso
+# aparecer. O pop-up pode chegar ate 30 s depois dos dois minutos, o que nao
+# muda nada numa simulacao de anuncio.
+@st.fragment(run_every="30s")
 def _verificar_tempo() -> None:
     """Exibe a notificação após dois minutos, sem depender de JavaScript."""
     if _CHAVE_EXIBIDO in st.session_state or _CHAVE_INICIO not in st.session_state:

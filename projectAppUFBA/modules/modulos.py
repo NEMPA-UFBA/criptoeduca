@@ -365,9 +365,18 @@ def _modulos_do_banco(erros):
     return prontos
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_resource(ttl=300, show_spinner=False)
 def carregar_modulos():
     """Devolve (modulos, erros).
+
+    st.cache_resource, e nao st.cache_data, de proposito: o cache_data
+    entrega uma COPIA de todos os modulos (com os quizzes) a cada chamada, e
+    esta funcao e chamada duas ou tres vezes no mesmo clique (barra lateral,
+    pagina, home). O cache_resource devolve o mesmo objeto, sem copiar.
+
+    REGRA: quem recebe NAO pode alterar a lista nem os dicionarios. O objeto
+    e compartilhado por todos os usuarios; uma alteracao valeria para todos.
+    Para mudar um modulo, use as funcoes de gravacao, que limpam o cache.
 
     Junta duas origens: os modulos fixos de dados/modulos.json e os
     modulos criados pela pagina "Gerenciar Conteudos -> Modulos", que ficam

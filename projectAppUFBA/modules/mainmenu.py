@@ -278,11 +278,21 @@ def render_navegacao_modulos():
     nao empurrar o menu para baixo, e usa botoes com on_click para nao
     gravar session_state depois que o widget da pagina ja nasceu.
     """
+    # on_change="rerun" + .open: os botoes (um por modulo) so sao criados
+    # com o expander aberto. Antes eram criados a cada clique, mesmo fechado.
+    expander = st.sidebar.expander(
+        "🗺️ Ir para um módulo",
+        key="exp_nav_modulos",
+        on_change="rerun",
+    )
+    if not expander.open:
+        return
+
     modulos, _erros = carregar_modulos()
     if not modulos:
         return
 
-    with st.sidebar.expander("🗺️ Ir para um módulo", expanded=False):
+    with expander:
         for categoria, lista in _agrupar_por_categoria(modulos):
             if not lista:
                 continue

@@ -7,6 +7,7 @@ import bcrypt
 import streamlit as st
 import os
 import logging
+import threading
 from streamlit.errors import StreamlitSecretNotFoundError
 from dotenv import load_dotenv
 
@@ -60,17 +61,54 @@ def _pool_postgres():
         )
 
     return ThreadedConnectionPool(
-        minconn=1,
+        minconn=2,
         maxconn=DB_POOL_MAX_CONNECTIONS,
         dsn=str(dsn),
         connect_timeout=DB_CONNECT_TIMEOUT_SECONDS,
     )
 
 
+# --- ESQUEMA GARANTIDO UMA VEZ POR PROCESSO ---
+#
+# O app nunca chamava criar_tabelas(): ela so rodava manualmente pelo
+# init_db.py. Por isso, tabelas novas (como compartilhamentos_cifra) nao
+# existiam no banco e a consulta quebrava com UndefinedTable.
+#
+# Em vez de chamar criar_tabelas() a cada rerun (o que pesaria a cada clique),
+# o esquema e verificado UMA unica vez por processo do servidor, na primeira
+# conexao pedida. Depois disso, o custo em cada conectar() e so a leitura de
+# um booleano. O lock evita que duas sessoes simultaneas rodem a criacao ao
+# mesmo tempo logo apos o servidor subir.
+_ESQUEMA_PRONTO = False
+_ESQUEMA_LOCK = threading.Lock()
+
+
+def _garantir_esquema(pool):
+    global _ESQUEMA_PRONTO
+    if _ESQUEMA_PRONTO:
+        return
+    with _ESQUEMA_LOCK:
+        if _ESQUEMA_PRONTO:  # outra thread ja terminou enquanto esperavamos
+            return
+        conn = pool.getconn()
+        try:
+            _criar_tabelas(conn)
+            _ESQUEMA_PRONTO = True
+        except Exception:
+            # Nao marca como pronto: a proxima conexao tenta de novo.
+            conn.rollback()
+            logger.exception("Falha ao preparar o esquema do banco.")
+            raise
+        finally:
+            pool.putconn(conn)
+
+
 @contextmanager
 def conectar():
     """Empresta uma conexao do pool e sempre a devolve ao terminar."""
     pool = _pool_postgres()
+    if not _ESQUEMA_PRONTO:
+        _garantir_esquema(pool)
     conn = pool.getconn()
     try:
         yield conn
@@ -101,8 +139,8 @@ def _senha_admin_inicial():
 
 
 def criar_tabelas():
-    with conectar() as conn:
-        _criar_tabelas(conn)
+    """Execucao manual (init_db.py). Usa o mesmo caminho unico do app."""
+    _garantir_esquema(_pool_postgres())
 
 
 def _criar_tabelas(conn):
@@ -178,7 +216,9 @@ def _criar_tabelas(conn):
             UNIQUE (remetente, destinatario)
         )
     """)
-
+    c.execute("ALTER TABLE compartilhamentos_cifra ADD COLUMN IF NOT EXISTS remetente TEXT DEFAULT ''")
+    c.execute("ALTER TABLE compartilhamentos_cifra ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''")
+   
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
     # para os alunos. Segue o mesmo padrao do mural: nada e apagado, a linha
@@ -487,7 +527,7 @@ def _semear_exemplos_crime(c):
 
 #Funções Novas adicionadas
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
 def obter_primeiro_acesso(username):
     """Le o status de primeiro acesso sem repetir a consulta a cada rerun."""
     if not username:
@@ -509,18 +549,22 @@ def atualizar_primeiro_acesso(username):
         c = conn.cursor()
         c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = %s", (username,))
         conn.commit()
-    obter_primeiro_acesso.clear()
+    obter_primeiro_acesso.clear(username)
 
-
-def usuario_existe(username):
-    """Informa se o username existe, para validar o compartilhamento da cifra."""
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
+def carregar_cifras_compartilhadas(destinatario):
+    """Lista os usuarios que compartilharam a cifra com o destinatario."""
     with conectar() as conn:
         c = conn.cursor()
-        c.execute("SELECT 1 FROM usuarios WHERE username = %s", (username,))
-        existe = c.fetchone() is not None
+        c.execute(
+            "SELECT remetente FROM compartilhamentos_cifra "
+            "WHERE destinatario = %s AND ativo = 1 AND remetente <> %s "
+            "ORDER BY remetente",
+            (destinatario, destinatario),
+        )
+        dados = tuple(linha[0] for linha in c.fetchall())
         conn.rollback()
-    return existe
-
+    return dados
 
 def salvar_compartilhamento_cifra(remetente, destinatario):
     """Autoriza o destinatario a ver o dicionario da cifra do remetente."""
@@ -534,22 +578,7 @@ def salvar_compartilhamento_cifra(remetente, destinatario):
             (remetente, destinatario),
         )
         conn.commit()
-
-
-def carregar_cifras_compartilhadas(destinatario):
-    """Lista os usuarios que compartilharam a cifra com o destinatario."""
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT remetente FROM compartilhamentos_cifra "
-            "WHERE destinatario = %s AND ativo = 1 AND remetente <> %s "
-            "ORDER BY remetente",
-            (destinatario, destinatario),
-        )
-        dados = [linha[0] for linha in c.fetchall()]
-        conn.rollback()
-    return dados
-
+    carregar_cifras_compartilhadas.clear(destinatario)
 
 def salvar_mensagem_mural(username, mensagem_criptografada):
     """Salva a mensagem associada ao usuário que a enviou"""
@@ -565,15 +594,22 @@ def salvar_mensagem_mural(username, mensagem_criptografada):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def carregar_mural():
-    """Carrega todas as mensagens ativas para exibição pública.
+    """Carrega as 100 mensagens ativas mais recentes para exibição pública.
 
     A lista muda somente quando alguém publica ou inativa uma mensagem.
     Por isso ela fica em cache e é invalidada pelas duas escritas abaixo,
     em vez de consultar o banco a cada rerun do mural.
+
+    O LIMIT existe porque cada mensagem vira colunas e botões na tela, e o
+    st.cache_data entrega uma cópia da lista inteira a cada chamada: sem
+    teto, o mural ficaria mais pesado a cada mensagem publicada.
     """
     with conectar() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, username, mensagem_criptografada, data FROM mural WHERE ativo = 1 ORDER BY id DESC")
+        c.execute(
+            "SELECT id, username, mensagem_criptografada, data FROM mural "
+            "WHERE ativo = 1 ORDER BY id DESC LIMIT 100"
+        )
         dados = c.fetchall()
         conn.rollback()
     return dados
@@ -633,24 +669,6 @@ def salvar_conteudo(
         )
         conn.commit()
     carregar_pergaminhos.clear()
-    carregar_conteudos.clear()
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def carregar_conteudos():
-    """Carrega todos os conteudos ativos, do mais novo para o mais antigo.
-
-    Devolve tuplas no formato antigo (id, titulo, corpo, autor, data),
-    mantido para telas antigas. Tanto a pagina dos pergaminhos quanto o
-    gerenciamento usam carregar_pergaminhos(), que traz os campos do
-    crime e, opcionalmente, os exemplos inativos.
-    """
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, titulo, corpo, autor, data FROM conteudos WHERE ativo = 1 ORDER BY id DESC")
-        dados = c.fetchall()
-        conn.rollback()
-    return dados
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -738,7 +756,6 @@ def atualizar_conteudo(
         )
         conn.commit()
     carregar_pergaminhos.clear()
-    carregar_conteudos.clear()
 
 
 def inativar_conteudo(conteudo_id):
@@ -748,7 +765,6 @@ def inativar_conteudo(conteudo_id):
         c.execute("UPDATE conteudos SET ativo = 0 WHERE id = %s", (conteudo_id,))
         conn.commit()
     carregar_pergaminhos.clear()
-    carregar_conteudos.clear()
 
 
 def reativar_conteudo(conteudo_id):
@@ -758,7 +774,6 @@ def reativar_conteudo(conteudo_id):
         c.execute("UPDATE conteudos SET ativo = 1 WHERE id = %s", (conteudo_id,))
         conn.commit()
     carregar_pergaminhos.clear()
-    carregar_conteudos.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -1031,42 +1046,10 @@ def registrar_leitura(username, modulo):
         (username, modulo)
         )
         conn.commit()
-    carregar_estado_modulos.clear()
-    modulo_lido.clear()
-    modulos_lidos.clear()
+    carregar_estado_modulos.clear(username)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def modulo_lido(username, modulo):
-    """Diz se o aluno ja terminou de ler o material de um modulo.
-
-    E o que libera o quiz. Devolve True ou False, nunca None: quem
-    chama so precisa da resposta.
-    """
-    if not username:
-        return False
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT 1 FROM leituras WHERE username = %s AND modulo = %s",
-            (username, modulo),
-        )
-        achou = c.fetchone() is not None
-    return achou
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def modulos_lidos(username):
-    """Devolve o conjunto de modulos que o aluno ja terminou de ler."""
-    if not username:
-        return set()
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute("SELECT modulo FROM leituras WHERE username = %s", (username,))
-        return {linha[0] for linha in c.fetchall()}
-
-
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
 def carregar_estado_modulos(username):
     """Carrega leituras e progresso do aluno com uma consulta ao banco.
 
@@ -1076,18 +1059,21 @@ def carregar_estado_modulos(username):
     if not username:
         return {}, set()
 
+    # A melhor tentativa de cada modulo e escolhida pelo proprio banco
+    # (DISTINCT ON), em vez de trazer todas as tentativas e comparar no
+    # Python. A tabela progresso_modulos guarda uma linha por tentativa e so
+    # cresce; assim chega uma linha por modulo. O desempate e o mesmo de
+    # antes: mais acertos e, no empate, a tentativa mais antiga (menor id).
     with conectar() as conn:
         try:
             c = conn.cursor()
             c.execute(
-                "SELECT 'leitura' AS tipo, modulo, NULL::INTEGER AS acertos, "
-                "NULL::INTEGER AS total, NULL::TIMESTAMP AS data, "
-                "NULL::INTEGER AS ordem "
+                "SELECT modulo, NULL::INTEGER, NULL::INTEGER, NULL::TIMESTAMP, TRUE "
                 "FROM leituras WHERE username = %s "
                 "UNION ALL "
-                "SELECT 'progresso' AS tipo, modulo, acertos, total, data, id "
-                "FROM progresso_modulos WHERE username = %s "
-                "ORDER BY ordem NULLS FIRST",
+                "(SELECT DISTINCT ON (modulo) modulo, acertos, total, data, FALSE "
+                " FROM progresso_modulos WHERE username = %s "
+                " ORDER BY modulo, acertos DESC, id ASC)",
                 (username, username),
             )
             linhas = c.fetchall()
@@ -1098,25 +1084,11 @@ def carregar_estado_modulos(username):
 
     lidos = set()
     progresso = {}
-    ordens_progresso = {}
-    for tipo, modulo, acertos, total, data, ordem in linhas:
-        if tipo == "leitura":
+    for modulo, acertos, total, data, eh_leitura in linhas:
+        if eh_leitura:
             lidos.add(modulo)
-            continue
-        if (
-            modulo not in progresso
-            or acertos > progresso[modulo]["acertos"]
-            or (
-                acertos == progresso[modulo]["acertos"]
-                and ordem < ordens_progresso[modulo]
-            )
-        ):
-            progresso[modulo] = {
-                "acertos": acertos,
-                "total": total,
-                "data": data,
-            }
-            ordens_progresso[modulo] = ordem
+        else:
+            progresso[modulo] = {"acertos": acertos, "total": total, "data": data}
     return progresso, lidos
 
 
@@ -1137,40 +1109,8 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
             (username, modulo, acertos, total),
         )
         conn.commit()
-    carregar_estado_modulos.clear()
-    carregar_progresso_modulos.clear()
+    carregar_estado_modulos.clear(username)
     listar_progresso_recente.clear()
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def carregar_progresso_modulos(username):
-    """Devolve {slug_do_modulo: melhor resultado} do usuario.
-
-    "Melhor resultado" e o que tem mais acertos -- e nao a ultima tentativa.
-    Refazer o quiz depois de errar nao deve apagar o quanto a pessoa ja
-    tinha acertado.
-
-    Devolve dicionario vazio, e nao None, quando o usuario ainda nao fez
-    nenhum quiz: quem chama so precisa do .get().
-    """
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT modulo, acertos, total, data FROM progresso_modulos "
-            "WHERE username = %s ORDER BY id",
-            (username,),
-        )
-        linhas = c.fetchall()
-
-    progresso = {}
-    for modulo, acertos, total, data in linhas:
-        if modulo not in progresso or acertos > progresso[modulo]["acertos"]:
-            progresso[modulo] = {
-                "acertos": acertos,
-                "total": total,
-                "data": data,
-            }
-    return progresso
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -1276,7 +1216,7 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
             # barrou mesmo com a checagem acima. Mesma resposta da checagem.
             return "email_duplicado"
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
 def obter_dados_perfil(username):
     """Consulta puramente relacional para resgatar apenas o nome e a foto de perfil do usuário."""
     if not username:
@@ -1319,36 +1259,9 @@ def atualizar_perfil(username, nova_senha, senha_atual, novo_nome): # Função p
                 (novo_nome, username)
             )
         conn.commit() # Confirma efetivamente a gravação da transação na base de dados
-        obter_dados_perfil.clear() # Limpa o cache de perfil para refletir as mudanças
+        obter_dados_perfil.clear(username) # Limpa o cache de perfil para refletir as mudanças
         listar_progresso_recente.clear() # O nome exibido na home também mudou
         c.close() # Destrói o cursor liberando recursos locais do servidor
-
-def buscar_usuarios(termo): # Função para ler registros parecidos com o termo de busca
-    with conectar() as conn: # Empresta a conexão do Pool
-        c = conn.cursor() # Cria o cursor de execução
-        # Realiza uma busca tolerante a maiúsculas/minúsculas usando o comparador ILIKE do PostgreSQL limitando sobrecarga a 20 linhas
-        c.execute("SELECT nome, tipo FROM usuarios WHERE nome ILIKE %s LIMIT 20", (f"%{termo}%",))
-        resultados = c.fetchall() # Descarrega em memória local todos os registros capturados pela query
-        c.close() # Encerra o objeto cursor
-        return resultados # Retorna a lista contendo as tuplas do formato (nome, tipo)
-
-def seguir_usuario(seguidor, seguido):
-    with conectar() as conn:
-        c = conn.cursor()
-        # Utiliza ON CONFLICT para não gerar erro caso o usuário clique duas vezes (PostgreSQL nativo)
-        c.execute("""
-            INSERT INTO seguidores (seguidor_username, seguido_username) 
-            VALUES (%s, %s)
-            ON CONFLICT (seguidor_username, seguido_username) DO NOTHING
-        """, (seguidor, seguido))
-        conn.commit()
-
-def buscar_usuarios(termo):
-    with conectar() as conn:
-        c = conn.cursor()
-        # Ajuste o SELECT para retornar o username (chave primária) usado na ação de seguir
-        c.execute("SELECT username, nome, tipo FROM usuarios WHERE nome ILIKE %s LIMIT 20", (f"%{termo}%",))
-        return c.fetchall()
 
 def atualizar_foto(username, foto_bytes):
     foto_db = psycopg2.Binary(foto_bytes) if foto_bytes else None
@@ -1358,4 +1271,67 @@ def atualizar_foto(username, foto_bytes):
             (foto_db, username),
         )
         conn.commit()
-        obter_dados_perfil.clear()  # Limpa o cache para refletir a nova foto
+        obter_dados_perfil.clear(username)  # Limpa o cache para refletir a nova foto
+
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
+def listar_seguidos(username):
+    if not username:
+        return ()
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT seguido_username FROM seguidores "
+            "WHERE seguidor_username = %s ORDER BY seguido_username",
+            (username,),
+        )
+        dados = tuple(linha[0] for linha in c.fetchall())
+        conn.rollback()
+    return dados
+
+
+def seguir_usuario(seguidor, seguido):
+    if not seguido or seguidor == seguido:
+        return
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO seguidores (seguidor_username, seguido_username) "
+            "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (seguidor, seguido),
+        )
+        conn.commit()
+    listar_seguidos.clear(seguidor)
+
+
+def deixar_de_seguir(seguidor, seguido):
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "DELETE FROM seguidores "
+            "WHERE seguidor_username = %s AND seguido_username = %s",
+            (seguidor, seguido),
+        )
+        conn.commit()
+    listar_seguidos.clear(seguidor)
+
+
+def buscar_usuarios(termo, excluir=""):
+    termo = (termo or "").strip()
+    if len(termo) < 2:
+        return []
+    termo = termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    padrao = f"%{termo}%"
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT username, nome, tipo, foto_perfil FROM usuarios "
+            "WHERE (nome ILIKE %s OR username ILIKE %s) AND username <> %s "
+            "ORDER BY nome LIMIT 8",
+            (padrao, padrao, excluir),
+        )
+        dados = [
+            (u, nome, tipo, bytes(foto) if foto is not None else None)
+            for u, nome, tipo, foto in c.fetchall()
+        ]
+        conn.rollback()
+    return dados

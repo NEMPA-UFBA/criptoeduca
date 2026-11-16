@@ -19,7 +19,7 @@ from modules.database import (
     excluir_modulo,
     salvar_modulo,
 )
-from modules.estilo import aplicar_estilo, html_bruto
+from modules.estilo import aplicar_css, aplicar_estilo, html_bruto
 from modules.mainmenu import _card_html
 from modules.modulos import (
     CATEGORIA_PADRAO,
@@ -48,50 +48,7 @@ CHAVE_FORM_NOVO = "form_novo_modulo_aberto"
 
 # CSS proprio da pagina, no mesmo padrao do CSS_PERGAMINHOS (cada pagina
 # guarda o que e so dela; modules/estilo.py fica com a identidade comum).
-CSS_GERENCIAR_MODULOS = """
-<style>
-/* Rotulo de secao do formulario. O prefixo .stMarkdown p e obrigatorio:
-   o Streamlit escreve ".stMarkdown p { font-size: ... }" (0,1,1), que
-   ganha de um ".ce-secao" sozinho (0,1,0) -- a mesma armadilha explicada
-   em modules/estilo.py. */
-.stMarkdown p.ce-secao {
-    color: #7dd3fc;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    margin: 0.2rem 0 0.9rem 0;
-    padding-bottom: 0.35rem;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.28);
-}
-/* A previa usa o card verdadeiro (.ce-card) para o professor ver
-   exatamente o que vai aparecer no mapa. O card real tem min-height de
-   380px, pensado para a fileira de cards; na previa isso viraria um
-   bloco enorme e vazio. */
-.ce-previa .ce-card {
-    min-height: auto;
-}
-.ce-previa {
-    border: 1px dashed rgba(148, 163, 184, 0.28);
-    border-radius: 14px;
-    padding: 0.9rem;
-    background: rgba(15, 23, 42, 0.35);
-}
-.stMarkdown p.ce-previa-titulo {
-    color: #94a3b8;
-    font-size: 0.78rem;
-    margin: 0 0 0.6rem 0;
-}
-@media (max-width: 640px) {
-    .stMarkdown p.ce-secao {
-        font-size: 0.68rem;
-    }
-    .ce-previa {
-        padding: 0.65rem;
-    }
-}
-</style>
-"""
+# O CSS desta tela fica em static/css/gerenciar_modulos.css (ver aplicar_css em modules/estilo.py).
 
 
 def _html(trecho):
@@ -878,7 +835,7 @@ def _render_gerenciar_modulos():
         st.error("Acesso restrito a professores e administradores.")
         return
 
-    st.markdown(CSS_GERENCIAR_MODULOS, unsafe_allow_html=True)
+    aplicar_css("gerenciar_modulos.css")
 
     # As limpezas vem antes de qualquer widget: mexer em chave de widget
     # depois que ele nasceu, na mesma execucao, levanta erro no Streamlit.

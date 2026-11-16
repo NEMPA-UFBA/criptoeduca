@@ -111,6 +111,12 @@ def _enviar_tentativa(slug, perguntas, username):
         "total": total,
     }
 
+    # O quiz e um fragmento: marcar alternativas redesenha so o quiz. Mas o
+    # envio muda coisas FORA dele (a nota na pagina, o laboratorio AES que
+    # libera depois do quiz, o progresso na barra lateral), entao aqui o app
+    # inteiro e redesenhado uma vez.
+    st.rerun()
+
 
 def _limpar_respostas(slug, perguntas):
     """Apaga as alternativas marcadas e o resultado guardado.
@@ -126,8 +132,12 @@ def _limpar_respostas(slug, perguntas):
         st.session_state.pop("quiz_%s_%d" % (slug, indice), None)
 
 
+@st.fragment
 def render_quiz(modulo, slug):
     """Desenha o quiz de um modulo.
+
+    E um fragmento (@st.fragment): cada alternativa marcada redesenha so o
+    quiz, e nao a pagina inteira (CSS, barra lateral, consultas em cache).
 
     Devolve True se o aluno respondeu agora, e False se nao respondeu
     (ou se nao havia quiz). Quem chama usa isso para saber se vale
