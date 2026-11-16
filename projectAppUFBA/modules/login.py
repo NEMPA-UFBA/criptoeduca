@@ -454,7 +454,7 @@ def _formulario_login(cookie_manager):
                                 valor_cookie,
                                 expires_at=expira_em,
                                 secure=secure_cookie,
-                                same_site="strict",
+                                same_site="none",
                             )
                     # Zera só no acerto: quem entrou não está sob ataque, e uma
                     # sessão legítima não pode herdar bloqueio de outra.
