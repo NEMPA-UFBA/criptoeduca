@@ -41,19 +41,19 @@ def _segredo_cookie_login():
     return segredo.encode("utf-8")
 
 
-def _secure_cookie_login(url):
+def opcoes_cookie_login(url):
     if not isinstance(url, str):
         return None
 
     url_acesso = urlsplit(url)
     if url_acesso.scheme == "https":
-        return True
+        return {"secure": True, "same_site": "none"}
     if url_acesso.scheme == "http" and url_acesso.hostname in {
         "localhost",
         "127.0.0.1",
         "::1",
     }:
-        return False
+        return {"secure": False, "same_site": "lax"}
     return None
 
 
@@ -441,8 +441,8 @@ def _formulario_login(cookie_manager):
                             "ou em `.streamlit/secrets.toml`."
                         )
                     else:
-                        secure_cookie = _secure_cookie_login(st.context.url)
-                        if secure_cookie is None:
+                        opcoes_cookie = opcoes_cookie_login(st.context.url)
+                        if opcoes_cookie is None:
                             st.warning(
                                 "A retenção de login exige HTTPS. Em desenvolvimento, "
                                 "acesse o app por http://localhost:8501."
@@ -453,8 +453,7 @@ def _formulario_login(cookie_manager):
                                 _COOKIE_LOGIN,
                                 valor_cookie,
                                 expires_at=expira_em,
-                                secure=secure_cookie,
-                                same_site="none",
+                                **opcoes_cookie,
                             )
                     # Zera só no acerto: quem entrou não está sob ataque, e uma
                     # sessão legítima não pode herdar bloqueio de outra.

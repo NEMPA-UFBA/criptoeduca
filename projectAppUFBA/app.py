@@ -1,5 +1,6 @@
 import streamlit as st
 import extra_streamlit_components as stx
+from datetime import datetime, timezone
 from modules.database import (
     conectar,
     modulos_lidos,
@@ -19,6 +20,7 @@ from modules.login import (
     segredo_da_chave_configurado,
     limpar_sessao_do_usuario,
     restaurar_cookie_login,
+    opcoes_cookie_login,
 )
 from modules.anuncio_simulado import render_anuncio_simulado
 
@@ -57,8 +59,20 @@ def _confirmar_saida():
 
 
 if st.session_state.pop("pediu_logout", False):
-    if cookie_manager.get("usuario_logado") is not None:
-        cookie_manager.delete("usuario_logado", key="delete_logout")
+    opcoes_cookie = opcoes_cookie_login(st.context.url)
+    if opcoes_cookie is None:
+        st.warning(
+            "Não foi possível expirar o cookie de login por esta conexão. "
+            "Acesse o app por HTTPS ou por http://localhost:8501."
+        )
+    else:
+        cookie_manager.set(
+            "usuario_logado",
+            "",
+            expires_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
+            key="expire_logout",
+            **opcoes_cookie,
+        )
     for chave in ("usuario_logado", "nome_usuario", "username", "tipo_usuario"):
         st.session_state.pop(chave, None)
 elif not st.session_state.get("usuario_logado", False):
