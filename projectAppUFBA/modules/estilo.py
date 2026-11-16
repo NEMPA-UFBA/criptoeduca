@@ -303,14 +303,173 @@ CSS_IDENTIDADE = """
     }
 }
 
+/* A pagina do catalogo fica centrada e para de esticar os cards numa tela
+   ultra larga. O limite e maior que a soma de tres colunas, entao o desktop
+   continua com tres cards por linha. */
+.stVerticalBlock[class*="st-key-pagina_catalogo_modulos"] {
+    max-width: 1120px;
+    margin: 0 auto;
+}
+
 /* Em tela estreita (celular de aluno) os badges e o cabeçalho encolhem em
    vez de estourar a largura. */
 @media (max-width: 640px) {
     .stMarkdown p.ce-pixel {
         font-size: 19px;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
     }
+    .stMarkdown p.ce-subtitulo {
+        font-size: 0.9rem;
+        margin-bottom: 1.2rem;
+    }
+
+    /* ---------- Catalogo em duas colunas no celular ----------
+       O Streamlit empilha as colunas no celular (min-width: 100%). Aqui a
+       grade e refeita: cada linha de st.columns vira "display: contents",
+       entao as colunas de todas as linhas viram itens de UMA grade de duas
+       colunas. Isso e o que faz 4 modulos ficarem 2x2, em vez de 2+1 e 1
+       solto. As colunas vazias que o st.columns cria no fim da ultima linha
+       nao aparecem, porque nao tem conteudo. */
+    .stVerticalBlock[class*="st-key-aba_catalogo_"] {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 0.75rem !important;
+        align-items: stretch !important;
+    }
+    .stVerticalBlock[class*="st-key-aba_catalogo_"] > [data-testid="stLayoutWrapper"],
+    .stVerticalBlock[class*="st-key-aba_catalogo_"] > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {
+        display: contents !important;
+    }
+    .stVerticalBlock[class*="st-key-aba_catalogo_"] > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        flex: none !important;
+    }
+    /* O "0 de 3 modulos concluidos" ocupa a linha inteira. */
+    .stVerticalBlock[class*="st-key-aba_catalogo_"] > [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {
+        grid-column: 1 / -1;
+    }
+
+    /* Card compacto: em 166px de largura o card do desktop ficaria alto
+       demais. O resumo e limitado a cinco linhas, e o resto do texto
+       continua acessivel na pagina do modulo. */
     .ce-card {
-        padding: 0.85rem 0.9rem 1rem 0.9rem;
+        padding: 0.8rem 0.8rem 0.9rem 0.8rem;
+        min-height: 280px;
+        gap: 0.45rem;
+    }
+    .ce-icone {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 9px;
+        font-size: 1rem;
+    }
+    .stMarkdown p.ce-titulo {
+        font-size: 0.88rem;
+        line-height: 1.25;
+    }
+    .stMarkdown p.ce-resumo {
+        font-size: 0.72rem;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 5;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .ce-tags {
+        gap: 0.25rem;
+    }
+    .ce-badge {
+        font-size: 0.6rem;
+        padding: 0.1rem 0.38rem;
+        white-space: normal;
+    }
+    .stVerticalBlock[class*="st-key-card_"] button {
+        font-size: 0.72rem;
+        padding: 0.35rem 0.4rem;
+    }
+}
+</style>
+"""
+
+
+# Regras que valem para TODAS as telas logadas, inclusive as que nao chamam
+# aplicar_estilo() (mural, paineis, perfil). Por isso ficam numa folha a
+# parte: o app.py injeta esta uma vez, logo depois do CSS da barra lateral.
+CSS_RESPONSIVO = """
+<style>
+/* ---------- Ajustes gerais de tela estreita ---------- */
+@media (max-width: 900px) {
+    [data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-left: 1.25rem !important;
+        padding-right: 1.25rem !important;
+    }
+    [data-testid="stMain"] h1 {
+        font-size: clamp(16px, 3.4vw, 18px) !important;
+        line-height: 1.45 !important;
+        overflow-wrap: anywhere;
+    }
+    .stMarkdown p.ce-pixel {
+        font-size: clamp(18px, 4.5vw, 24px);
+        overflow-wrap: anywhere;
+    }
+}
+
+@media (max-width: 640px) {
+    [data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-left: 0.9rem !important;
+        padding-right: 0.9rem !important;
+        padding-top: 1rem !important;
+    }
+    [data-testid="stMain"] h1 {
+        font-size: 16px !important;
+        line-height: 1.45 !important;
+        overflow-wrap: anywhere;
+    }
+
+    /* As abas do catalogo tem nomes longos ("Segurança Digital (4)").
+       Em vez de espremer ou quebrar, a faixa rola na horizontal. */
+    [data-baseweb="tab-list"] {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        scrollbar-width: thin;
+        -webkit-overflow-scrolling: touch;
+    }
+    [data-baseweb="tab"] {
+        font-size: 0.8rem !important;
+        padding-left: 0.6rem !important;
+        padding-right: 0.6rem !important;
+        white-space: nowrap;
+    }
+
+    /* Conteudo que nao cabe na largura (codigo, tabela, imagem) rola em vez
+       de empurrar a pagina inteira para o lado. */
+    [data-testid="stMain"] img {
+        max-width: 100%;
+        height: auto;
+    }
+    [data-testid="stCode"] pre {
+        overflow-x: auto !important;
+    }
+    [data-testid="stDataFrame"] {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    /* Alvo de toque confortavel nos botoes. */
+    .stButton button,
+    .stFormSubmitButton button {
+        min-height: 2.5rem;
+    }
+}
+
+@media (max-width: 380px) {
+    .stMarkdown p.ce-pixel {
+        font-size: 16px;
     }
 }
 </style>
@@ -320,6 +479,11 @@ CSS_IDENTIDADE = """
 def aplicar_estilo():
     """Injeta a folha de estilo da identidade na página."""
     st.markdown(CSS_IDENTIDADE, unsafe_allow_html=True)
+
+
+def aplicar_responsividade():
+    """Injeta os ajustes gerais de tela estreita, uma vez por execução."""
+    st.markdown(CSS_RESPONSIVO, unsafe_allow_html=True)
 
 
 def html_bruto(trecho):

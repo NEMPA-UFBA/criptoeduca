@@ -1,54 +1,6 @@
 {
   "modulos": [
     {
-      "slug": "definicao-e-historia",
-      "titulo": "Definição e História",
-      "resumo": "Como a criptografia nasceu, o papel da máquina Enigma e de Alan Turing na Segunda Guerra Mundial e por que compartilhar a chave é o ponto fraco da criptografia simétrica.",
-      "icone": "🔐",
-      "nivel": "Módulo 1",
-      "dificuldade": "Iniciante",
-      "duracao": "~10 min",
-      "cor": "#38bdf8",
-      "categoria": "Criptografia",
-      "ordem": 1,
-      "pdf": "definicao-e-historia.pdf",
-      "quiz": [
-        {
-          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
-          "alternativas": [
-            "Sim, o material completo j? est? nesta p?gina.",
-            "N?o, o material est? em prepara??o.",
-            "S? ? poss?vel saber depois de responder ao quiz."
-          ],
-          "certa": 2
-        }
-      ]
-    },
-    {
-      "slug": "cifras-classicas",
-      "titulo": "Cifras Clássicas",
-      "resumo": "A Cifra de César e as cifras de substituição: como uma letra vira outra, o que é deslocamento e por que esse método já não protege uma mensagem hoje.",
-      "icone": "🏛️",
-      "nivel": "Módulo 2",
-      "dificuldade": "Iniciante",
-      "duracao": "~15 min",
-      "cor": "#f59e0b",
-      "categoria": "Criptografia",
-      "ordem": 2,
-      "pdf": "cifras-classicas.pdf",
-      "quiz": [
-        {
-          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
-          "alternativas": [
-            "Sim, o material completo j? est? nesta p?gina.",
-            "N?o, o material est? em prepara??o.",
-            "S? ? poss?vel saber depois de responder ao quiz."
-          ],
-          "certa": 2
-        }
-      ]
-    },
-    {
       "slug": "senhas-e-autenticacao",
       "titulo": "Senhas Fortes e Autenticação",
       "resumo": "Como criar senhas que aguentam ataque, por que a mesma senha não pode ser repetida e o que é autenticação em duas etapas.",
@@ -62,37 +14,54 @@
       "pdf": "senhas-e-autenticacao.pdf",
       "quiz": [
         {
-          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "enunciado": "O que caracteriza uma senha forte?",
           "alternativas": [
-            "Sim, o material completo j? est? nesta p?gina.",
-            "N?o, o material est? em prepara??o.",
-            "S? ? poss?vel saber depois de responder ao quiz."
+            "Uma senha curta e fácil de lembrar.",
+            "Uma senha com nome e data de nascimento.",
+            "Uma senha longa, difícil de adivinhar e com diferentes caracteres.",
+            "Uma sequência de números simples."
           ],
-          "certa": 2
-        }
-      ]
-    },
-    {
-      "slug": "criptografia-assimetrica",
-      "titulo": "Criptografia Assimétrica",
-      "resumo": "Duas chaves em vez de uma: a chave pública, a chave privada, a analogia do cadeado e como o RSA usa números primos para proteger mensagens.",
-      "icone": "🔓",
-      "nivel": "Módulo 4",
-      "dificuldade": "Intermediário",
-      "duracao": "~15 min",
-      "cor": "#4F46E5",
-      "categoria": "Segurança Digital",
-      "ordem": 4,
-      "pdf": "criptografia-assimetrica.pdf",
-      "quiz": [
+          "certa": 3
+        },
         {
-          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "enunciado": "Por que não devemos utilizar a mesma senha em vários sites?",
           "alternativas": [
-            "Sim, o material completo j? est? nesta p?gina.",
-            "N?o, o material est? em prepara??o.",
-            "S? ? poss?vel saber depois de responder ao quiz."
+            "Porque a internet pode ficar mais lenta.",
+            "Porque, se uma conta for invadida, outras também podem ficar vulneráveis.",
+            "Porque as senhas deixam de funcionar.",
+            "Porque os sites bloqueiam senhas repetidas."
           ],
           "certa": 2
+        },
+        {
+          "enunciado": "O que é autenticação em dois fatores (2FA)?",
+          "alternativas": [
+            "Utilizar duas senhas iguais.",
+            "Criar duas contas no mesmo site.",
+            "Trocar a senha todos os dias.",
+            "Utilizar uma segunda etapa de confirmação para acessar uma conta."
+          ],
+          "certa": 4
+        },
+        {
+          "enunciado": "Qual é a função de um gerenciador de senhas?",
+          "alternativas": [
+            "Criar e armazenar senhas com segurança.",
+            "Compartilhar senhas com outras pessoas.",
+            "Excluir automaticamente contas antigas.",
+            "Desativar a autenticação das contas."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "O que devemos fazer ao receber uma mensagem suspeita pedindo nossa senha?",
+          "alternativas": [
+            "Enviar a senha imediatamente.",
+            "Clicar no link para verificar.",
+            "Não compartilhar a senha e verificar a autenticidade da mensagem.",
+            "Responder com nossos dados pessoais."
+          ],
+          "certa": 3
         }
       ]
     },
@@ -110,37 +79,54 @@
       "pdf": "lgpd.pdf",
       "quiz": [
         {
-          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "enunciado": "O que significa a sigla LGPD?",
           "alternativas": [
-            "Sim, o material completo j? est? nesta p?gina.",
-            "N?o, o material est? em prepara??o.",
-            "S? ? poss?vel saber depois de responder ao quiz."
+            "Lei Geral de Proteção de Dados.",
+            "Lei Geral de Proteção Digital.",
+            "Lista Geral de Proteção de Dados.",
+            "Lei de Garantia de Privacidade Digital."
           ],
-          "certa": 2
-        }
-      ]
-    },
-    {
-      "slug": "aritmetica-modular",
-      "titulo": "Aritmética Modular",
-      "resumo": "Conteúdo em preparação. Este módulo ainda não tem material escrito; a pergunta do quiz serve apenas para testar o fluxo de leitura e resposta.",
-      "icone": "🔢",
-      "nivel": "Módulo extra",
-      "dificuldade": "Iniciante",
-      "duracao": "~5 min",
-      "cor": "#38bdf8",
-      "categoria": "Matemática Aplicada",
-      "ordem": 1,
-      "pdf": "aritmetica-modular.pdf",
-      "quiz": [
+          "certa": 1
+        },
         {
-          "enunciado": "Pergunta de teste: o conte?do definitivo deste m?dulo j? est? dispon?vel?",
+          "enunciado": "Qual é o principal objetivo da LGPD?",
           "alternativas": [
-            "Sim, o material completo j? est? nesta p?gina.",
-            "N?o, o material est? em prepara??o.",
-            "S? ? poss?vel saber depois de responder ao quiz."
+            "Criar redes sociais.",
+            "Proteger os dados pessoais das pessoas.",
+            "Aumentar o uso da internet.",
+            "Bloquear sites."
           ],
           "certa": 2
+        },
+        {
+          "enunciado": "Cite dois exemplos de dados pessoais.",
+          "alternativas": [
+            "Nome e CPF.",
+            "Mesa e cadeira.",
+            "Lápis e caderno.",
+            "Computador e televisão."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "Por que devemos ter cuidado ao compartilhar nossos dados na internet?",
+          "alternativas": [
+            "Para ganhar seguidores.",
+            "Para deixar a internet mais rápida.",
+            "Para evitar golpes e uso indevido das informações.",
+            "Para receber mais anúncios."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Qual atitude ajuda a proteger suas informações pessoais?",
+          "alternativas": [
+            "Compartilhar senhas com amigos.",
+            "Clicar em qualquer link.",
+            "Publicar todos os seus dados.",
+            "Usar senhas fortes e evitar compartilhar informações pessoais."
+          ],
+          "certa": 4
         }
       ]
     },
@@ -214,37 +200,479 @@
       "pdf": "phishing-e-engenharia-social.pdf",
       "quiz": [
         {
-          "enunciado": "Qual destes é o sinal mais forte de que uma mensagem é golpe?",
+          "enunciado": "O que é Phishing?",
           "alternativas": [
-            "A mensagem chega fora do horário comercial",
-            "A mensagem cria urgência e pede um dado que o banco nunca pede por mensagem",
-            "A mensagem tem o nome do banco no logotipo"
+            "Um tipo de jogo online.",
+            "Um golpe para roubar dados e informações pessoais.",
+            "Um aplicativo de mensagens.",
+            "Um programa de edição."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "O que é engenharia social?",
+          "alternativas": [
+            "Criar páginas na internet.",
+            "Melhorar a segurança do computador.",
+            "Manipular pessoas para conseguir informações ou vantagens.",
+            "Instalar atualizações."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Qual situação pode indicar uma tentativa de golpe?",
+          "alternativas": [
+            "Uma mensagem pedindo sua senha com urgência.",
+            "Uma mensagem de um amigo conhecido.",
+            "Uma atualização oficial do celular.",
+            "Uma pesquisa escolar."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "O que devemos fazer ao receber um link suspeito?",
+          "alternativas": [
+            "Clicar imediatamente.",
+            "Compartilhar com amigos.",
+            "Informar nossos dados.",
+            "Não clicar e verificar a origem."
+          ],
+          "certa": 4
+        },
+        {
+          "enunciado": "Qual atitude ajuda a evitar golpes digitais?",
+          "alternativas": [
+            "Compartilhar códigos de verificação.",
+            "Usar senhas fortes e desconfiar de mensagens suspeitas.",
+            "Clicar em qualquer promoção.",
+            "Passar informações pessoais para desconhecidos."
           ],
           "certa": 2
         }
       ]
     },
     {
-      "slug": "pagamentos-e-pix-seguro",
-      "titulo": "Pagamentos Eletrônicos e Pix Seguro",
-      "resumo": "Como funcionam os golpes do Pix, do QR Code falsificado e da falsa central do banco, e o que fazer quando um golpe acontece.",
-      "icone": "💳",
-      "nivel": "Complementar",
-      "dificuldade": "Avançado",
-      "duracao": "~20 min",
-      "cor": "#22c55e",
-      "categoria": "Segurança Digital",
-      "ordem": 51,
-      "pdf": "pagamentos-e-pix-seguro.pdf",
+      "slug": "criptografia-e-contexto-historico",
+      "titulo": "Criptografia e Contexto Histórico",
+      "resumo": "O que é criptografia, como a Cifra de César nasceu no Império Romano e por que esse método simples atravessou séculos.",
+      "icone": "🔐",
+      "nivel": "Tópico 1",
+      "dificuldade": "Iniciante",
+      "duracao": "~10 min",
+      "cor": "#38bdf8",
+      "categoria": "Criptografia",
+      "ordem": 11,
+      "pdf": "criptografia-e-contexto-historico.pdf",
       "quiz": [
         {
-          "enunciado": "Ao receber um Pix falso, o que a pessoa deve fazer primeiro?",
+          "enunciado": "O que é a criptografia, de acordo com o texto?",
           "alternativas": [
-            "Falar com o contato por um canal diferente do usado na conversa",
-            "Devolver o valor na hora, para não passar vergonha",
-            "Esperar alguns dias, porque o golpe costuma se desfazer sozinho"
+            "Uma técnica de programação de sistemas operacionais.",
+            "Uma técnica usada para proteger informações, transformando uma mensagem legível em incompreensível.",
+            "Um método de transporte de informações físicas.",
+            "Um jogo matemático usado na Roma antiga."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Quais dados cotidianos a criptografia ajuda a proteger hoje?",
+          "alternativas": [
+            "Conversas, senhas, compras pela internet e dados pessoais.",
+            "Apenas senhas de bancos.",
+            "Apenas mensagens militares.",
+            "Arquivos impressos e livros físicos."
           ],
           "certa": 1
+        },
+        {
+          "enunciado": "Quem foi o criador de um dos primeiros e mais conhecidos métodos de criptografia da história?",
+          "alternativas": [
+            "Alan Turing.",
+            "Bernardo Provenzano.",
+            "Júlio César.",
+            "O exército russo."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Qual era o objetivo de Júlio César ao utilizar a sua cifra no Império Romano?",
+          "alternativas": [
+            "Esconder tesouros da coroa.",
+            "Proteger mensagens militares confidenciais enviadas aos seus generais.",
+            "Escrever livros secretos sobre filosofia.",
+            "Enviar cartas para seus familiares em segurança."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Na versão original da Cifra de César, como os espaços e letras eram tratados?",
+          "alternativas": [
+            "Os espaços eram mantidos e apenas as maiúsculas eram criptografadas.",
+            "Os espaços eram ignorados, e as letras maiúsculas e minúsculas eram tratadas da mesma forma.",
+            "Os espaços eram trocados por números.",
+            "As letras minúsculas eram apagadas."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "O que acontecia com a mensagem caso um mensageiro fosse capturado pelos inimigos?",
+          "alternativas": [
+            "Ela se auto-destruía.",
+            "O conteúdo parecia uma sequência de letras sem sentido, dificultando o entendimento.",
+            "A mensagem era automaticamente traduzida para outra língua.",
+            "O mensageiro revelava a chave secreta."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Quem utilizou uma variante numérica da cifra para codificar suas mensagens em 2006?",
+          "alternativas": [
+            "O exército russo.",
+            "Alan Turing.",
+            "Júlio César.",
+            "O mafioso italiano Bernardo Provenzano."
+          ],
+          "certa": 4
+        }
+      ]
+    },
+    {
+      "slug": "criptografia-simetrica",
+      "titulo": "Criptografia Simétrica",
+      "resumo": "Como a mesma chave cifra e decifra mensagens, o problema de compartilhá-la com segurança e as cifras clássicas de transposição e substituição.",
+      "icone": "🔁",
+      "nivel": "Tópico 2",
+      "dificuldade": "Iniciante",
+      "duracao": "~15 min",
+      "cor": "#22c55e",
+      "categoria": "Criptografia",
+      "ordem": 12,
+      "pdf": "criptografia-simetrica.pdf",
+      "quiz": [
+        {
+          "enunciado": "O que caracteriza a criptografia simétrica?",
+          "alternativas": [
+            "O uso de duas chaves diferentes para cifrar e decifrar.",
+            "O uso da mesma chave tanto para codificar quanto para decodificar uma mensagem.",
+            "O uso exclusivo de números e símbolos matemáticos.",
+            "A ausência de qualquer tipo de chave."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Para qual finalidade a criptografia simétrica é especialmente adequada?",
+          "alternativas": [
+            "Proteger apenas mensagens curtas e senhas simples.",
+            "Proteger grandes volumes de dados, como arquivos, discos rígidos e fluxos contínuos de informações.",
+            "Criar chaves públicas universais.",
+            "Ocultar exclusivamente as vogais de um texto."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Qual é o principal problema da criptografia simétrica, apontado no texto?",
+          "alternativas": [
+            "Ela é muito lenta para processar vídeos.",
+            "O seu funcionamento requer supercomputadores.",
+            "Consiste em compartilhar a chave secreta com o destinatário de forma segura, evitando que seja tomada por terceiros.",
+            "O limite máximo de letras que podem ser criptografadas."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "O que faz o método de Transposição em cifras clássicas?",
+          "alternativas": [
+            "Muda a ordem das letras da mensagem, mas mantém as mesmas letras originais.",
+            "Substitui cada letra por um símbolo diferente.",
+            "Apaga todas as letras e as transforma em imagens.",
+            "Acrescenta letras extras no início e no fim da palavra."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "O que faz o método de Substituição nas cifras clássicas?",
+          "alternativas": [
+            "Reorganiza as letras originais em ordem alfabética.",
+            "Troca cada letra por outra letra ou símbolo seguindo uma regra.",
+            "Mantém a palavra intacta, mudando apenas a fonte.",
+            "Apaga as consoantes da frase."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "No exemplo dado no texto, a palavra \"Segredo\" codificada como \"Gesrdeo\" utilizou qual método?",
+          "alternativas": [
+            "Substituição.",
+            "Aritmética modular.",
+            "Transposição.",
+            "Criptografia assimétrica."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Em resumo, qual a principal diferença descrita no texto entre os dois métodos clássicos?",
+          "alternativas": [
+            "A transposição altera as letras usadas; a substituição não muda nada.",
+            "A transposição usa apenas números; a substituição usa números e letras.",
+            "A transposição altera a posição das letras; a substituição altera as letras usadas.",
+            "A transposição foi inventada na Segunda Guerra e a substituição no Império Romano."
+          ],
+          "certa": 3
+        }
+      ]
+    },
+    {
+      "slug": "quebra-de-criptografia-e-aritmetica-modular",
+      "titulo": "Quebra de Criptografia e Aritmética Modular",
+      "resumo": "A análise de frequência para quebrar cifras e a aritmética modular que faz o deslocamento das letras funcionar como um relógio.",
+      "icone": "🔢",
+      "nivel": "Tópico 3",
+      "dificuldade": "Intermediário",
+      "duracao": "~15 min",
+      "cor": "#f59e0b",
+      "categoria": "Matemática Aplicada",
+      "ordem": 11,
+      "pdf": "quebra-de-criptografia-e-aritmetica-modular.pdf",
+      "quiz": [
+        {
+          "enunciado": "Qual técnica explorada no texto ajuda a decifrar mensagens criptografadas por meio da repetição de letras?",
+          "alternativas": [
+            "Criptografia assimétrica.",
+            "Transposição de caracteres.",
+            "Análise de frequência.",
+            "Algoritmo RSA."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "De acordo com o texto, qual letra é apontada como bastante comum no idioma português (Brasil)?",
+          "alternativas": [
+            "\"X\"",
+            "\"Z\"",
+            "\"Y\"",
+            "\"A\""
+          ],
+          "certa": 4
+        },
+        {
+          "enunciado": "Na análise de frequência, ao encontrar uma letra se repetindo muitas vezes em um texto em português, suspeitamos que ela represente:",
+          "alternativas": [
+            "A letra \"A\".",
+            "Um erro de digitação.",
+            "Um espaço vazio.",
+            "Uma vírgula ou ponto final."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "Como verificamos se a nossa suspeita sobre a letra mais frequente está correta?",
+          "alternativas": [
+            "Trocando a letra e observando as palavras formadas na mensagem.",
+            "Perguntando ao remetente original da mensagem.",
+            "Apagando a letra repetida.",
+            "Multiplicando as letras por números primos."
+          ],
+          "certa": 1
+        },
+        {
+          "enunciado": "O que é a aritmética modular, no contexto da Cifra de César?",
+          "alternativas": [
+            "Uma técnica de criptografia que só utiliza números decimais.",
+            "Um conceito matemático usado para controlar o deslocamento das letras no alfabeto.",
+            "A quebra forçada de um código militar.",
+            "Um método para descobrir se uma mensagem tem vírus."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Com qual objeto do dia a dia o funcionamento da aritmética modular é comparado?",
+          "alternativas": [
+            "Uma balança.",
+            "Uma régua infinita.",
+            "Um relógio.",
+            "Uma calculadora de bolso."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "O que ocorre na aritmética modular quando a contagem chega à última letra do alfabeto (\"Z\")?",
+          "alternativas": [
+            "A contagem para e o algoritmo relata erro.",
+            "O alfabeto é expandido com letras gregas.",
+            "O algoritmo volta à letra “A” e continua a contagem.",
+            "As letras finais são descartadas."
+          ],
+          "certa": 3
+        }
+      ]
+    },
+    {
+      "slug": "criptografia-assimetrica-e-maquina-enigma",
+      "titulo": "Criptografia Assimétrica e Máquina Enigma",
+      "resumo": "A máquina Enigma, Alan Turing e a passagem da criptografia simétrica para o modelo assimétrico de chave pública e chave privada.",
+      "icone": "🔓",
+      "nivel": "Tópico 4",
+      "dificuldade": "Intermediário",
+      "duracao": "~15 min",
+      "cor": "#4F46E5",
+      "categoria": "Criptografia",
+      "ordem": 13,
+      "pdf": "criptografia-assimetrica-e-maquina-enigma.pdf",
+      "quiz": [
+        {
+          "enunciado": "O que era e quem utilizava a máquina Enigma durante a Segunda Guerra Mundial?",
+          "alternativas": [
+            "Era uma máquina de datilografia usada por jornalistas americanos.",
+            "Era uma máquina usada pela Alemanha para proteger mensagens militares.",
+            "Era um computador moderno criado por Alan Turing para os russos.",
+            "Era um tipo de navio britânico disfarçado."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "A máquina Enigma operava com base em qual modelo criptográfico?",
+          "alternativas": [
+            "Criptografia assimétrica de chave pública.",
+            "Análise de frequência simples.",
+            "Criptografia simétrica, usando a mesma chave secreta.",
+            "Aritmética modular com chaves independentes."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Qual matemático britânico é citado como fundamental para a quebra do código da Enigma?",
+          "alternativas": [
+            "Bernardo Provenzano.",
+            "Ron Rivest.",
+            "Alan Turing.",
+            "Júlio César."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "O surgimento da criptografia assimétrica veio solucionar que grande problema da simétrica?",
+          "alternativas": [
+            "A lentidão dos sistemas de computação na guerra.",
+            "A necessidade de compartilhar a chave secreta com segurança sem que fosse interceptada.",
+            "O custo alto de se fabricar os cadeados físicos.",
+            "A impossibilidade de usar letras minúsculas nas mensagens."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Quantas chaves a criptografia assimétrica utiliza e quais são elas?",
+          "alternativas": [
+            "Uma chave: apenas a chave mestre.",
+            "Três chaves: pública, privada e de contingência.",
+            "Duas chaves: uma pública e outra privada.",
+            "Múltiplas chaves, dependendo do tamanho da mensagem."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Na analogia apresentada no texto, o que representa a chave pública?",
+          "alternativas": [
+            "Uma caixa que se desintegra ao ser forçada.",
+            "Um cadeado aberto que pode ser distribuído para qualquer pessoa.",
+            "Uma chave que destranca todos os sistemas do mundo.",
+            "O segredo guardado unicamente pelo destinatário."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Depois de a mensagem ser \"trancada na caixa\" usando o cadeado aberto (chave pública), quem consegue abri-la?",
+          "alternativas": [
+            "Apenas o destinatário que possui a chave privada correspondente.",
+            "Qualquer pessoa que tenha uma cópia da chave pública.",
+            "O próprio remetente e o destinatário simultaneamente.",
+            "Quem interceptar a caixa durante o envio."
+          ],
+          "certa": 1
+        }
+      ]
+    },
+    {
+      "slug": "tipos-de-criptografia-assimetrica-rsa",
+      "titulo": "Tipos de Criptografia Assimétrica (RSA)",
+      "resumo": "O algoritmo RSA, a segurança baseada em números primos grandes e as aplicações da criptografia assimétrica na internet.",
+      "icone": "🔑",
+      "nivel": "Tópico 5",
+      "dificuldade": "Avançado",
+      "duracao": "~15 min",
+      "cor": "#8b5cf6",
+      "categoria": "Criptografia",
+      "ordem": 14,
+      "pdf": "tipos-de-criptografia-assimetrica-rsa.pdf",
+      "quiz": [
+        {
+          "enunciado": "O que é o RSA, de acordo com o texto?",
+          "alternativas": [
+            "Uma técnica militar criada na Segunda Guerra Mundial.",
+            "Um modelo da máquina Enigma atualizada.",
+            "Uma das principais tecnologias de criptografia assimétrica em formato de algoritmo.",
+            "Uma variante numérica da Cifra de César."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Em que ano o algoritmo RSA foi criado?",
+          "alternativas": [
+            "1945",
+            "1977",
+            "2006",
+            "1915"
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Como funciona a divisão de tarefas entre as duas chaves no RSA?",
+          "alternativas": [
+            "A pública decifra e a privada transmite a resposta.",
+            "A pública cifra mensagens e a privada decifra-as.",
+            "Ambas são usadas para decifrar dependendo do dia.",
+            "Elas funcionam independentemente apenas para chaves numéricas."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "De que depende primordialmente a segurança do algoritmo RSA?",
+          "alternativas": [
+            "De esconder o remetente utilizando mensagens anônimas.",
+            "De ocultar mensagens dentro de imagens maiores.",
+            "De cálculos matemáticos com números primos grandes.",
+            "De senhas compostas por mais de 20 letras."
+          ],
+          "certa": 3
+        },
+        {
+          "enunciado": "Como os números primos são descritos no texto?",
+          "alternativas": [
+            "Números pares usados em bases binárias.",
+            "Números que se dividem por todos os números ímpares.",
+            "Números usados na substituição de consoantes.",
+            "Números divisíveis apenas por 1 e por eles mesmos."
+          ],
+          "certa": 4
+        },
+        {
+          "enunciado": "O que é relativamente fácil para um computador fazer com números primos, gerando a base de segurança do RSA?",
+          "alternativas": [
+            "Descobrir quais números formaram o resultado (fatoração).",
+            "Multiplicar números primos grandes.",
+            "Transformar os números primos em letras do alfabeto romano.",
+            "Dividir grandes números pares sem resto."
+          ],
+          "certa": 2
+        },
+        {
+          "enunciado": "Cite duas aplicações reais do RSA na segurança digital apontadas pelo texto:",
+          "alternativas": [
+            "Emblemas militares e radares.",
+            "Máquinas de escrever e caixas fortes físicas.",
+            "Assinaturas digitais e mecanismos de proteção na internet.",
+            "Bloqueio de celulares e redes sociais locais."
+          ],
+          "certa": 3
         }
       ]
     }

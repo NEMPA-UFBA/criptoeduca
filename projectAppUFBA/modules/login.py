@@ -221,6 +221,7 @@ _CHAVES_DO_USUARIO = (
     "primeiro_acesso",
     "modulo_selecionado",
     CHAVE_LEITURA,
+    "navegar_para",
     "voltar_para_menu",
 )
 

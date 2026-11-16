@@ -34,6 +34,7 @@ separada.
 """
 
 import html
+from datetime import date, datetime
 
 import streamlit as st
 
@@ -42,6 +43,7 @@ from modules.database import (
     salvar_conteudo,
     atualizar_conteudo,
     inativar_conteudo,
+    reativar_conteudo,
 )
 from modules.estilo import aplicar_estilo, html_bruto
 from modules.exemplos_crime import (
@@ -429,6 +431,172 @@ CSS_PERGAMINHOS = """
     align-items: center;
     margin-bottom: 0.8rem;
 }
+
+/* ==========================================================================
+   O PAINEL DE GERENCIAMENTO
+   ==========================================================================
+   A pagina de edicao usa os mesmos cartoes da vitrine de modulos, mas com
+   status, origem e botoes de acao. A ideia e a pessoa enxergar a lista
+   inteira de relance -- ativos e inativos -- em vez de abrir um expander
+   por exemplo para descobrir o que tem dentro.
+   ========================================================================== */
+.stVerticalBlock[class*="st-key-pagina_gerenciar_exemplos_golpe"] {
+    max-width: 1120px;
+    margin: 0 auto;
+}
+
+/* ---------- Filtro de status ---------- */
+.st-key-admin_filtro_status {
+    margin-top: 0.35rem;
+}
+.st-key-admin_filtro_status button {
+    border-radius: 999px !important;
+    background: rgba(30, 41, 59, 0.72) !important;
+    border-color: rgba(148, 163, 184, 0.24) !important;
+    color: #cbd5e1 !important;
+}
+.st-key-admin_filtro_status button:hover {
+    border-color: rgba(56, 189, 248, 0.45) !important;
+}
+.st-key-admin_filtro_status button[data-selected="true"],
+.st-key-admin_filtro_status button[aria-checked="true"] {
+    background: rgba(56, 189, 248, 0.16) !important;
+    border-color: rgba(56, 189, 248, 0.65) !important;
+    color: #e0f2fe !important;
+}
+
+/* ---------- Cartao de gerenciamento ---------- */
+.stVerticalBlock[class*="st-key-admin_exemplo_"] {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+.stVerticalBlock[class*="st-key-admin_exemplo_"] [data-testid="stElementContainer"] {
+    width: 100%;
+}
+.stVerticalBlock[class*="st-key-admin_exemplo_"] [data-testid="stElementContainer"]:has(.ce-admin-card) {
+    flex: 1 1 auto;
+    display: flex;
+}
+.stVerticalBlock[class*="st-key-admin_exemplo_"] [data-testid="stMarkdownContainer"]:has(.ce-admin-card) {
+    flex: 1;
+    display: flex;
+}
+.ce-admin-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-height: 175px;
+    box-sizing: border-box;
+    padding: 0.9rem 1rem 0.85rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-left: 3px solid rgba(56, 189, 248, 0.55);
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.96));
+}
+.ce-admin-card-inativo {
+    border-left-color: rgba(148, 163, 184, 0.32);
+    opacity: 0.78;
+}
+.ce-admin-topo {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.ce-admin-icone {
+    font-size: 1.3rem;
+    line-height: 1;
+}
+.ce-admin-status {
+    margin-left: auto;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.ce-admin-status-ativo {
+    color: #86efac;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    background: rgba(34, 197, 94, 0.12);
+}
+.ce-admin-status-inativo {
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(148, 163, 184, 0.1);
+}
+.stMarkdown p.ce-admin-titulo {
+    margin: 0;
+    color: #f1f5f9;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+.ce-admin-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.ce-admin-chip {
+    display: inline-block;
+    padding: 0.12rem 0.5rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.1);
+    color: #cbd5e1;
+    font-size: 0.66rem;
+    font-weight: 600;
+}
+.stMarkdown p.ce-admin-resumo {
+    margin: 0;
+    flex-grow: 1;
+    color: #cbd5e1;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.ce-admin-rodape {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    color: #94a3b8;
+    font-size: 0.72rem;
+}
+
+/* ---------- Painel de edicao ---------- */
+.ce-admin-edicao-topo {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 0 0 0.35rem 0;
+}
+.ce-admin-edicao-rotulo,
+.ce-admin-previa-rotulo {
+    color: #7dd3fc;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+.ce-admin-previa-rotulo {
+    margin-bottom: 0.4rem;
+}
+.stMarkdown p.ce-admin-edicao-titulo {
+    margin: 0;
+    color: #f1f5f9;
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
 /* Em tela estreita (celular de aluno) o papel aperta: a borda rasgada
    continua, mas o texto ganha folga. */
 @media (max-width: 640px) {
@@ -449,6 +617,16 @@ CSS_PERGAMINHOS = """
     .ce-pergaminho p.ce-pergaminho-fonte {
         font-size: 0.75rem;
         opacity: 0.72;
+    }
+    .ce-admin-card {
+        min-height: 160px;
+        padding: 0.85rem 0.9rem 0.8rem 0.9rem;
+    }
+    .stMarkdown p.ce-admin-titulo {
+        font-size: 0.95rem;
+    }
+    .stMarkdown p.ce-admin-resumo {
+        font-size: 0.78rem;
     }
 }
 /* Quem pede menos animacao nao recebe transform nem transicao */
@@ -604,6 +782,36 @@ def _miolo_html(pergaminho):
         </div>
         """
     )
+
+
+def _categoria_do_pergaminho(pergaminho):
+    """Categoria para o selo e para o filtro, sem string vazia."""
+    return (pergaminho.get("categoria") or "Outros").strip() or "Outros"
+
+
+def _resumo_do_pergaminho(pergaminho, limite=170):
+    """Primeiro paragrafo do pergaminho, cortado para caber no cartao.
+
+    O cartao e uma vitrine: ele nao carrega o texto inteiro. O corte
+    acontece numa fronteira de palavra para nao terminar no meio de uma.
+    """
+    for bloco in _blocos_do(pergaminho):
+        if bloco["tipo"] != "paragrafo":
+            continue
+        texto = " ".join(bloco["texto"].split())
+        if not texto:
+            continue
+        if len(texto) > limite:
+            texto = texto[:limite].rstrip()
+            texto = texto.rsplit(" ", 1)[0] + "…"
+        return texto
+
+    corpo = " ".join(str(pergaminho.get("corpo") or "").split())
+    if corpo:
+        if len(corpo) > limite:
+            corpo = corpo[:limite].rstrip().rsplit(" ", 1)[0] + "…"
+        return corpo
+    return "Abra o exemplo para ler o conteúdo completo."
 
 
 def _alternar_pergaminho(pid):
@@ -1080,23 +1288,151 @@ def _formulario_editar(pergaminho):
         )
 
 
+def _data_curta(valor):
+    """Data do cartao, sem o horario e sem microssegundos."""
+    if isinstance(valor, (date, datetime)):
+        return valor.strftime("%d/%m/%Y")
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    try:
+        return datetime.fromisoformat(texto).strftime("%d/%m/%Y")
+    except ValueError:
+        return texto.split(" ")[0]
+
+
+def _card_admin_html(pergaminho):
+    """Cartao compacto da lista de gerenciamento."""
+    ativo = bool(pergaminho.get("ativo"))
+    icone = html.escape(pergaminho.get("icone") or "📜")
+    titulo = html.escape(pergaminho.get("titulo") or "")
+    categoria = html.escape(_categoria_do_pergaminho(pergaminho))
+    resumo = html.escape(_resumo_do_pergaminho(pergaminho, limite=150))
+
+    origem = pergaminho.get("origem") or "publicado"
+    rotulo_origem = "Pré-colocado" if origem == "pre_colocado" else "Publicado"
+    autor = str(pergaminho.get("autor") or "").strip().lstrip("@")
+    data = _data_curta(pergaminho.get("data"))
+    partes_rodape = [rotulo_origem]
+    if autor and origem != "pre_colocado":
+        partes_rodape.append("por @%s" % autor)
+    if data:
+        partes_rodape.append(data)
+    rodape = html.escape(" · ".join(partes_rodape))
+
+    status = "Ativo" if ativo else "Inativo"
+    classe_status = (
+        "ce-admin-status-ativo" if ativo else "ce-admin-status-inativo"
+    )
+    classe_card = (
+        "ce-admin-card" if ativo else "ce-admin-card ce-admin-card-inativo"
+    )
+
+    return _html(
+        f"""
+        <div class="{classe_card}">
+          <div class="ce-admin-topo">
+            <span class="ce-admin-icone">{icone}</span>
+            <span class="ce-admin-status {classe_status}">{status}</span>
+          </div>
+          <p class="ce-admin-titulo">{titulo}</p>
+          <div class="ce-admin-meta">
+            <span class="ce-admin-chip">{categoria}</span>
+          </div>
+          <p class="ce-admin-resumo">{resumo}</p>
+          <div class="ce-admin-rodape">{rodape}</div>
+        </div>
+        """
+    )
+
+
 def _abrir_edicao_crime(pid):
     st.session_state["crime_em_edicao"] = pid
+
+
+def _cancelar_edicao_crime():
+    st.session_state.pop("crime_em_edicao", None)
+    st.session_state.pop("_crime_prefill_id", None)
+    st.session_state[CHAVE_LIMPAR_EDICAO] = True
 
 
 def _inativar_crime(pid):
     inativar_conteudo(pid)
     st.session_state["_crime_aviso"] = (
-        "Exemplo inativado. Ele não aparece mais para o aluno."
+        "Exemplo inativado. Ele não aparece mais para o aluno, mas "
+        "continua aqui na aba Inativos para ser reativado."
     )
+
+
+def _reativar_crime(pid):
+    reativar_conteudo(pid)
+    st.session_state["_crime_aviso"] = (
+        "Exemplo reativado. Ele já aparece de novo para o aluno."
+    )
+
+
+def _painel_edicao_crime(pergaminho):
+    """Mostra o formulario de edicao ao lado da previa do pergaminho."""
+    icone = html.escape(pergaminho.get("icone") or "📜")
+    titulo = html.escape(pergaminho.get("titulo") or "")
+    categoria = _categoria_do_pergaminho(pergaminho)
+    origem = pergaminho.get("origem") or "publicado"
+    rotulo_origem = "Pré-colocado" if origem == "pre_colocado" else "Publicado"
+    status = "Ativo" if pergaminho.get("ativo") else "Inativo"
+
+    st.markdown(
+        _html(
+            """
+            <p class="ce-admin-edicao-rotulo">EDITAR EXEMPLO</p>
+            <p class="ce-subtitulo">As alterações só aparecem para o aluno depois de salvar.</p>
+            """
+        ),
+        unsafe_allow_html=True,
+    )
+
+    col_titulo, col_voltar = st.columns(
+        [4, 1], vertical_alignment="center"
+    )
+    with col_titulo:
+        st.markdown(
+            _html(
+                f'<p class="ce-admin-edicao-titulo">{icone} {titulo}</p>'
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Categoria: %s · Origem: %s · Status: %s"
+            % (categoria, rotulo_origem, status)
+        )
+    with col_voltar:
+        st.button(
+            "← Voltar",
+            key="cancelar_edicao_crime",
+            width="stretch",
+            on_click=_cancelar_edicao_crime,
+        )
+
+    st.divider()
+
+    col_form, col_previa = st.columns([1.15, 0.85], gap="large")
+    with col_form:
+        _formulario_editar(pergaminho)
+    with col_previa:
+        st.markdown(
+            '<p class="ce-admin-previa-rotulo">PRÉVIA DO EXEMPLO SALVO</p>',
+            unsafe_allow_html=True,
+        )
+        previa = dict(pergaminho)
+        previa["data"] = _data_curta(pergaminho.get("data"))
+        st.markdown(_miolo_html(previa), unsafe_allow_html=True)
 
 
 def render_gerenciar_crime():
     """Pagina de publicacao e edicao dos exemplos de crime.
 
     E o que a coordenacao usa: publica um golpe novo, edita um exemplo
-    pre-colocado, ou inativa um que nao serve mais. Tudo o que aparece
-    aqui vira pergaminho na pagina dos alunos.
+    pre-colocado, inativa o que nao serve mais e reativa o que voltou a
+    servir. Tudo o que aparece aqui vira pergaminho na pagina dos alunos.
 
     As duas chamadas de baixo sao obrigatorias e vem ANTES de qualquer
     widget: e onde os pedidos de reordenar/apagar blocos e as limpezas
@@ -1109,6 +1445,7 @@ def render_gerenciar_crime():
 
 def _render_gerenciar_crime():
     aplicar_estilo()
+    st.markdown(CSS_PERGAMINHOS, unsafe_allow_html=True)
     _aplicar_operacao()
     _aplicar_limpezas()
 
@@ -1123,22 +1460,13 @@ def _render_gerenciar_crime():
         _html(
             """
             <p class="ce-pixel">EXEMPLOS DE CRIMES DIGITAIS</p>
-            <p class="ce-subtitulo">Publique um exemplo de golpe novo, edite um dos pré-colocados, ou tire da lista o que não serve mais. Tudo o que for publicado aqui aparece como pergaminho para o aluno.</p>
+            <p class="ce-subtitulo">Publique, edite, inative ou reative exemplos de golpe. Só os exemplos ativos aparecem como pergaminho para o aluno.</p>
             """
         ),
         unsafe_allow_html=True,
     )
 
-    st.subheader("Publicar um exemplo novo")
-    _formulario_publicar()
-
-    st.divider()
-    st.subheader("Exemplos já publicados")
-
-    pergaminhos = carregar_pergaminhos()
-    if not pergaminhos:
-        st.info("Nenhum exemplo publicado ainda.")
-        return
+    pergaminhos = carregar_pergaminhos(incluir_inativos=True)
 
     edicao = st.session_state.get("crime_em_edicao")
     if edicao is not None:
@@ -1146,53 +1474,125 @@ def _render_gerenciar_crime():
             (p for p in pergaminhos if p["id"] == edicao),
             None,
         )
-        if alvo is not None:
-            st.markdown("#### Editando: %s" % alvo.get("titulo", ""))
-            _formulario_editar(alvo)
-            st.divider()
+        if alvo is None:
+            st.session_state.pop("crime_em_edicao", None)
+        else:
+            _painel_edicao_crime(alvo)
+            return
+
+    with st.expander("➕ Publicar um exemplo novo", expanded=False):
+        _formulario_publicar()
+
+    st.divider()
+    st.subheader("Exemplos já publicados")
+
+    if not pergaminhos:
+        st.info("Nenhum exemplo publicado ainda.")
+        return
+
+    ativos = sum(1 for p in pergaminhos if p.get("ativo"))
+    inativos = len(pergaminhos) - ativos
+    st.caption(
+        "%d ativo(s) · %d inativo(s) · %d no total"
+        % (ativos, inativos, len(pergaminhos))
+    )
+    st.caption(
+        "Os exemplos pré-colocados voltam ao texto de "
+        "`dados/exemplos_crime.json` na próxima carga do app."
+    )
+
+    col_busca, col_filtro = st.columns([2, 1])
+    busca = col_busca.text_input(
+        "Buscar exemplo",
+        key="admin_busca_exemplos",
+        placeholder="Título, categoria ou autor",
+    )
+    filtro = col_filtro.pills(
+        "Mostrar",
+        ["Ativos", "Inativos", "Todos"],
+        default="Ativos",
+        required=True,
+        key="admin_filtro_status",
+    )
+    if not filtro:
+        filtro = "Ativos"
+
+    lista = pergaminhos
+    if filtro == "Ativos":
+        lista = [p for p in lista if p.get("ativo")]
+    elif filtro == "Inativos":
+        lista = [p for p in lista if not p.get("ativo")]
+
+    termo = busca.strip().casefold()
+    if termo:
+        def _combina(pergaminho):
+            campos = [
+                pergaminho.get("titulo") or "",
+                _categoria_do_pergaminho(pergaminho),
+                pergaminho.get("autor") or "",
+                _resumo_do_pergaminho(pergaminho, limite=400),
+            ]
+            return termo in " ".join(campos).casefold()
+
+        lista = [p for p in lista if _combina(p)]
+
+    # Ativos primeiro, e dentro de cada grupo a ordem original dos ids.
+    lista = sorted(
+        lista,
+        key=lambda p: (0 if p.get("ativo") else 1, p["id"]),
+    )
+
+    if not lista:
+        st.info("Nenhum exemplo encontrado com esses filtros.")
+        return
 
     # Os botoes de bloco gravam o pedido no callback e o clique ja provoca
     # o rerun que aplica a operacao no inicio desta pagina. Nao ha rerun
     # manual aqui.
-
-    for pergaminho in pergaminhos:
-        pid = pergaminho["id"]
-        titulo = pergaminho.get("titulo") or ""
-        icone = pergaminho.get("icone") or "📜"
-        origem = pergaminho.get("origem") or "publicado"
-        rotulo_origem = (
-            "pré-colocado" if origem == "pre_colocado" else "publicado"
-        )
-
-        with st.expander(f"{icone}  {titulo}", expanded=False):
-            rotulo_aviso = ""
-            if origem == "pre_colocado":
-                rotulo_aviso = (
-                    " — os itens pré-colocados voltam ao texto de "
-                    "`dados/exemplos_crime.json` na próxima carga do app."
-                )
-            st.caption("Origem: %s%s" % (rotulo_origem, rotulo_aviso))
-
-            for bloco in _blocos_do(pergaminho):
-                if bloco["tipo"] == "titulo":
-                    st.markdown("#### %s" % bloco["texto"])
-                elif bloco["tipo"] == "subtitulo":
-                    st.markdown("**%s**" % bloco["texto"])
-                elif bloco["tipo"] == "fonte":
-                    st.caption("Fonte: %s" % bloco["texto"])
-                else:
-                    st.write(bloco["texto"])
-
-            col1, col2 = st.columns(2)
-            col1.button(
-                "Editar",
-                key=f"editar_crime_{pid}",
-                on_click=_abrir_edicao_crime,
-                args=(pid,),
-            )
-            col2.button(
-                "Inativar",
-                key=f"inativar_crime_{pid}",
-                on_click=_inativar_crime,
-                args=(pid,),
-            )
+    COLUNAS = 2
+    for inicio in range(0, len(lista), COLUNAS):
+        trecho = lista[inicio : inicio + COLUNAS]
+        # Sempre duas colunas, mesmo quando sobra um cartao na ultima
+        # fileira: assim o ultimo cartao nao estica para a largura toda e
+        # a grade fica alinhada com a dos modulos.
+        colunas = st.columns(COLUNAS)
+        for coluna, pergaminho in zip(colunas, trecho):
+            pid = pergaminho["id"]
+            with coluna:
+                with st.container(key=f"admin_exemplo_{pid}"):
+                    st.markdown(
+                        _card_admin_html(pergaminho),
+                        unsafe_allow_html=True,
+                    )
+                    col_editar, col_acao = st.columns(2)
+                    col_editar.button(
+                        "✏️ Editar",
+                        key=f"editar_crime_{pid}",
+                        width="stretch",
+                        on_click=_abrir_edicao_crime,
+                        args=(pid,),
+                    )
+                    if pergaminho.get("ativo"):
+                        with col_acao.popover(
+                            "🗑️ Inativar", width="stretch"
+                        ):
+                            st.warning(
+                                "Este exemplo deixa de aparecer para o "
+                                "aluno. Você pode reativá-lo depois."
+                            )
+                            st.button(
+                                "Confirmar inativação",
+                                key=f"confirmar_inativar_crime_{pid}",
+                                type="primary",
+                                width="stretch",
+                                on_click=_inativar_crime,
+                                args=(pid,),
+                            )
+                    else:
+                        col_acao.button(
+                            "♻️ Reativar",
+                            key=f"reativar_crime_{pid}",
+                            width="stretch",
+                            on_click=_reativar_crime,
+                            args=(pid,),
+                        )

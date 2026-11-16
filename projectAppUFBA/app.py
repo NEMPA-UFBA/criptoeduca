@@ -24,11 +24,11 @@ from modules.leitura import CHAVE_LEITURA, render_pagina_leitura
 from modules.modulos import carregar_modulos
 from modules.login import (
     render_login,
-    obter_chave_professor_diaria,
-    segredo_da_chave_configurado,
     limpar_sessao_do_usuario,
 )
+from modules.home import render_home
 from modules.anuncio_simulado import render_anuncio_simulado
+from modules.estilo import aplicar_responsividade
 
 def _chave_da_pagina(nome):
     """Converte o rótulo do menu em uma key estável para o container."""
@@ -60,10 +60,12 @@ def _sair_da_conta():
 @st.dialog("Sair da conta?", width="small")
 def _confirmar_saida():
     st.write("Você vai voltar para a tela de login.")
-    st.caption(
-        f"**{st.session_state['nome_usuario']}** "
-        f"({st.session_state['tipo_usuario']})"
-    )
+    # _sair_da_conta() apaga os dados da pessoa antes do rerun. Se o dialogo
+    # ainda estiver aberto nesse rerun, as chaves podem nao existir mais.
+    nome = st.session_state.get("nome_usuario") or ""
+    tipo = st.session_state.get("tipo_usuario") or ""
+    if nome:
+        st.caption(f"**{nome}** ({tipo})")
     confirmar, cancelar = st.columns(2)
     confirmar.button(
         "Sair",
@@ -277,6 +279,10 @@ else:
         """,
         unsafe_allow_html=True,
     )
+
+    # Ajustes gerais de tela estreita. Ficam depois do CSS acima de proposito:
+    # em empate de especificidade, a ultima regra vence.
+    aplicar_responsividade()
     
     tipo = st.session_state["tipo_usuario"]
 
@@ -394,6 +400,17 @@ else:
         st.session_state["menu"] = opcoes[0]
         del st.session_state["voltar_para_menu"]
 
+    # A home tem botoes que levam a outra pagina. Como ela e desenhada depois
+    # do radio, o clique nao pode gravar "menu" na hora: a chave do widget ja
+    # foi consumida neste run. O pedido chega por "navegar_para" e e aplicado
+    # aqui, antes do radio existir.
+    pedido_de_pagina = st.session_state.pop("navegar_para", None)
+    if (
+        pedido_de_pagina in opcoes
+        and not (tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1)
+    ):
+        st.session_state["menu"] = pedido_de_pagina
+
     # Sessoes antigas podem ter "Gerenciar Aulas" ou "Gerenciar Modulos"
     # gravado no menu. Os dois itens viraram um so; sem esta migracao o
     # radio receberia um valor que nao esta mais na lista de opcoes.
@@ -442,36 +459,11 @@ else:
         # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
         # tres do Aluno, entao Professor e Administrador escolhiam uma pagina e
         # nao recebiam nada, nem o titulo.
-        if pagina == "Painel da Coordenação":
-            st.title("🛡️ Painel da Coordenação")
-            st.write("Visão geral da plataforma e credenciamento de professores.")
-
-            # Gera a mesma chave do dia usando a função do login.py
-            st.subheader("🔑 Chave de Acesso para Novos Professores")
-            st.info("Passe este código para os professores que forem se cadastrar hoje:")
-            # Exibe em um bloco clicável para fácil cópia
-            st.code(obter_chave_professor_diaria(), language="text")
-            st.caption("Esta chave expira automaticamente às 23:59:59 de hoje.")
-
-            # Aviso de configuração. Fica aqui e não em st.secrets porque quem
-            # precisa saber é a coordenação, e é a coordenação quem usa o painel —
-            # não quem programa o sistema. Fora do alcance dessa pessoa, o aviso é
-            # ruído.
-            if not segredo_da_chave_configurado():
-                st.warning(
-                    "Esta chave está sendo derivada do segredo padrão que vem no "
-                    "código-fonte. Ela tem 12 caracteres e é muito difícil de adivinhar, "
-                    "mas qualquer pessoa com uma cópia do repositório consegue calcular "
-                    "a chave do dia. Para fechar isso, crie "
-                    "`.streamlit/secrets.toml` com `CHAVE_SEGREDO = \"...\"` "
-                    "(esse caminho já está no .gitignore) e reinicie o app. "
-                    "Esta mensagem some sozinha quando o segredo estiver configurado.",
-                    icon="⚠️",
-                )
-
-        elif pagina == "Painel Geral":
-            st.title("📋 Painel Geral")
-            st.write("Aulas, quizzes e materiais do professor.")
+        if pagina in ("Painel da Coordenação", "Painel Geral", "Painel Principal"):
+            # A mesma home se adapta ao perfil: aluno, professor ou
+            # coordenacao. A chave diaria de professor continua no painel da
+            # coordenacao, dentro de modules/home.py.
+            render_home()
 
         elif pagina == "Turma":
             # Pagina reservada para o professor. Por enquanto e so o lugar:
@@ -492,10 +484,6 @@ else:
         elif pagina == "Notas dos Alunos":
             st.title("🧮 Notas dos Alunos")
             st.write("Lançamento e consulta de notas.")
-
-        elif pagina == "Painel Principal":
-            st.title(f"Bem-vindo(a) de volta, {st.session_state['nome_usuario']}! 👋")
-            st.write("Aqui fica o painel da plataforma de estudos.")
 
         elif pagina == "Módulos de Aprendizado":
             # A home dos módulos é o mapa de missões (modules/mainmenu.py).

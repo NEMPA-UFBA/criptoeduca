@@ -21,15 +21,28 @@ import streamlit as st
 
 from modules.database import (
     atualizar_primeiro_acesso,
+    carregar_cifras_compartilhadas,
     carregar_mural,
     inativar_mensagem_mural,
+    salvar_compartilhamento_cifra,
     salvar_mensagem_mural,
+    usuario_existe,
 )
 
 # O alfabeto da cifra. A mensagem e bloqueada se tiver qualquer caractere
 # fora desta lista; assim o texto cifrado nunca carrega simbolos que a cifra
 # nao sabe representar.
 ALFABETO = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÀÂÃÉÊÍÓÔÕÚÜÇáàâãéêíóôõúüç.,:!?()[]{}@#$%&+_=<> "
+
+# Categorias usadas pelo filtro do dicionário. A ordem de ALFABETO não pode
+# mudar: ela define o mapa de substituição já usado nas mensagens publicadas.
+CATEGORIAS_DICIONARIO = (
+    ("Minúsculas (a-z)", set("abcdefghijklmnopqrstuvwxyz")),
+    ("Maiúsculas (A-Z)", set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
+    ("Acentuadas (á, Á...)", set("ÁÀÂÃÉÊÍÓÔÕÚÜÇáàâãéêíóôõúüç")),
+    ("Números (0-9)", set("0123456789")),
+    ("Símbolos e espaço", set(".,:!?()[]{}@#$%&+_=<> ")),
+)
 
 
 def caracteres_fora_do_alfabeto(texto):
@@ -85,6 +98,63 @@ def _css():
             border-radius: 8px !important;
         }
 
+        /* Dicionário: grade que acompanha a largura da tela. No desktop
+           mantém as quatro colunas; no celular reduz para duas e, em telas
+           muito estreitas, para uma. */
+        .mural-dic-grade {
+            column-count: 4;
+            column-gap: 1rem;
+            margin-top: 0.75rem;
+        }
+        .mural-dic-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-width: 0;
+            padding: 0.18rem 0;
+            font-size: 0.9rem;
+            line-height: 1.3;
+            break-inside: avoid;
+        }
+        .mural-dic-orig {
+            color: #e2e8f0;
+            min-width: 2.2rem;
+            text-align: center;
+        }
+        .mural-dic-seta {
+            color: #94a3b8;
+            flex: 0 0 auto;
+        }
+        .mural-dic-cifra {
+            color: #38bdf8;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+        .mural-dic-grade code {
+            background: rgba(56, 189, 248, 0.10);
+            border-radius: 4px;
+            padding: 0 0.22rem;
+        }
+        @media (max-width: 900px) {
+            .mural-dic-grade {
+                column-count: 3;
+            }
+        }
+        @media (max-width: 700px) {
+            .mural-dic-grade {
+                column-count: 2;
+                column-gap: 0.6rem;
+            }
+            .mural-dic-item {
+                font-size: 0.82rem;
+            }
+        }
+        @media (max-width: 380px) {
+            .mural-dic-grade {
+                column-count: 1;
+            }
+        }
+
         /* Efeito visual para as mensagens cifradas no mural */
         .mural-item {
             background-color: rgba(30, 41, 59, 0.4);
@@ -99,29 +169,122 @@ def _css():
     """, unsafe_allow_html=True)
 
 
-def _mostrar_dicionario(username_atual):
-    """Mostra o alfabeto de substituicao da conta, em quatro colunas."""
-    mapa_usuario = gerar_cifra_usuario(username_atual)
+def _mostrar_dicionario(username_atual, cifras_compartilhadas):
+    """Mostra o alfabeto da conta ou de uma cifra compartilhada, em colunas."""
+    donos = [username_atual] + [
+        username for username in cifras_compartilhadas
+        if username != username_atual
+    ]
 
     with st.expander(
-        "🔍 Ver o dicionário completo da sua Cifra Individual",
+        "🔍 Ver o dicionário completo da Cifra",
         expanded=False,
     ):
+        if len(donos) > 1:
+            dono_dicionario = st.selectbox(
+                "Dicionário exibido:",
+                options=donos,
+                format_func=lambda username: (
+                    f"Minha cifra ({username})"
+                    if username == username_atual
+                    else f"Cifra compartilhada por {username}"
+                ),
+                key=f"mural_dicionario_dono_{username_atual}",
+            )
+        else:
+            dono_dicionario = username_atual
+
+        if dono_dicionario != username_atual:
+            st.info(
+                f"Você está vendo o dicionário de **{dono_dicionario}**. "
+                "Suas mensagens continuam sendo cifradas com a sua própria "
+                "cifra; isto muda apenas a exibição do dicionário."
+            )
+
         st.write(
             "Cada caractere original à esquerda corresponde ao caractere "
             "cifrado à direita:"
         )
 
-        colunas = st.columns(4)
-        itens = list(mapa_usuario.items())
-        chunk_size = len(itens) // 4 + 1
+        mapa = gerar_cifra_usuario(dono_dicionario)
+        categorias = [nome for nome, _ in CATEGORIAS_DICIONARIO]
+        selecionadas = st.multiselect(
+            "Filtrar por tipo de caractere:",
+            options=categorias,
+            default=categorias,
+            key=f"mural_dicionario_filtro_{username_atual}_{dono_dicionario}",
+            help=(
+                "Escolha quais grupos aparecem no dicionário. "
+                "O filtro não altera a cifra das mensagens."
+            ),
+        )
 
-        for indice, coluna in enumerate(colunas):
-            with coluna:
-                trecho = itens[indice * chunk_size:(indice + 1) * chunk_size]
-                for original, cifrado in trecho:
-                    exibir_original = "Espaço" if original == " " else original
-                    st.markdown(f"`{exibir_original}` → **`{cifrado}`**")
+        if not selecionadas:
+            st.info(
+                "Selecione pelo menos um tipo de caractere para exibir "
+                "o dicionário."
+            )
+            return
+
+        caracteres_filtrados = set()
+        for nome, caracteres in CATEGORIAS_DICIONARIO:
+            if nome in selecionadas:
+                caracteres_filtrados.update(caracteres)
+
+        itens = [
+            (original, cifrado)
+            for original, cifrado in mapa.items()
+            if original in caracteres_filtrados
+        ]
+        st.caption(f"{len(itens)} caracteres exibidos.")
+
+        def _exibir(caractere):
+            return "Espaço" if caractere == " " else caractere
+
+        blocos = "".join(
+            '<div class="mural-dic-item">'
+            f'<code class="mural-dic-orig">{html.escape(_exibir(original))}</code>'
+            '<span class="mural-dic-seta">→</span>'
+            f'<code class="mural-dic-cifra">{html.escape(_exibir(cifrado))}</code>'
+            '</div>'
+            for original, cifrado in itens
+        )
+        st.markdown(
+            f'<div class="mural-dic-grade">{blocos}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def _compartilhar_cifra(username_atual):
+    """Formulario para compartilhar a cifra com outro username."""
+    with st.expander("🤝 Compartilhar cifra", expanded=False):
+        st.write(
+            "Digite o username de outra pessoa para permitir que ela veja o "
+            "seu dicionário no mural. A cifra das mensagens dela continua "
+            "sendo a dela."
+        )
+
+        with st.form(f"form_compartilhar_cifra_{username_atual}"):
+            destinatario = st.text_input(
+                "Username de quem vai receber:",
+                placeholder="ex.: aluno_teste",
+            )
+            enviado = st.form_submit_button("Compartilhar cifra")
+
+        if enviado:
+            destinatario = destinatario.strip()
+
+            if not destinatario:
+                st.error("Digite o username de quem vai receber sua cifra.")
+            elif destinatario == username_atual:
+                st.error("Você não pode compartilhar a cifra com você mesmo.")
+            elif not usuario_existe(destinatario):
+                st.error(f"O username '{destinatario}' não foi encontrado.")
+            else:
+                salvar_compartilhamento_cifra(username_atual, destinatario)
+                st.success(
+                    f"Sua cifra foi compartilhada com {destinatario}."
+                )
 
 
 # Chaves de feedback exibido depois do callback. O callback roda antes de
@@ -211,6 +374,8 @@ def _render_sessao_interativa(modo_voluntario=False):
     if aviso:
         st.success(aviso)
 
+    cifras_compartilhadas = carregar_cifras_compartilhadas(username_atual)
+
     # Fora do primeiro acesso obrigatorio, a pessoa ve o dicionario da
     # propria conta e entende como o mural cifra as mensagens.
     if modo_voluntario or st.session_state.get("primeiro_acesso") == 0:
@@ -219,7 +384,8 @@ def _render_sessao_interativa(modo_voluntario=False):
             "associada à sua conta. Ela é usada para cifrar e decifrar "
             "suas mensagens no mural."
         )
-        _mostrar_dicionario(username_atual)
+        _compartilhar_cifra(username_atual)
+        _mostrar_dicionario(username_atual, cifras_compartilhadas)
     else:
         # PRIMEIRO ACESSO (modo obrigatorio). Sem este aviso, a tela era
         # so um titulo e uma caixa de texto solta: nada dizia que
@@ -262,7 +428,24 @@ def _render_sessao_interativa(modo_voluntario=False):
     tipo_usuario = st.session_state.get("tipo_usuario", "Aluno")
     eh_gestor = tipo_usuario in ["Professor", "Administrador"]
 
+    filtro_decifraveis = st.checkbox(
+        "🔎 Mostrar apenas mensagens decifráveis",
+        key=f"mural_filtro_decifraveis_{username_atual}",
+        help=(
+            "Mostra suas mensagens e as mensagens de quem compartilhou a "
+            "cifra com você."
+        ),
+    )
+
     mensagens = carregar_mural()
+    if filtro_decifraveis:
+        mensagens = [
+            mensagem for mensagem in mensagens
+            if (
+                mensagem[1] == username_atual
+                or mensagem[1] in cifras_compartilhadas
+            )
+        ]
 
     if mensagens:
         for msg_id, autor_msg, msg, data in mensagens:
@@ -300,5 +483,10 @@ def _render_sessao_interativa(modo_voluntario=False):
                         on_click=_inativar_mensagem_gestor,
                         args=(msg_id,),
                     )
+    elif filtro_decifraveis:
+        st.info(
+            "Nenhuma mensagem decifrável com as cifras compartilhadas com "
+            "você. Peça para alguém compartilhar a cifra ou desative o filtro."
+        )
     else:
         st.info("Nenhuma mensagem no mural ainda. Seja o primeiro a publicar!")

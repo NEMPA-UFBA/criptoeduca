@@ -162,6 +162,23 @@ def _criar_tabelas(conn):
     if "ativo" not in colunas_mural:
         c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
+    # Autorizacoes de compartilhamento da cifra pessoal.
+    #
+    # A cifra continua sendo derivada do username de cada pessoa. Esta tabela
+    # guarda apenas a permissao para o destinatario ver o dicionario do
+    # remetente no mural. O par remetente/destinatario e unico, entao compartilhar
+    # de novo so reativa a mesma permissao em vez de criar duplicatas.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS compartilhamentos_cifra (
+            id SERIAL PRIMARY KEY,
+            remetente TEXT NOT NULL,
+            destinatario TEXT NOT NULL,
+            ativo INTEGER DEFAULT 1,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (remetente, destinatario)
+        )
+    """)
+
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
     # para os alunos. Segue o mesmo padrao do mural: nada e apagado, a linha
@@ -495,6 +512,45 @@ def atualizar_primeiro_acesso(username):
     obter_primeiro_acesso.clear()
 
 
+def usuario_existe(username):
+    """Informa se o username existe, para validar o compartilhamento da cifra."""
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM usuarios WHERE username = %s", (username,))
+        existe = c.fetchone() is not None
+        conn.rollback()
+    return existe
+
+
+def salvar_compartilhamento_cifra(remetente, destinatario):
+    """Autoriza o destinatario a ver o dicionario da cifra do remetente."""
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO compartilhamentos_cifra (remetente, destinatario, ativo) "
+            "VALUES (%s, %s, 1) "
+            "ON CONFLICT (remetente, destinatario) "
+            "DO UPDATE SET ativo = 1, data = CURRENT_TIMESTAMP",
+            (remetente, destinatario),
+        )
+        conn.commit()
+
+
+def carregar_cifras_compartilhadas(destinatario):
+    """Lista os usuarios que compartilharam a cifra com o destinatario."""
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT remetente FROM compartilhamentos_cifra "
+            "WHERE destinatario = %s AND ativo = 1 AND remetente <> %s "
+            "ORDER BY remetente",
+            (destinatario, destinatario),
+        )
+        dados = [linha[0] for linha in c.fetchall()]
+        conn.rollback()
+    return dados
+
+
 def salvar_mensagem_mural(username, mensagem_criptografada):
     """Salva a mensagem associada ao usuário que a enviou"""
     with conectar() as conn:
@@ -585,9 +641,9 @@ def carregar_conteudos():
     """Carrega todos os conteudos ativos, do mais novo para o mais antigo.
 
     Devolve tuplas no formato antigo (id, titulo, corpo, autor, data),
-    porque a lista de "Gerenciar Conteúdos → Exemplos de Golpe" usa esse
-    formato. A pagina dos pergaminhos usa carregar_pergaminhos(), que traz
-    os campos do crime.
+    mantido para telas antigas. Tanto a pagina dos pergaminhos quanto o
+    gerenciamento usam carregar_pergaminhos(), que traz os campos do
+    crime e, opcionalmente, os exemplos inativos.
     """
     with conectar() as conn:
         c = conn.cursor()
@@ -598,8 +654,8 @@ def carregar_conteudos():
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def carregar_pergaminhos():
-    """Carrega os exemplos ativos, na ordem gravada.
+def carregar_pergaminhos(incluir_inativos=False):
+    """Carrega os exemplos na ordem gravada.
 
     Devolve dicionarios, e nao tuplas, porque a pagina dos pergaminhos
     usa muitos campos de cada exemplo e a tupla de dez posicoes vira
@@ -607,24 +663,33 @@ def carregar_pergaminhos():
     pre-colocados vem primeiro, na ordem do arquivo, e o que a
     coordenacao publica depois entra no fim.
 
+    Por padrao so os ativos sao devolvidos: e o que o aluno pode ver. A
+    pagina de gerenciamento passa incluir_inativos=True para conseguir
+    listar, editar e reativar o que foi tirado do ar.
+
     Esta funcao e somente leitura. A semeadura dos exemplos do arquivo
     dados/exemplos_crime.json fica em _criar_tabelas(), que e chamada na
     preparacao do banco: carregar uma pagina nao deve abrir transacao de
     escrita no banco.
     """
+    sql = (
+        "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
+        "sinais, protecao, chave, origem, blocos, ativo FROM conteudos"
+    )
+    if not incluir_inativos:
+        sql += " WHERE ativo = 1"
+    sql += " ORDER BY id ASC"
+
     with conectar() as conn:
         c = conn.cursor()
-        c.execute(
-            "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
-            "sinais, protecao, chave, origem, blocos FROM conteudos "
-            "WHERE ativo = 1 ORDER BY id ASC"
-        )
+        c.execute(sql)
         linhas = c.fetchall()
         conn.rollback()
 
     chaves = (
         "id", "titulo", "corpo", "autor", "data", "icone", "categoria",
         "exemplo", "sinais", "protecao", "chave", "origem", "blocos",
+        "ativo",
     )
     # "blocos" chega do banco como texto e volta como lista: quem desenha
     # a pagina nao quer saber com o que o SQLite guarda uma lista.
@@ -681,6 +746,16 @@ def inativar_conteudo(conteudo_id):
     with conectar() as conn:
         c = conn.cursor()
         c.execute("UPDATE conteudos SET ativo = 0 WHERE id = %s", (conteudo_id,))
+        conn.commit()
+    carregar_pergaminhos.clear()
+    carregar_conteudos.clear()
+
+
+def reativar_conteudo(conteudo_id):
+    """Devolve um exemplo inativado para a lista do aluno."""
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE conteudos SET ativo = 1 WHERE id = %s", (conteudo_id,))
         conn.commit()
     carregar_pergaminhos.clear()
     carregar_conteudos.clear()
@@ -1064,6 +1139,7 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
         conn.commit()
     carregar_estado_modulos.clear()
     carregar_progresso_modulos.clear()
+    listar_progresso_recente.clear()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1095,6 +1171,45 @@ def carregar_progresso_modulos(username):
                 "data": data,
             }
     return progresso
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def contar_usuarios_por_tipo():
+    """Conta as contas cadastradas por perfil para o painel inicial.
+
+    O cache curto evita uma consulta a cada tecla digitada na home; ele é
+    limpo quando alguém se cadastra.
+    """
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute("SELECT tipo, COUNT(*) FROM usuarios GROUP BY tipo")
+        linhas = c.fetchall()
+        conn.rollback()
+    return {tipo: total for tipo, total in linhas}
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def listar_progresso_recente(limite=6):
+    """Últimas tentativas de quiz de alunos, com o nome de quem respondeu.
+
+    Serve para a home de Professor/Administrador mostrar movimento real da
+    plataforma, em vez de números soltos. A consulta filtra por tipo porque
+    essa área acompanha a turma; as tentativas da própria coordenação não são
+    atividade de aluno e só poluiriam a lista.
+    """
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT p.username, u.nome, p.modulo, p.acertos, p.total, p.data "
+            "FROM progresso_modulos p "
+            "JOIN usuarios u ON u.username = p.username "
+            "WHERE u.tipo = 'Aluno' "
+            "ORDER BY p.data DESC, p.id DESC LIMIT %s",
+            (limite,),
+        )
+        linhas = c.fetchall()
+        conn.rollback()
+    return linhas
 
 
 def verificar_login(username_digitado, senha_digitada):
@@ -1154,6 +1269,7 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
                 (username, nome, email, tipo, hash_str)
             )
             conn.commit()
+            contar_usuarios_por_tipo.clear()
             return "ok"
         except psycopg2.IntegrityError:
             # Duas submissões com o mesmo e-mail ao mesmo tempo: o índice único
@@ -1204,6 +1320,7 @@ def atualizar_perfil(username, nova_senha, senha_atual, novo_nome): # Função p
             )
         conn.commit() # Confirma efetivamente a gravação da transação na base de dados
         obter_dados_perfil.clear() # Limpa o cache de perfil para refletir as mudanças
+        listar_progresso_recente.clear() # O nome exibido na home também mudou
         c.close() # Destrói o cursor liberando recursos locais do servidor
 
 def buscar_usuarios(termo): # Função para ler registros parecidos com o termo de busca

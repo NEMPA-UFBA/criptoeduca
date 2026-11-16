@@ -5,7 +5,7 @@ import math
 from PIL import Image
 # Importa módulos de renderização da UI
 # Puxa do gerenciador de banco de dados otimizado as tarefas de atualização e leitura
-from modules.database import atualizar_perfil, obter_dados_perfil, buscar_usuarios, seguir_usuario, atualizar_foto
+from modules.database import atualizar_perfil, obter_dados_perfil, atualizar_foto
 
 
 CSS_GRADE = """
@@ -112,10 +112,6 @@ def preparar_avatar(rel_path: str) -> bytes:
 
 # --- CALLBACKS DE ESTADO ---
 # Toda ação que altera estado no banco/sessão agora usa callback para evitar st.rerun() solto e ghosting[cite: 3, 9]
-def acao_seguir_callback(seguidor, seguido):
-    seguir_usuario(seguidor, seguido)
-    st.session_state["toast_notificacao"] = f"Você começou a seguir {seguido}!" # Define notificação via flag
-
 def alternar_avatar(rel_path):
     if st.session_state.get("avatar_selecionado") == rel_path:
         st.session_state.pop("avatar_selecionado", None)
@@ -198,67 +194,80 @@ def marcar_remocao():
     st.session_state["remover_foto"] = True  
 
 # --- RENDERIZAÇÃO DO WIDGET ---
-@st.dialog("⚙️ Editar Perfil e Buscar Comunidade", width="large", on_dismiss=cancelar_selecao) # Transforma e dimensiona a função como janela modal larga e fixa
-
-def render_widget_perfil(): # Define a renderização do conteúdo de sobreposição
+@st.dialog("👤 Meu Perfil", width="large", on_dismiss=cancelar_selecao)
+def render_widget_perfil():
     username_atual = st.session_state['username']
-    
+    tipo_usuario = st.session_state.get('tipo_usuario', '')
+    somente_leitura = tipo_usuario == 'Administrador'
+
     # Busca dados estritamente transacional sem onerar a inicialização do app
     dados_atuais = obter_dados_perfil(username_atual)
     nome_atual, foto_bytes = dados_atuais if dados_atuais else ("", None)
 
-    aba_perfil, aba_pesquisa = st.tabs(["Meu Perfil", "Buscar Usuários"], key="abas_perfil", on_change="rerun")
-    if aba_perfil.open:
-        with aba_perfil:
-            st.html(CSS_GRADE)
-             # Contêiner raiz com chave unívoca para forçar limpeza do DOM na transição
-            with st.container(key="container_aba_perfil"):
-                col_form, col_foto = st.columns([1, 2])
-                
+    st.html(CSS_GRADE)
+    # Contêiner raiz com chave unívoca para forçar limpeza do DOM na transição
+    with st.container(key="container_aba_perfil"):
+        col_form, col_foto = st.columns([1, 2])
+
+        if somente_leitura:
             with col_form:
-                 with st.form("form_perfil"):
-                    st.subheader("Dados Pessoais")
-                    novo_nome = st.text_input("Nome", value=nome_atual)
-                    
-                    st.divider()
-                    st.subheader("🔒 Alteração de Senha")
-                    senha_atual = st.text_input("Senha Atual", type="password")
-                    nova_senha = st.text_input("Nova Senha", type="password")
-                    confirma_senha = st.text_input("Confirme", type="password")
-                    
-                    if st.form_submit_button("Salvar Modificações", type="primary"):
-                        if nova_senha:
-                            if not senha_atual:
-                                st.error("Digite sua senha atual.")
-                                st.stop()
-                            if nova_senha != confirma_senha:
-                                st.error("As novas senhas não coincidem.")
-                                st.stop()
-                            if not validar_forca_senha(nova_senha):
-                                st.error("A nova senha precisa de maiúscula, minúscula e número.")
-                                st.stop()
-
-                        resultado = atualizar_perfil(
-                            username_atual, nova_senha, senha_atual, novo_nome
-                        )
-
-                        if resultado == "senha_atual_incorreta":
-                            st.error("Senha atual incorreta.")
-                        else:
-                            st.session_state['nome_usuario'] = novo_nome
-                            st.success("Perfil atualizado!")
-                            st.rerun()
+                st.subheader("Dados Pessoais")
+                st.write(f"**Nome:** {nome_atual or 'Não informado'}")
+                st.write(f"**Perfil:** {tipo_usuario or 'Administrador'}")
+                st.caption("O perfil da coordenação é somente leitura.")
             with col_foto:
                 with st.container(key="moldura_avatar_perfil", width=94):
                     if foto_bytes:
-                     st.image(foto_bytes, width=72)
+                        st.image(foto_bytes, width=72)
                     else:
-                     st.info("Nenhuma foto cadastrada.")
+                        st.info("Nenhuma foto cadastrada.")
+            return
 
-                #Criação de abas para alternar entre galeria de avatares e remoção de avatar
-                aba_change_foto, aba_remover_foto = st.tabs(["Galeria de avatares", "Remover Avatar"], key="abas_foto", on_change="rerun")
-                if aba_change_foto.open:
-                 with aba_change_foto:
+        with col_form:
+            with st.form("form_perfil"):
+                st.subheader("Dados Pessoais")
+                novo_nome = st.text_input("Nome", value=nome_atual)
+
+                st.divider()
+                st.subheader("🔒 Alteração de Senha")
+                senha_atual = st.text_input("Senha Atual", type="password")
+                nova_senha = st.text_input("Nova Senha", type="password")
+                confirma_senha = st.text_input("Confirme", type="password")
+
+                if st.form_submit_button("Salvar Modificações", type="primary"):
+                    if nova_senha:
+                        if not senha_atual:
+                            st.error("Digite sua senha atual.")
+                            st.stop()
+                        if nova_senha != confirma_senha:
+                            st.error("As novas senhas não coincidem.")
+                            st.stop()
+                        if not validar_forca_senha(nova_senha):
+                            st.error("A nova senha precisa de maiúscula, minúscula e número.")
+                            st.stop()
+
+                    resultado = atualizar_perfil(
+                        username_atual, nova_senha, senha_atual, novo_nome
+                    )
+
+                    if resultado == "senha_atual_incorreta":
+                        st.error("Senha atual incorreta.")
+                    else:
+                        st.session_state['nome_usuario'] = novo_nome
+                        st.success("Perfil atualizado!")
+                        st.rerun()
+
+        with col_foto:
+            with st.container(key="moldura_avatar_perfil", width=94):
+                if foto_bytes:
+                    st.image(foto_bytes, width=72)
+                else:
+                    st.info("Nenhuma foto cadastrada.")
+
+            # Abas para alternar entre galeria de avatares e remoção de avatar
+            aba_change_foto, aba_remover_foto = st.tabs(["Galeria de avatares", "Remover Avatar"], key="abas_foto", on_change="rerun")
+            if aba_change_foto.open:
+                with aba_change_foto:
                     seletor_avatar()
                     avatar_pendente = st.session_state.get("avatar_selecionado")
                     st.button(
@@ -270,8 +279,8 @@ def render_widget_perfil(): # Define a renderização do conteúdo de sobreposi�
                         args=(username_atual, avatar_pendente),
                     )
 
-                if aba_remover_foto.open:
-                  with aba_remover_foto:
+            if aba_remover_foto.open:
+                with aba_remover_foto:
                     st.button(
                         "Remover foto atual",
                         key="btn_remover_foto",
@@ -281,35 +290,3 @@ def render_widget_perfil(): # Define a renderização do conteúdo de sobreposi�
                     )
                     if st.session_state.get("remover_foto"):
                         st.warning("A foto será removida ao salvar as modificações.")
-
-    if aba_pesquisa.open:                        
-        with aba_pesquisa:
-        # Segundo contêiner isolado para gerenciar a memória e o layout de forma independente[cite: 3, 9]
-          with st.container(key="container_aba_pesquisa"):
-            termo = st.text_input("Buscar perfis por nome:")
-            
-            if st.button("Buscar"):
-                if termo:
-                    resultados = buscar_usuarios(termo)
-                    if resultados:
-                        for username_encontrado, nome_user, tipo_user in resultados:
-                            # Ignora o próprio usuário na lista de resultados
-                            if username_encontrado == username_atual:
-                                continue
-                                
-                            col_info, col_btn = st.columns([3, 1])
-                            with col_info:
-                                st.info(f"👤 **{nome_user}** | 🏷️ {tipo_user}")
-                            with col_btn:
-                                # Elemento iterável requer argumento 'key' parametrizado e unívoco[cite: 9]
-                                # A mutação de seguir é feita via callback (on_click) para máxima fluidez[cite: 3, 9]
-                                st.button(
-                                    "Seguir",
-                                    key=f"btn_seguir_{username_encontrado}",
-                                    type="secondary",
-                                    use_container_width=True,
-                                    on_click=acao_seguir_callback,
-                                    args=(username_atual, username_encontrado)
-                                )
-                    else:
-                        st.warning("Nenhum usuário encontrado.")
