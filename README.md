@@ -58,6 +58,12 @@ reruns normais da interface. Exemplos novos de `dados/exemplos_crime.json`
 são inseridos ao abrir a página **Exemplos de Crimes Digitais**; exemplos
 existentes são preservados e não são sobrescritos.
 
+As colunas esperadas por `modulos` são sincronizadas nesse comando de
+preparação. Ao adicionar uma coluna usada pelo aplicativo, atualize a lista
+`expected_columns` em `modules/database.py` e execute o comando antes de
+publicar a versão. Não execute alterações de schema a cada conexão ou rerun:
+em produção, prefira aplicar migrações como etapa explícita do deploy.
+
 ### Sobre o `.streamlit/secrets.toml`
 
 O arquivo é lido pelo Streamlit automaticamente — no Community Cloud, local e

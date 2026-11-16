@@ -1,4 +1,5 @@
 import streamlit as st
+import extra_streamlit_components as stx
 from modules.database import (
     conectar,
     modulos_lidos,
@@ -17,11 +18,14 @@ from modules.login import (
     obter_chave_professor_diaria,
     segredo_da_chave_configurado,
     limpar_sessao_do_usuario,
+    restaurar_cookie_login,
 )
 from modules.anuncio_simulado import render_anuncio_simulado
 
 # Configuração global
 st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
+
+cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # Confirmação de saída.
 #
@@ -34,8 +38,8 @@ st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
 def _confirmar_saida():
     st.write("Você vai voltar para a tela de login.")
     st.caption(
-        f"**{st.session_state['nome_usuario']}** "
-        f"({st.session_state['tipo_usuario']})"
+        f"**{st.session_state.get('nome_usuario', 'Usuário')}** "
+        f"({st.session_state.get('tipo_usuario', 'Perfil não informado')})"
     )
     confirmar, cancelar = st.columns(2)
     if confirmar.button("Sair", type="primary", width="stretch"):
@@ -45,12 +49,25 @@ def _confirmar_saida():
         # limpar_sessao_do_usuario em modules/login.py). Só as chaves
         # simples são apagadas aqui: o menu lateral está desenhado nesta
         # tela, e as chaves de widget são varridas no login seguinte.
+        if cookie_manager.get("usuario_logado") is not None:
+            cookie_manager.delete("usuario_logado")
         limpar_sessao_do_usuario()
-        st.session_state["usuario_logado"] = False
+        st.session_state.pop("usuario_logado", None)
         st.rerun()
     if cancelar.button("Cancelar", width="stretch"):
         st.rerun()
 
+
+if not st.session_state.get("usuario_logado", False):
+    valor_cookie = cookie_manager.get("usuario_logado")
+    dados_cookie = restaurar_cookie_login(valor_cookie)
+    if dados_cookie:
+        st.session_state["usuario_logado"] = True
+        st.session_state["username"] = dados_cookie["username"]
+        st.session_state["nome_usuario"] = dados_cookie["nome_usuario"]
+        st.session_state["tipo_usuario"] = dados_cookie["tipo_usuario"]
+    elif valor_cookie:
+        cookie_manager.delete("usuario_logado")
 
 if "usuario_logado" not in st.session_state:
     st.session_state["usuario_logado"] = False
@@ -60,7 +77,7 @@ if "tipo_usuario" not in st.session_state:
     st.session_state["tipo_usuario"] = ""
 
 if not st.session_state["usuario_logado"]:
-    render_login()
+    render_login(cookie_manager)
 else:
     # ---------- CSS da tela logada ----------
     # Este bloco mora aqui, e não em modules/login.py, porque o <style> de lá

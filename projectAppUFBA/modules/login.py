@@ -1,8 +1,15 @@
 import streamlit as st
+import base64
+import binascii
+import json
 import re
 import hmac
 import hashlib
-from datetime import datetime
+import os
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
+from streamlit.errors import StreamlitSecretNotFoundError
+from psycopg2 import OperationalError
 from modules.database import verificar_login, cadastrar_usuario
 from modules.leitura import CHAVE_LEITURA
 from modules import ratelimit
@@ -16,6 +23,101 @@ from modules import ratelimit
 ALFABETO_CHAVE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 TAMANHO_CHAVE = 12
+
+_COOKIE_LOGIN = "usuario_logado"
+_DURACAO_COOKIE_LOGIN = timedelta(days=30)
+
+
+def _segredo_cookie_login():
+    segredo = os.environ.get("COOKIE_SECRET")
+    if not segredo:
+        try:
+            segredo = st.secrets["COOKIE_SECRET"]
+        except (KeyError, StreamlitSecretNotFoundError):
+            return None
+
+    if not isinstance(segredo, str) or len(segredo.encode("utf-8")) < 32:
+        return None
+    return segredo.encode("utf-8")
+
+
+def _secure_cookie_login(url):
+    if not isinstance(url, str):
+        return None
+
+    url_acesso = urlsplit(url)
+    if url_acesso.scheme == "https":
+        return True
+    if url_acesso.scheme == "http" and url_acesso.hostname in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        return False
+    return None
+
+
+def criar_cookie_login(username, nome_usuario, tipo_usuario):
+    segredo = _segredo_cookie_login()
+    if segredo is None:
+        return None
+
+    expira_em = datetime.now(timezone.utc) + _DURACAO_COOKIE_LOGIN
+    payload = {
+        "username": username,
+        "nome_usuario": nome_usuario,
+        "tipo_usuario": tipo_usuario,
+        "exp": int(expira_em.timestamp()),
+    }
+    payload_codificado = base64.urlsafe_b64encode(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    assinatura = hmac.new(
+        segredo, payload_codificado.encode("ascii"), hashlib.sha256
+    ).hexdigest()
+    return f"{payload_codificado}.{assinatura}", expira_em
+
+
+def restaurar_cookie_login(valor_cookie):
+    segredo = _segredo_cookie_login()
+    if segredo is None or not isinstance(valor_cookie, str) or len(valor_cookie) > 4096:
+        return None
+
+    try:
+        payload_codificado, assinatura = valor_cookie.rsplit(".", 1)
+        if not re.fullmatch(r"[0-9a-f]{64}", assinatura):
+            return None
+        assinatura_esperada = hmac.new(
+            segredo, payload_codificado.encode("ascii"), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(assinatura, assinatura_esperada):
+            return None
+
+        payload_bytes = base64.urlsafe_b64decode(
+            payload_codificado + "=" * (-len(payload_codificado) % 4)
+        )
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    if not all(
+        isinstance(payload.get(chave), str) and payload[chave]
+        for chave in ("username", "nome_usuario", "tipo_usuario")
+    ):
+        return None
+    if type(payload.get("exp")) is not int:
+        return None
+    if payload["exp"] <= int(datetime.now(timezone.utc).timestamp()):
+        return None
+
+    return {
+        "username": payload["username"],
+        "nome_usuario": payload["nome_usuario"],
+        "tipo_usuario": payload["tipo_usuario"],
+    }
+
 
 def validar_email_formato(email):
     """Valida se o e-mail tem um formato padrão (ex: usuario@dominio.com)."""
@@ -275,7 +377,7 @@ def limpar_sessao_do_usuario(com_widgets=False):
 # acrescenta dependência. O fragmento recria os widgets a cada ciclo, e o
 # clear_on_submit faz o recomeço sem apagar o que o usuário já digitou.
 @st.fragment(run_every="5s")
-def _formulario_login():
+def _formulario_login(cookie_manager):
     with st.form("form_login", clear_on_submit=True):
         # clear_on_submit: a senha digitada não fica na tela depois do envio.
         # Custo aceito: quem erra a senha reescreve o usuário.
@@ -306,7 +408,14 @@ def _formulario_login():
                 st.error("Por favor, preencha o usuário e a senha.")
 
             else:
-                credenciais = verificar_login(usuario_input, senha_input)
+                try:
+                    credenciais = verificar_login(usuario_input, senha_input)
+                except OperationalError:
+                    st.error(
+                        "Não foi possível acessar o banco de dados agora. "
+                        "Tente novamente em alguns instantes."
+                    )
+                    return
 
                 if credenciais:
                     nome_usuario, tipo_usuario = credenciais
@@ -322,6 +431,31 @@ def _formulario_login():
                     # mundo e fazia todos caírem no menu do Aluno.
                     st.session_state["tipo_usuario"] = tipo_usuario
                     st.session_state["username"] = usuario_input
+                    cookie_login = criar_cookie_login(
+                        usuario_input, nome_usuario, tipo_usuario
+                    )
+                    if cookie_login is None:
+                        st.warning(
+                            "A sessão atual está autenticada, mas a retenção de login "
+                            "está desativada. Configure COOKIE_SECRET no `.env` local "
+                            "ou em `.streamlit/secrets.toml`."
+                        )
+                    else:
+                        secure_cookie = _secure_cookie_login(st.context.url)
+                        if secure_cookie is None:
+                            st.warning(
+                                "A retenção de login exige HTTPS. Em desenvolvimento, "
+                                "acesse o app por http://localhost:8501."
+                            )
+                        else:
+                            valor_cookie, expira_em = cookie_login
+                            cookie_manager.set(
+                                _COOKIE_LOGIN,
+                                valor_cookie,
+                                expires_at=expira_em,
+                                secure=secure_cookie,
+                                same_site="strict",
+                            )
                     # Zera só no acerto: quem entrou não está sob ataque, e uma
                     # sessão legítima não pode herdar bloqueio de outra.
                     _zerar_login(usuario_input)
@@ -580,7 +714,7 @@ def _formulario_cadastro():
     # anulava o rate limit da chave, já que não havia o que adivinhar.
 
 
-def render_login():
+def render_login(cookie_manager):
 
     st.markdown("""
     <style>
@@ -975,7 +1109,7 @@ def render_login():
     )
     aba_login, aba_cadastro = st.tabs(["Entrar", "Criar Conta"])
     with aba_login:
-        _formulario_login()
+        _formulario_login(cookie_manager)
 
     with aba_cadastro:
         _formulario_cadastro()

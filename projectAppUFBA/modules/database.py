@@ -1,5 +1,7 @@
 from contextlib import contextmanager
 import psycopg2
+from psycopg2 import OperationalError
+from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
 import json
@@ -10,8 +12,9 @@ import logging
 from streamlit.errors import StreamlitSecretNotFoundError
 from dotenv import load_dotenv
 
-# Carrega as variáveis do .env (se o arquivo existir)
-load_dotenv()
+# Carrega o .env ao lado da aplicação, independente do diretório de execução.
+APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(APP_ROOT, ".env"))
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +77,14 @@ def conectar():
     conn = pool.getconn()
     try:
         yield conn
+    except OperationalError:
+        conexao_com_falha = conn
+        conn = None
+        pool.putconn(conexao_com_falha, close=True)
+        raise
     finally:
-        pool.putconn(conn)
+        if conn is not None:
+            pool.putconn(conn)
 
 def _senha_admin_inicial():
     """Le a senha do Administrador de st.secrets. Sem valor padrao no codigo.
@@ -103,6 +112,48 @@ def _senha_admin_inicial():
 def criar_tabelas():
     with conectar() as conn:
         _criar_tabelas(conn)
+
+
+def sincronizar_schema_banco(conn):
+    """Adiciona ao banco colunas ausentes da tabela de módulos.
+
+    A lista descreve as colunas de negócio. A coluna `id` e suas restrições
+    pertencem à criação da tabela e exigem uma migração própria se mudarem.
+    """
+    expected_columns = [
+        ("slug", "TEXT"),
+        ("titulo", "TEXT"),
+        ("resumo", "TEXT DEFAULT ''"),
+        ("icone", "TEXT DEFAULT '📘'"),
+        ("nivel", "TEXT DEFAULT ''"),
+        ("dificuldade", "TEXT DEFAULT ''"),
+        ("duracao", "TEXT DEFAULT ''"),
+        ("cor", "TEXT DEFAULT '#4F46E5'"),
+        ("pdf", "TEXT DEFAULT ''"),
+        ("quiz", "TEXT DEFAULT '[]'"),
+        ("autor", "TEXT DEFAULT ''"),
+        ("ativo", "INTEGER DEFAULT 1"),
+        ("data", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+    ]
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = %s",
+            ("modulos",),
+        )
+        existing_columns = {row[0] for row in cursor.fetchall()}
+
+        for column_name, definition in expected_columns:
+            if column_name in existing_columns:
+                continue
+            cursor.execute(
+                sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS {} {}").format(
+                    sql.Identifier("modulos"),
+                    sql.Identifier(column_name),
+                    sql.SQL(definition),
+                )
+            )
 
 
 def _criar_tabelas(conn):
@@ -262,31 +313,7 @@ def _criar_tabelas(conn):
         )
     """)
 
-    c.execute(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name = 'modulos'"
-    )
-    colunas_modulos = [linha[0] for linha in c.fetchall()]
-    for nome_coluna, definicao in (
-        ("slug", "TEXT"),
-        ("titulo", "TEXT"),
-        ("resumo", "TEXT DEFAULT ''"),
-        ("icone", "TEXT DEFAULT '📘'"),
-        ("nivel", "TEXT DEFAULT ''"),
-        ("dificuldade", "TEXT DEFAULT ''"),
-        ("duracao", "TEXT DEFAULT ''"),
-        ("cor", "TEXT DEFAULT '#4F46E5'"),
-        ("pdf", "TEXT DEFAULT ''"),
-        ("quiz", "TEXT DEFAULT '[]'"),
-        ("autor", "TEXT DEFAULT ''"),
-        ("ativo", "INTEGER DEFAULT 1"),
-        ("data", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
-    ):
-        if nome_coluna not in colunas_modulos:
-            c.execute(
-                "ALTER TABLE modulos ADD COLUMN IF NOT EXISTS %s %s"
-                % (nome_coluna, definicao)
-            )
+    sincronizar_schema_banco(conn)
 
     # Tabela do progresso de cada modulo de aprendizagem.
     #
@@ -1032,10 +1059,25 @@ def verificar_login(username_digitado, senha_digitada):
     nome: o perfil nunca era lido do banco, então login.py nunca gravava
     tipo_usuario na sessão e todo mundo caía no menu do Aluno.
     """
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute("SELECT nome, tipo, password FROM usuarios WHERE username = %s", (username_digitado,))
-        resultado = c.fetchone()
+    for tentativa in range(2):
+        try:
+            with conectar() as conn:
+                c = conn.cursor()
+                c.execute(
+                    "SELECT nome, tipo, password FROM usuarios WHERE username = %s",
+                    (username_digitado,),
+                )
+                resultado = c.fetchone()
+            break
+        except OperationalError:
+            if tentativa == 1:
+                logger.exception(
+                    "Falha ao consultar credenciais após reconectar ao PostgreSQL."
+                )
+                raise
+            logger.warning(
+                "Conexão PostgreSQL caiu durante o login; tentando uma conexão nova."
+            )
 
     if resultado:
         nome_usuario, tipo_usuario, hash_do_banco_str = resultado

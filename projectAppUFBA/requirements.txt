@@ -1,6 +1,7 @@
 # Dependências do EduStream.
 #
-# Seis dependências usadas diretamente: Streamlit (interface),
+# Sete dependências usadas diretamente: Streamlit (interface),
+# extra-streamlit-components (cookies),
 # streamlit-pdf-viewer (visualização de PDFs), bcrypt (senhas), cryptography
 # (AES-128-GCM do mural), psycopg2-binary (driver PostgreSQL) e python-dotenv
 # (carrega o .env local). Todo o resto do projeto (hmac, hashlib, ipaddress,
@@ -19,6 +20,7 @@
 # isto foi verificado usa Python 3.14.
 
 streamlit==1.64.0
+extra-streamlit-components==0.1.81
 bcrypt==5.0.0
 psycopg2-binary==2.9.13
 python-dotenv==1.2.4
