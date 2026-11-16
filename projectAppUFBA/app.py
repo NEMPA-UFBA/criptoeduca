@@ -37,18 +37,14 @@ if aviso_cookie:
 
 cookie_login_pendente = st.session_state.get("_cookie_login_pendente")
 if cookie_login_pendente:
-    cookie_gravado = cookie_manager.set(
+    cookie_manager.set(
         "usuario_logado",
         cookie_login_pendente["valor"],
         expires_at=cookie_login_pendente["expira_em"],
         key=f"set_login_{cookie_login_pendente['key']}",
         **cookie_login_pendente["opcoes"],
     )
-    if cookie_gravado:
-        st.session_state.pop("_cookie_login_pendente", None)
-    else:
-        st.info("Concluindo o início da sessão…")
-        st.stop()
+    st.session_state.pop("_cookie_login_pendente", None)
 
 # Confirmação de saída.
 #
@@ -88,16 +84,13 @@ if st.session_state.get("pediu_logout", False):
             "Acesse o app por HTTPS ou por http://localhost:8501."
         )
     else:
-        cookie_expirado = cookie_manager.set(
+        cookie_manager.set(
             "usuario_logado",
             "",
             expires_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
             key=f"expire_logout_{st.session_state['_logout_cookie_key']}",
             **opcoes_cookie,
         )
-        if not cookie_expirado:
-            st.info("Encerrando a sessão…")
-            st.stop()
     st.session_state.pop("pediu_logout", None)
     st.session_state.pop("_logout_cookie_key", None)
     for chave in ("usuario_logado", "nome_usuario", "username", "tipo_usuario"):
