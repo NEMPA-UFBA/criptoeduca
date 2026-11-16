@@ -6,6 +6,7 @@ import re
 import hmac
 import hashlib
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -377,7 +378,7 @@ def limpar_sessao_do_usuario(com_widgets=False):
 # acrescenta dependência. O fragmento recria os widgets a cada ciclo, e o
 # clear_on_submit faz o recomeço sem apagar o que o usuário já digitou.
 @st.fragment(run_every="5s")
-def _formulario_login(cookie_manager):
+def _formulario_login():
     with st.form("form_login", clear_on_submit=True):
         # clear_on_submit: a senha digitada não fica na tela depois do envio.
         # Custo aceito: quem erra a senha reescreve o usuário.
@@ -435,31 +436,31 @@ def _formulario_login(cookie_manager):
                         usuario_input, nome_usuario, tipo_usuario
                     )
                     if cookie_login is None:
-                        st.warning(
-                            "A sessão atual está autenticada, mas a retenção de login "
-                            "está desativada. Configure COOKIE_SECRET no `.env` local "
-                            "ou em `.streamlit/secrets.toml`."
+                        st.session_state["_cookie_login_aviso"] = (
+                            "A sessão está autenticada, mas a retenção de login está "
+                            "desativada. Configure COOKIE_SECRET no `.env` local ou "
+                            "em `.streamlit/secrets.toml`."
                         )
                     else:
                         opcoes_cookie = opcoes_cookie_login(st.context.url)
                         if opcoes_cookie is None:
-                            st.warning(
+                            st.session_state["_cookie_login_aviso"] = (
                                 "A retenção de login exige HTTPS. Em desenvolvimento, "
                                 "acesse o app por http://localhost:8501."
                             )
                         else:
                             valor_cookie, expira_em = cookie_login
-                            cookie_manager.set(
-                                _COOKIE_LOGIN,
-                                valor_cookie,
-                                expires_at=expira_em,
-                                **opcoes_cookie,
-                            )
+                            st.session_state["_cookie_login_pendente"] = {
+                                "valor": valor_cookie,
+                                "expira_em": expira_em,
+                                "opcoes": opcoes_cookie,
+                                "key": uuid.uuid4().hex,
+                            }
                     # Zera só no acerto: quem entrou não está sob ataque, e uma
                     # sessão legítima não pode herdar bloqueio de outra.
                     _zerar_login(usuario_input)
                     st.success("Login efetuado com sucesso!")
-                    st.rerun()  # Recarrega a página para entrar no sistema
+                    st.rerun(scope="app")
                 else:
                     # Usuário inexistente e senha errada contam no mesmo
                     # contador: a tela não distingue os dois casos, e o
@@ -713,7 +714,7 @@ def _formulario_cadastro():
     # anulava o rate limit da chave, já que não havia o que adivinhar.
 
 
-def render_login(cookie_manager):
+def render_login():
 
     st.markdown("""
     <style>
@@ -1108,7 +1109,7 @@ def render_login(cookie_manager):
     )
     aba_login, aba_cadastro = st.tabs(["Entrar", "Criar Conta"])
     with aba_login:
-        _formulario_login(cookie_manager)
+        _formulario_login()
 
     with aba_cadastro:
         _formulario_cadastro()

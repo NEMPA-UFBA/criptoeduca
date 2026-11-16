@@ -1,6 +1,8 @@
-import streamlit as st
-import extra_streamlit_components as stx
+import uuid
 from datetime import datetime, timezone
+
+import extra_streamlit_components as stx
+import streamlit as st
 from modules.database import (
     conectar,
     modulos_lidos,
@@ -29,6 +31,25 @@ st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
+aviso_cookie = st.session_state.pop("_cookie_login_aviso", None)
+if aviso_cookie:
+    st.warning(aviso_cookie)
+
+cookie_login_pendente = st.session_state.get("_cookie_login_pendente")
+if cookie_login_pendente:
+    cookie_gravado = cookie_manager.set(
+        "usuario_logado",
+        cookie_login_pendente["valor"],
+        expires_at=cookie_login_pendente["expira_em"],
+        key=f"set_login_{cookie_login_pendente['key']}",
+        **cookie_login_pendente["opcoes"],
+    )
+    if cookie_gravado:
+        st.session_state.pop("_cookie_login_pendente", None)
+    else:
+        st.info("Concluindo o início da sessão…")
+        st.stop()
+
 # Confirmação de saída.
 #
 # Fica aqui, antes do if/else, porque o st.dialog precisa ser chamado no fluxo
@@ -52,13 +73,14 @@ def _confirmar_saida():
         # simples são apagadas aqui: o menu lateral está desenhado nesta
         # tela, e as chaves de widget são varridas no login seguinte.
         limpar_sessao_do_usuario()
+        st.session_state["_logout_cookie_key"] = uuid.uuid4().hex
         st.session_state["pediu_logout"] = True
-        st.rerun()
+        st.rerun(scope="app")
     if cancelar.button("Cancelar", width="stretch"):
         st.rerun()
 
 
-if st.session_state.pop("pediu_logout", False):
+if st.session_state.get("pediu_logout", False):
     opcoes_cookie = opcoes_cookie_login(st.context.url)
     if opcoes_cookie is None:
         st.warning(
@@ -66,13 +88,18 @@ if st.session_state.pop("pediu_logout", False):
             "Acesse o app por HTTPS ou por http://localhost:8501."
         )
     else:
-        cookie_manager.set(
+        cookie_expirado = cookie_manager.set(
             "usuario_logado",
             "",
             expires_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
-            key="expire_logout",
+            key=f"expire_logout_{st.session_state['_logout_cookie_key']}",
             **opcoes_cookie,
         )
+        if not cookie_expirado:
+            st.info("Encerrando a sessão…")
+            st.stop()
+    st.session_state.pop("pediu_logout", None)
+    st.session_state.pop("_logout_cookie_key", None)
     for chave in ("usuario_logado", "nome_usuario", "username", "tipo_usuario"):
         st.session_state.pop(chave, None)
 elif not st.session_state.get("usuario_logado", False):
@@ -94,7 +121,7 @@ if "tipo_usuario" not in st.session_state:
     st.session_state["tipo_usuario"] = ""
 
 if not st.session_state["usuario_logado"]:
-    render_login(cookie_manager)
+    render_login()
 else:
     # ---------- CSS da tela logada ----------
     # Este bloco mora aqui, e não em modules/login.py, porque o <style> de lá
