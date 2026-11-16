@@ -49,16 +49,19 @@ def _confirmar_saida():
         # limpar_sessao_do_usuario em modules/login.py). Só as chaves
         # simples são apagadas aqui: o menu lateral está desenhado nesta
         # tela, e as chaves de widget são varridas no login seguinte.
-        if cookie_manager.get("usuario_logado") is not None:
-            cookie_manager.delete("usuario_logado")
         limpar_sessao_do_usuario()
-        st.session_state.pop("usuario_logado", None)
+        st.session_state["pediu_logout"] = True
         st.rerun()
     if cancelar.button("Cancelar", width="stretch"):
         st.rerun()
 
 
-if not st.session_state.get("usuario_logado", False):
+if st.session_state.pop("pediu_logout", False):
+    if cookie_manager.get("usuario_logado") is not None:
+        cookie_manager.delete("usuario_logado", key="delete_logout")
+    for chave in ("usuario_logado", "nome_usuario", "username", "tipo_usuario"):
+        st.session_state.pop(chave, None)
+elif not st.session_state.get("usuario_logado", False):
     valor_cookie = cookie_manager.get("usuario_logado")
     dados_cookie = restaurar_cookie_login(valor_cookie)
     if dados_cookie:
@@ -67,7 +70,7 @@ if not st.session_state.get("usuario_logado", False):
         st.session_state["nome_usuario"] = dados_cookie["nome_usuario"]
         st.session_state["tipo_usuario"] = dados_cookie["tipo_usuario"]
     elif valor_cookie:
-        cookie_manager.delete("usuario_logado")
+        cookie_manager.delete("usuario_logado", key="delete_invalido")
 
 if "usuario_logado" not in st.session_state:
     st.session_state["usuario_logado"] = False
