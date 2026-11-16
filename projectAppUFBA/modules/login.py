@@ -58,6 +58,26 @@ def opcoes_cookie_login(url):
     return None
 
 
+def enviar_cookie_login(cookie_manager, valor, expira_em, key, opcoes):
+    cookie_manager._remove_extra_spacing()
+    # O wrapper retorna None; o componente retorna a confirmação do navegador.
+    resultado = cookie_manager.cookie_manager(
+        method="set",
+        cookie=_COOKIE_LOGIN,
+        value=valor,
+        options={
+            "path": "/",
+            "expires": expira_em.isoformat(),
+            "secure": opcoes["secure"],
+            "sameSite": opcoes["same_site"],
+        },
+        key=key,
+        default=False,
+    )
+    cookie_manager.cookies[_COOKIE_LOGIN] = valor
+    return resultado
+
+
 def criar_cookie_login(username, nome_usuario, tipo_usuario):
     segredo = _segredo_cookie_login()
     if segredo is None:
@@ -425,6 +445,7 @@ def _formulario_login():
                     # aluno B caía na página do módulo que o A tinha aberto
                     # e o quiz dele abria com o resultado e o gabarito do A.
                     limpar_sessao_do_usuario(com_widgets=True)
+                    st.session_state.pop("_ignorar_cookie_login", None)
                     st.session_state["usuario_logado"] = True
                     st.session_state["nome_usuario"] = nome_usuario
                     # Sem isso o perfil nunca chegava ao menu: app.py decide

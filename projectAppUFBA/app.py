@@ -23,6 +23,7 @@ from modules.login import (
     limpar_sessao_do_usuario,
     restaurar_cookie_login,
     opcoes_cookie_login,
+    enviar_cookie_login,
 )
 from modules.anuncio_simulado import render_anuncio_simulado
 
@@ -37,14 +38,18 @@ if aviso_cookie:
 
 cookie_login_pendente = st.session_state.get("_cookie_login_pendente")
 if cookie_login_pendente:
-    cookie_manager.set(
-        "usuario_logado",
+    cookie_gravado = enviar_cookie_login(
+        cookie_manager,
         cookie_login_pendente["valor"],
-        expires_at=cookie_login_pendente["expira_em"],
-        key=f"set_login_{cookie_login_pendente['key']}",
-        **cookie_login_pendente["opcoes"],
+        cookie_login_pendente["expira_em"],
+        f"set_login_{cookie_login_pendente['key']}",
+        cookie_login_pendente["opcoes"],
     )
-    st.session_state.pop("_cookie_login_pendente", None)
+    if cookie_gravado:
+        st.session_state.pop("_cookie_login_pendente", None)
+    else:
+        st.info("Concluindo o início da sessão…")
+        st.stop()
 
 # Confirmação de saída.
 #
@@ -69,6 +74,9 @@ def _confirmar_saida():
         # simples são apagadas aqui: o menu lateral está desenhado nesta
         # tela, e as chaves de widget são varridas no login seguinte.
         limpar_sessao_do_usuario()
+        # Ignora o valor antigo do componente enquanto o navegador processa
+        # a expiração.
+        st.session_state["_ignorar_cookie_login"] = True
         st.session_state["_logout_cookie_key"] = uuid.uuid4().hex
         st.session_state["pediu_logout"] = True
         st.rerun(scope="app")
@@ -84,18 +92,23 @@ if st.session_state.get("pediu_logout", False):
             "Acesse o app por HTTPS ou por http://localhost:8501."
         )
     else:
-        cookie_manager.set(
-            "usuario_logado",
+        cookie_expirado = enviar_cookie_login(
+            cookie_manager,
             "",
-            expires_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
-            key=f"expire_logout_{st.session_state['_logout_cookie_key']}",
-            **opcoes_cookie,
+            datetime(1970, 1, 1, tzinfo=timezone.utc),
+            f"expire_logout_{st.session_state['_logout_cookie_key']}",
+            opcoes_cookie,
         )
+        if not cookie_expirado:
+            st.info("Encerrando a sessão…")
+            st.stop()
     st.session_state.pop("pediu_logout", None)
     st.session_state.pop("_logout_cookie_key", None)
     for chave in ("usuario_logado", "nome_usuario", "username", "tipo_usuario"):
         st.session_state.pop(chave, None)
-elif not st.session_state.get("usuario_logado", False):
+elif not st.session_state.get(
+    "_ignorar_cookie_login", False
+) and not st.session_state.get("usuario_logado", False):
     valor_cookie = cookie_manager.get("usuario_logado")
     dados_cookie = restaurar_cookie_login(valor_cookie)
     if dados_cookie:
