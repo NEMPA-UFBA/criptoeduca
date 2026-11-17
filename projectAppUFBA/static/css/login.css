@@ -12,7 +12,7 @@
 /* ---------- Superfícies ---------- */
 /* O app usa o dark theme padrão do Streamlit: o cartão branco
    original ficava ilegível sobre o fundo escuro. */
-[data-testid="stForm"] {
+[data-testid="stForm"], .st-key-form_cadastro {
     background-color: #161a23;
     border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 14px;
@@ -101,21 +101,20 @@ div.stMarkdown p.login-subtitle {
 
 /* ---------- Campos ---------- */
 /* A borda real do campo fica no elemento pai, não no input. */
-[data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+[data-testid="stForm"] [data-testid="stTextInputRootElement"], .st-key-form_cadastro [data-testid="stTextInputRootElement"] {
     background-color: #1e2430;
     border-radius: 10px;
 }
-[data-testid="stForm"] [data-testid="stWidgetLabel"] p {
+[data-testid="stForm"] [data-testid="stWidgetLabel"] p, .st-key-form_cadastro [data-testid="stWidgetLabel"] p {
     color: #e2e8f0;
     font-size: 13px;
     font-weight: 600;
 }
 /* ---------- Seletor de perfil (st.radio) ---------- */
-/* A regra antiga era para o stSelectbox do perfil. Não há mais nenhum
-   seletor dentro do formulário — o único que existe é o do perfil, e
-   ele foi parar fora do form de propósito (é o que faz o campo da
-   chave reagir na hora). Por isso estas regras não levam
-   [data-testid="stForm"]: alcançariam nada, e o radio ficaria com o
+/* A regra antiga era para o stSelectbox do perfil. O radio do perfil fica
+   fora do cartão de cadastro de propósito — é o que faz o campo da chave
+   aparecer na hora. Por isso estas regras não levam [data-testid="stForm"]
+   nem .st-key-form_cadastro: alcançariam nada, e o radio ficaria com o
    claro do tema, destoando dos campos de texto ao lado. */
 [data-testid="stRadio"] [role="radiogroup"] {
     background-color: #1e2430;
@@ -152,10 +151,10 @@ div.stMarkdown p.login-subtitle {
    abraçar o rótulo. Sem esta regra, width:100% no próprio botão é 100%
    dos 68px que ele já ocupa: uma circularidade. A largura é forçada
    no container, e o botão preenche. */
-[data-testid="stForm"] [data-testid="stElementContainer"] {
+[data-testid="stForm"] [data-testid="stElementContainer"], .st-key-form_cadastro [data-testid="stElementContainer"] {
     width: 100%;
 }
-[data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
+[data-testid="stForm"] [class*="st-key-FormSubmitter"] button, .st-key-btn_cadastrar button {
     width: 100%;
     background-color: #4F46E5;
     color: #ffffff !important;
@@ -167,11 +166,11 @@ div.stMarkdown p.login-subtitle {
     padding: 0.5rem 1rem;
     transition: background-color 0.3s ease, transform 0.1s ease;
 }
-[data-testid="stForm"] [class*="st-key-FormSubmitter"] button:hover {
+[data-testid="stForm"] [class*="st-key-FormSubmitter"] button:hover, .st-key-btn_cadastrar button:hover {
     background-color: #4338CA;
     color: #ffffff !important;
 }
-[data-testid="stForm"] [class*="st-key-FormSubmitter"] button:active {
+[data-testid="stForm"] [class*="st-key-FormSubmitter"] button:active, .st-key-btn_cadastrar button:active {
     transform: translateY(1px);
 }
 
@@ -181,7 +180,7 @@ div.stMarkdown p.login-subtitle {
    a do Streamlit, com ou sem !important. O halo aparece e some com o
    foco, medido. Preferi um efeito verificável a uma declaração
    decorativa no código. */
-[data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within {
+[data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within, .st-key-form_cadastro [data-testid="stTextInputRootElement"]:focus-within {
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
 }
 
@@ -191,18 +190,45 @@ div.stMarkdown p.login-subtitle {
    mesma cara de um campo liberado. A opacidade é a diferença visível
    entre "digitável" e "não digitável", que é o que o usuário precisa
    ver. */
-[data-testid="stForm"] [data-testid="stTextInputRootElement"]:has(input:disabled) {
+[data-testid="stForm"] [data-testid="stTextInputRootElement"]:has(input:disabled), .st-key-form_cadastro [data-testid="stTextInputRootElement"]:has(input:disabled) {
     opacity: 0.45;
 }
-[data-testid="stForm"] [class*="st-key-FormSubmitter"] button:disabled {
+[data-testid="stForm"] [class*="st-key-FormSubmitter"] button:disabled, .st-key-btn_cadastrar button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
 }
 
 /* ---------- Aba de cadastro: dica de teste ---------- */
-[data-testid="stForm"] [data-testid="stAlertContainer"] {
+[data-testid="stForm"] [data-testid="stAlertContainer"], .st-key-form_cadastro [data-testid="stAlertContainer"] {
     background-color: rgba(79, 70, 229, 0.12);
     border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+/* ---------- Cadastro: validação em tempo real ---------- */
+/* A borda vermelha dos e-mails é injetada por login.py só enquanto os dois
+   campos divergem; aqui fica o texto do aviso e o checklist da senha. */
+.st-key-form_cadastro p.erro-email {
+    color: #f87171;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0.15rem 0 0.6rem;
+}
+.st-key-form_cadastro .senha-requisitos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.9rem;
+    margin: 0.4rem 0 0.6rem;
+}
+.st-key-form_cadastro .senha-item {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.st-key-form_cadastro .senha-item.ok {
+    color: #4ade80;
+}
+.st-key-form_cadastro .senha-item.falta {
+    color: #94a3b8;
 }
 
 /* ---------- Interatividade: hover e pressionado ---------- */
@@ -257,7 +283,7 @@ div.stMarkdown p.login-subtitle {
     transform: translateY(1px);
 }
 
-[data-testid="stForm"] [data-testid="stTextInputRootElement"] {
+[data-testid="stForm"] [data-testid="stTextInputRootElement"], .st-key-form_cadastro [data-testid="stTextInputRootElement"] {
     transition: box-shadow 0.3s ease;
 }
 /* Campo de texto. Não é border-color: o comentário em "Foco" acima já
@@ -268,7 +294,7 @@ div.stMarkdown p.login-subtitle {
    mesma especificidade, e como esta vem depois, um :hover sem o :not
    venceria o foco e trocaria o halo grosso pelo fino toda vez que o
    mouse passasse sobre o campo em foco. */
-[data-testid="stForm"] [data-testid="stTextInputRootElement"]:not(:focus-within):hover {
+[data-testid="stForm"] [data-testid="stTextInputRootElement"]:not(:focus-within):hover, .st-key-form_cadastro [data-testid="stTextInputRootElement"]:not(:focus-within):hover {
     box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25);
 }
 
@@ -291,7 +317,7 @@ div.stMarkdown p.login-subtitle {
         padding-top: 2rem;
         padding-bottom: 1.5rem;
     }
-    [data-testid="stForm"] {
+    [data-testid="stForm"], .st-key-form_cadastro {
         padding: 1.5rem;
     }
     div.stMarkdown p.login-title {
@@ -301,7 +327,7 @@ div.stMarkdown p.login-subtitle {
         font-size: 20px !important;
     }
     /* Tablet: alvo de toque confortável, sem ser o do celular */
-    [data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
+    [data-testid="stForm"] [class*="st-key-FormSubmitter"] button, .st-key-btn_cadastrar button {
         min-height: 44px;
     }
 }
@@ -313,7 +339,7 @@ div.stMarkdown p.login-subtitle {
         padding-left: 0.75rem;
         padding-right: 0.75rem;
     }
-    [data-testid="stForm"] {
+    [data-testid="stForm"], .st-key-form_cadastro {
         padding: 1.1rem;
         border-radius: 12px;
         box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.9);
@@ -346,12 +372,13 @@ div.stMarkdown p.login-subtitle {
 
     /* 16px evita o zoom automático do iOS ao focar o campo */
     [data-testid="stForm"] [data-testid="stTextInputRootElement"] input,
+    .st-key-form_cadastro [data-testid="stTextInputRootElement"] input,
     [data-testid="stRadio"] label {
         font-size: 16px !important;
     }
 
     /* No celular o botão é o alvo de toque mais importante da tela */
-    [data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
+    [data-testid="stForm"] [class*="st-key-FormSubmitter"] button, .st-key-btn_cadastrar button {
         min-height: 48px;
     }
 }
@@ -371,14 +398,16 @@ div.stMarkdown p.login-subtitle {
    botão aqui, quem tem prefers-reduced-motion ligado continuava
    recebendo 0.3s de transição em todo o resto. */
 @media (prefers-reduced-motion: reduce) {
-    [data-testid="stForm"] [class*="st-key-FormSubmitter"] button,
+    [data-testid="stForm"] [class*="st-key-FormSubmitter"] button, .st-key-btn_cadastrar button,
     [data-testid="stTabs"] [role="tab"],
     [data-testid="stRadio"] [data-testid="stRadioOption"],
     [data-testid="stForm"] [data-testid="stTextInputRootElement"],
+    .st-key-form_cadastro [data-testid="stTextInputRootElement"],
     [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
         transition: none;
     }
     [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:active,
+    .st-key-btn_cadastrar button:active,
     [data-testid="stRadio"] [data-testid="stRadioOption"]:active {
         transform: none;
     }

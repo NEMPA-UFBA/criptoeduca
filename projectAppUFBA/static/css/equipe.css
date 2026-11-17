@@ -1,0 +1,18 @@
+/* Espaçamento vertical extra só da página Equipe e Diário de Bordo.
+   O contêiner com key equipe_diario isola estas regras do resto do app. */
+
+/* Distância entre uma fileira de cards e outra. */
+[class*="st-key-equipe_diario"] div[data-testid="stHorizontalBlock"] {
+    margin-bottom: 1rem;
+}
+
+/* Dentro do card, os blocos ficam mais separados (avatar, nome, função,
+   badge e resumo) e o card ganha um pouco mais de respiro no topo e embaixo. */
+[class*="st-key-equipe_diario"] .ce-card {
+    gap: 0.9rem;
+    padding: 1.35rem 1.2rem 1.5rem;
+}
+
+[class*="st-key-equipe_diario"] .ce-card p.ce-titulo {
+    margin-bottom: 0.15rem;
+}

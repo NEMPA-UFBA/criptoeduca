@@ -222,8 +222,9 @@ def _compartilhar_cifra(username_atual):
         seguidos = listar_seguidos(username_atual)
         if not seguidos:
             st.info(
-                "Você ainda não segue ninguém. Abra **Meu Perfil → Seguir "
-                "usuários**, siga alguém e volte aqui para compartilhar."
+                "Você ainda não segue ninguém. Use o botão **🤝 Seguir "
+                "pessoas** acima (ou abra **Meu Perfil → Seguir usuários**), "
+                "siga alguém e volte aqui para compartilhar."
             )
             return
 
@@ -251,6 +252,16 @@ def _compartilhar_cifra(username_atual):
 
 def _voltar_ao_menu():
     st.session_state["voltar_para_menu"] = True
+
+
+def _abrir_seguir_usuarios():
+    """Pedido de atalho: abrir o perfil já na aba Seguir usuários.
+
+    Quem abre o diálogo é app.py, antes do radio da barra lateral. Aqui só
+    sinalizamos o pedido, pelo mesmo motivo do _voltar_ao_menu: o mural é
+    desenhado depois e gravar a key do widget "menu" aqui daria erro.
+    """
+    st.session_state["abrir_seguir_usuarios"] = True
 
 
 def _publicar_mensagem(username_atual):
@@ -313,6 +324,16 @@ def _render_sessao_interativa(modo_voluntario=False):
             key=f"voltar_mural_menu_{username_atual}",
             on_click=_voltar_ao_menu,
         )
+
+    # Atalho para a parte de seguir pessoas. Não é outra página: é a aba
+    # "Seguir usuários" do diálogo Meu Perfil, aberta direto por app.py.
+    # Fica FORA do if modo_voluntario: o mural do primeiro acesso também é
+    # "a página do mural", e era lá que o botão estava faltando.
+    st.button(
+        "🤝 Seguir pessoas",
+        key=f"seguir_pessoas_mural_{username_atual}",
+        on_click=_abrir_seguir_usuarios,
+    )
 
     st.title("🔐 Mural de Criptografia")
 
