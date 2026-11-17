@@ -16,7 +16,7 @@ historico do projeto; a pagina se chama "Mural de Criptografia".
 
 import html
 import random
-
+import functools
 import streamlit as st
 
 from modules.estilo import aplicar_css
@@ -88,6 +88,26 @@ def criptografar_texto(texto, username):
     mapa = gerar_cifra_usuario(username)
     return "".join(mapa[char] for char in texto)
 
+
+@functools.lru_cache(maxsize=128)
+def _mapa_inverso(username):
+    """Cifra -> caractere original, para decifrar as mensagens.
+
+    A cifra de um username nunca muda, entao o mapa e montado uma vez e
+    reaproveitado. lru_cache, e nao st.cache_data: devolve sempre o mesmo
+    dicionario, sem copiar a cada chamada. Guarda no maximo 128 mapas de
+    110 pares. Quem recebe so le o dicionario, nunca altera.
+    """
+    return {
+        cifrado: original
+        for original, cifrado in gerar_cifra_usuario(username).items()
+    }
+
+
+def descriptografar_texto(texto, username):
+    """Desfaz a cifra de substituicao do username (inverso de criptografar)."""
+    inverso = _mapa_inverso(username)
+    return "".join(inverso.get(char, char) for char in texto)
 
 def _css():
     # O CSS do mural fica em static/css/mural.css.
@@ -389,6 +409,24 @@ def _render_sessao_interativa(modo_voluntario=False):
                 """, unsafe_allow_html=True)
 
             with col_botoes:
+                # Botao de decifrar: so nas mensagens que a pessoa pode ler,
+                # as dela e as de quem compartilhou a cifra com ela (a mesma
+                # regra do filtro). Quem nao recebeu a cifra nao ve o botao
+                # nem recebe o texto aberto.
+                # st.popover abre e fecha so no navegador: abrir nao redesenha
+                # a pagina e nao guarda nada no session_state.
+                if autor_msg == username_atual or autor_msg in cifras_compartilhadas:
+                    with st.popover("🔓 Decifrar"):
+                        st.caption(
+                            "Sua mensagem" if autor_msg == username_atual
+                            else f"Cifra compartilhada por {autor_msg}"
+                        )
+                        # A mensagem decifrada volta a ter "<" e ">" e vem do
+                        # banco: mesmo escape do texto cifrado.
+                        st.markdown(
+                            f"**{html.escape(descriptografar_texto(msg, autor_msg))}**"
+                        )
+
                 # O proprio autor pode limpar/excluir a sua mensagem
                 if autor_msg == username_atual:
                     st.button(

@@ -53,7 +53,11 @@ def _sair_da_conta():
     # varridas no login seguinte.
     limpar_sessao_do_usuario()
     st.session_state["usuario_logado"] = False
-
+    st.rerun()
+    
+def _cancelar_saida():
+    # Mesmo motivo: sem o rerun do app inteiro, o diálogo não fecha.
+    st.rerun()
 
 @st.dialog("Sair da conta?", width="small")
 def _confirmar_saida():
@@ -74,7 +78,7 @@ def _confirmar_saida():
     cancelar.button(
         "Cancelar",
         width="stretch",
-        on_click=lambda: None,
+        on_click=_cancelar_saida,
     )
 
 
