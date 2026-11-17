@@ -1,3 +1,7 @@
+import uuid
+from datetime import datetime, timezone
+
+import extra_streamlit_components as stx
 import streamlit as st
 import html
 import re
@@ -23,6 +27,9 @@ from modules.modulos import carregar_modulos
 from modules.login import (
     render_login,
     limpar_sessao_do_usuario,
+    restaurar_cookie_login,
+    opcoes_cookie_login,
+    enviar_cookie_login,
 )
 from modules.home import render_home
 from modules.anuncio_simulado import render_anuncio_simulado
@@ -36,6 +43,27 @@ def _chave_da_pagina(nome):
 
 # Configuração global
 st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
+
+cookie_manager = stx.CookieManager(key="cookie_manager")
+
+aviso_cookie = st.session_state.pop("_cookie_login_aviso", None)
+if aviso_cookie:
+    st.warning(aviso_cookie)
+
+cookie_login_pendente = st.session_state.get("_cookie_login_pendente")
+if cookie_login_pendente:
+    cookie_gravado = enviar_cookie_login(
+        cookie_manager,
+        cookie_login_pendente["valor"],
+        cookie_login_pendente["expira_em"],
+        f"set_login_{cookie_login_pendente['key']}",
+        cookie_login_pendente["opcoes"],
+    )
+    if cookie_gravado:
+        st.session_state.pop("_cookie_login_pendente", None)
+    else:
+        st.info("Concluindo o início da sessão…")
+        st.stop()
 
 # Confirmação de saída.
 #
@@ -52,8 +80,10 @@ def _sair_da_conta():
     # lateral está desenhado nesta tela, e as chaves de widget são
     # varridas no login seguinte.
     limpar_sessao_do_usuario()
-    st.session_state["usuario_logado"] = False
-    st.rerun()
+    st.session_state["_ignorar_cookie_login"] = True
+    st.session_state["_logout_cookie_key"] = uuid.uuid4().hex
+    st.session_state["pediu_logout"] = True
+    st.rerun(scope="app")
     
 def _cancelar_saida():
     # Mesmo motivo: sem o rerun do app inteiro, o diálogo não fecha.
@@ -62,8 +92,6 @@ def _cancelar_saida():
 @st.dialog("Sair da conta?", width="small")
 def _confirmar_saida():
     st.write("Você vai voltar para a tela de login.")
-    # _sair_da_conta() apaga os dados da pessoa antes do rerun. Se o dialogo
-    # ainda estiver aberto nesse rerun, as chaves podem nao existir mais.
     nome = st.session_state.get("nome_usuario") or ""
     tipo = st.session_state.get("tipo_usuario") or ""
     if nome:
@@ -81,6 +109,41 @@ def _confirmar_saida():
         on_click=_cancelar_saida,
     )
 
+
+if st.session_state.get("pediu_logout", False):
+    opcoes_cookie = opcoes_cookie_login(st.context.url)
+    if opcoes_cookie is None:
+        st.warning(
+            "Não foi possível expirar o cookie de login por esta conexão. "
+            "Acesse o app por HTTPS ou por http://localhost:8501."
+        )
+    else:
+        cookie_expirado = enviar_cookie_login(
+            cookie_manager,
+            "",
+            datetime(1970, 1, 1, tzinfo=timezone.utc),
+            f"expire_logout_{st.session_state['_logout_cookie_key']}",
+            opcoes_cookie,
+        )
+        if not cookie_expirado:
+            st.info("Encerrando a sessão…")
+            st.stop()
+    st.session_state.pop("pediu_logout", None)
+    st.session_state.pop("_logout_cookie_key", None)
+    for chave in ("usuario_logado", "nome_usuario", "username", "tipo_usuario"):
+        st.session_state.pop(chave, None)
+elif not st.session_state.get(
+    "_ignorar_cookie_login", False
+) and not st.session_state.get("usuario_logado", False):
+    valor_cookie = cookie_manager.get("usuario_logado")
+    dados_cookie = restaurar_cookie_login(valor_cookie)
+    if dados_cookie:
+        st.session_state["usuario_logado"] = True
+        st.session_state["username"] = dados_cookie["username"]
+        st.session_state["nome_usuario"] = dados_cookie["nome_usuario"]
+        st.session_state["tipo_usuario"] = dados_cookie["tipo_usuario"]
+    elif valor_cookie:
+        cookie_manager.delete("usuario_logado", key="delete_invalido")
 
 if "usuario_logado" not in st.session_state:
     st.session_state["usuario_logado"] = False

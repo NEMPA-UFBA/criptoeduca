@@ -1,8 +1,16 @@
 import streamlit as st
+import base64
+import binascii
+import json
 import re
 import hmac
 import hashlib
-from datetime import datetime
+import os
+import uuid
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
+from streamlit.errors import StreamlitSecretNotFoundError
+from psycopg2 import OperationalError
 from modules.database import verificar_login, cadastrar_usuario
 from modules.leitura import CHAVE_LEITURA
 from modules import ratelimit
@@ -17,6 +25,121 @@ from modules.estilo import aplicar_css
 ALFABETO_CHAVE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 TAMANHO_CHAVE = 12
+
+_COOKIE_LOGIN = "usuario_logado"
+_DURACAO_COOKIE_LOGIN = timedelta(days=30)
+
+
+def _segredo_cookie_login():
+    segredo = os.environ.get("COOKIE_SECRET")
+    if not segredo:
+        try:
+            segredo = st.secrets["COOKIE_SECRET"]
+        except (KeyError, StreamlitSecretNotFoundError):
+            return None
+
+    if not isinstance(segredo, str) or len(segredo.encode("utf-8")) < 32:
+        return None
+    return segredo.encode("utf-8")
+
+
+def opcoes_cookie_login(url):
+    if not isinstance(url, str):
+        return None
+
+    url_acesso = urlsplit(url)
+    if url_acesso.scheme == "https":
+        return {"secure": True, "same_site": "none"}
+    if url_acesso.scheme == "http" and url_acesso.hostname in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        return {"secure": False, "same_site": "lax"}
+    return None
+
+
+def enviar_cookie_login(cookie_manager, valor, expira_em, key, opcoes):
+    cookie_manager._remove_extra_spacing()
+    # O wrapper retorna None; o componente retorna a confirmação do navegador.
+    resultado = cookie_manager.cookie_manager(
+        method="set",
+        cookie=_COOKIE_LOGIN,
+        value=valor,
+        options={
+            "path": "/",
+            "expires": expira_em.isoformat(),
+            "secure": opcoes["secure"],
+            "sameSite": opcoes["same_site"],
+        },
+        key=key,
+        default=False,
+    )
+    cookie_manager.cookies[_COOKIE_LOGIN] = valor
+    return resultado
+
+
+def criar_cookie_login(username, nome_usuario, tipo_usuario):
+    segredo = _segredo_cookie_login()
+    if segredo is None:
+        return None
+
+    expira_em = datetime.now(timezone.utc) + _DURACAO_COOKIE_LOGIN
+    payload = {
+        "username": username,
+        "nome_usuario": nome_usuario,
+        "tipo_usuario": tipo_usuario,
+        "exp": int(expira_em.timestamp()),
+    }
+    payload_codificado = base64.urlsafe_b64encode(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    assinatura = hmac.new(
+        segredo, payload_codificado.encode("ascii"), hashlib.sha256
+    ).hexdigest()
+    return f"{payload_codificado}.{assinatura}", expira_em
+
+
+def restaurar_cookie_login(valor_cookie):
+    segredo = _segredo_cookie_login()
+    if segredo is None or not isinstance(valor_cookie, str) or len(valor_cookie) > 4096:
+        return None
+
+    try:
+        payload_codificado, assinatura = valor_cookie.rsplit(".", 1)
+        if not re.fullmatch(r"[0-9a-f]{64}", assinatura):
+            return None
+        assinatura_esperada = hmac.new(
+            segredo, payload_codificado.encode("ascii"), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(assinatura, assinatura_esperada):
+            return None
+
+        payload_bytes = base64.urlsafe_b64decode(
+            payload_codificado + "=" * (-len(payload_codificado) % 4)
+        )
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    if not all(
+        isinstance(payload.get(chave), str) and payload[chave]
+        for chave in ("username", "nome_usuario", "tipo_usuario")
+    ):
+        return None
+    if type(payload.get("exp")) is not int:
+        return None
+    if payload["exp"] <= int(datetime.now(timezone.utc).timestamp()):
+        return None
+
+    return {
+        "username": payload["username"],
+        "nome_usuario": payload["nome_usuario"],
+        "tipo_usuario": payload["tipo_usuario"],
+    }
+
 
 def validar_email_formato(email):
     """Valida se o e-mail tem um formato padrão (ex: usuario@dominio.com)."""
@@ -318,7 +441,14 @@ def _formulario_login():
                 st.error("Por favor, preencha o usuário e a senha.")
 
             else:
-                credenciais = verificar_login(usuario_input, senha_input)
+                try:
+                    credenciais = verificar_login(usuario_input, senha_input)
+                except OperationalError:
+                    st.error(
+                        "Não foi possível acessar o banco de dados agora. "
+                        "Tente novamente em alguns instantes."
+                    )
+                    return
 
                 if credenciais:
                     nome_usuario, tipo_usuario = credenciais
@@ -327,6 +457,7 @@ def _formulario_login():
                     # aluno B caía na página do módulo que o A tinha aberto
                     # e o quiz dele abria com o resultado e o gabarito do A.
                     limpar_sessao_do_usuario(com_widgets=True)
+                    st.session_state.pop("_ignorar_cookie_login", None)
                     st.session_state["usuario_logado"] = True
                     st.session_state["nome_usuario"] = nome_usuario
                     # Sem isso o perfil nunca chegava ao menu: app.py decide
@@ -334,11 +465,35 @@ def _formulario_login():
                     # mundo e fazia todos caírem no menu do Aluno.
                     st.session_state["tipo_usuario"] = tipo_usuario
                     st.session_state["username"] = usuario_input
+                    cookie_login = criar_cookie_login(
+                        usuario_input, nome_usuario, tipo_usuario
+                    )
+                    if cookie_login is None:
+                        st.session_state["_cookie_login_aviso"] = (
+                            "A sessão está autenticada, mas a retenção de login está "
+                            "desativada. Configure COOKIE_SECRET no `.env` local ou "
+                            "em `.streamlit/secrets.toml`."
+                        )
+                    else:
+                        opcoes_cookie = opcoes_cookie_login(st.context.url)
+                        if opcoes_cookie is None:
+                            st.session_state["_cookie_login_aviso"] = (
+                                "A retenção de login exige HTTPS. Em desenvolvimento, "
+                                "acesse o app por http://localhost:8501."
+                            )
+                        else:
+                            valor_cookie, expira_em = cookie_login
+                            st.session_state["_cookie_login_pendente"] = {
+                                "valor": valor_cookie,
+                                "expira_em": expira_em,
+                                "opcoes": opcoes_cookie,
+                                "key": uuid.uuid4().hex,
+                            }
                     # Zera só no acerto: quem entrou não está sob ataque, e uma
                     # sessão legítima não pode herdar bloqueio de outra.
                     _zerar_login(usuario_input)
                     st.success("Login efetuado com sucesso!")
-                    st.rerun()  # Recarrega a página para entrar no sistema
+                    st.rerun(scope="app")
                 else:
                     # Usuário inexistente e senha errada contam no mesmo
                     # contador: a tela não distingue os dois casos, e o
