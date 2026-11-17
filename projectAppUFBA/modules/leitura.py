@@ -27,13 +27,13 @@ por modulo, entao a liberacao do quiz sobrevive a fechar o navegador.
 
 import html
 import os
+from urllib.parse import quote
 
 import streamlit as st
-from streamlit_pdf_viewer import pdf_viewer
 
 from modules.database import (
+    carregar_estado_modulos,
     registrar_leitura,
-    modulo_lido,
 )
 from modules.estilo import html_bruto
 from modules.modulos import PASTA_PDFS, modulo_por_slug, caminho_pdf
@@ -64,6 +64,22 @@ def _caminho_pdf_seguro(modulo):
         return None, "Não consegui ler o PDF: %s" % erro
 
     return caminho_absoluto, None
+
+
+def _url_do_pdf_estatico(caminho_absoluto):
+    """Monta a URL pública do PDF servido pela pasta static do Streamlit.
+
+    O visualizador de PDF do componente antigo parava de desenhar as
+    páginas em algumas versões do Chrome. O iframe abaixo usa o leitor
+    nativo do navegador, que recebe o mesmo arquivo por esta URL.
+
+    O caminho relativo é calculado a partir de PASTA_PDFS, então um PDF
+    fora dessa pasta nunca chega aqui: _caminho_pdf_seguro já recusou.
+    """
+    relativo = os.path.relpath(caminho_absoluto, PASTA_PDFS)
+    relativo = relativo.replace(os.sep, "/")
+    base = (st.get_option("server.baseUrlPath") or "").rstrip("/")
+    return f"{base}/app/static/modulos/{quote(relativo)}"
 
 
 def render_pagina_leitura(slug):
@@ -121,7 +137,21 @@ def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
         # Sem botao de baixar. O botao entregava o arquivo do professor
         # na mao do aluno, e quem tem o arquivo pode edita-lo e
         # redistribuir -- o material do professor saia da pagina dele.
-        pdf_viewer(caminho_absoluto, width=700, height=800)
+        #
+        # O PDF vai num iframe apontando para a URL estatica do proprio
+        # Streamlit. O leitor nativo do navegador desenha as paginas; o
+        # componente streamlit-pdf-viewer ficava com a area em branco no
+        # Chrome atual (o PDF.js dele não montava as páginas).
+        url_pdf = _url_do_pdf_estatico(caminho_absoluto)
+        st.markdown(
+            html_bruto(
+                f'<iframe src="{html.escape(url_pdf, quote=True)}" '
+                'width="100%" height="800" '
+                'style="border:0;border-radius:12px;background:#fff;" '
+                'title="Material de leitura do módulo"></iframe>'
+            ),
+            unsafe_allow_html=True,
+        )
     else:
         st.info(
             "Este módulo ainda não tem material em PDF na pasta "
@@ -139,21 +169,26 @@ def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
     # ---------- Os botoes ----------
     col1, col2 = st.columns(2)
 
-    if col1.button(
+    col1.button(
         "✅ Concluir a leitura e liberar o quiz",
         key=f"concluir_leitura_{slug}",
         type="primary",
         width="stretch",
-    ):
-        _registrar_e_voltar(slug)
+        on_click=_registrar_e_voltar,
+        args=(slug,),
+    )
 
-    if col2.button(
+    col2.button(
         "← Voltar sem concluir",
         key=f"voltar_sem_concluir_{slug}",
         width="stretch",
-    ):
-        st.session_state.pop(CHAVE_LEITURA, None)
-        st.rerun()
+        on_click=_voltar_sem_concluir,
+    )
+
+
+def _voltar_sem_concluir():
+    """Fecha a leitura sem registrar nada no banco."""
+    st.session_state.pop(CHAVE_LEITURA, None)
 
 
 def _registrar_e_voltar(slug):
@@ -162,6 +197,9 @@ def _registrar_e_voltar(slug):
     O registro e no banco, e nao so na sessao: se o aluno fechar o
     navegador e voltar amanha, o quiz continua liberado. E o que faz a
     leitura valer alguma coisa.
+
+    Roda como callback do botao. O rerun que redesenha a pagina do
+    modulo ja acontece depois do callback, entao nao ha st.rerun aqui.
     """
     username = st.session_state.get("username", "")
     if username:
@@ -170,13 +208,11 @@ def _registrar_e_voltar(slug):
     # A leitura acabou. A pagina do modulo reaparece, com o quiz
     # liberado.
     st.session_state.pop(CHAVE_LEITURA, None)
-    st.rerun()
 
 
 def abrir_leitura(slug):
-    """Comeca a leitura de um modulo. Usado pelo botao do modulo."""
+    """Comeca a leitura de um modulo. Usado como callback do botao."""
     st.session_state[CHAVE_LEITURA] = slug
-    st.rerun()
 
 
 def quiz_liberado(slug):
@@ -184,8 +220,12 @@ def quiz_liberado(slug):
 
     A leitura e o que libera o quiz. Um modulo sem leitura registrada
     fica com o quiz bloqueado -- e o aluno ve o porque.
+
+    Usa o mesmo cache de carregar_estado_modulos que a pagina do modulo,
+    em vez de uma segunda consulta so para esta resposta.
     """
     username = st.session_state.get("username", "")
     if not username:
         return False
-    return modulo_lido(username, slug)
+    _, lidos = carregar_estado_modulos(username)
+    return slug in lidos

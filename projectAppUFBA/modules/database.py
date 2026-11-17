@@ -9,6 +9,7 @@ import bcrypt
 import streamlit as st
 import os
 import logging
+import threading
 from streamlit.errors import StreamlitSecretNotFoundError
 from dotenv import load_dotenv
 
@@ -63,17 +64,54 @@ def _pool_postgres():
         )
 
     return ThreadedConnectionPool(
-        minconn=1,
+        minconn=2,
         maxconn=DB_POOL_MAX_CONNECTIONS,
         dsn=str(dsn),
         connect_timeout=DB_CONNECT_TIMEOUT_SECONDS,
     )
 
 
+# --- ESQUEMA GARANTIDO UMA VEZ POR PROCESSO ---
+#
+# O app nunca chamava criar_tabelas(): ela so rodava manualmente pelo
+# init_db.py. Por isso, tabelas novas (como compartilhamentos_cifra) nao
+# existiam no banco e a consulta quebrava com UndefinedTable.
+#
+# Em vez de chamar criar_tabelas() a cada rerun (o que pesaria a cada clique),
+# o esquema e verificado UMA unica vez por processo do servidor, na primeira
+# conexao pedida. Depois disso, o custo em cada conectar() e so a leitura de
+# um booleano. O lock evita que duas sessoes simultaneas rodem a criacao ao
+# mesmo tempo logo apos o servidor subir.
+_ESQUEMA_PRONTO = False
+_ESQUEMA_LOCK = threading.Lock()
+
+
+def _garantir_esquema(pool):
+    global _ESQUEMA_PRONTO
+    if _ESQUEMA_PRONTO:
+        return
+    with _ESQUEMA_LOCK:
+        if _ESQUEMA_PRONTO:  # outra thread ja terminou enquanto esperavamos
+            return
+        conn = pool.getconn()
+        try:
+            _criar_tabelas(conn)
+            _ESQUEMA_PRONTO = True
+        except Exception:
+            # Nao marca como pronto: a proxima conexao tenta de novo.
+            conn.rollback()
+            logger.exception("Falha ao preparar o esquema do banco.")
+            raise
+        finally:
+            pool.putconn(conn)
+
+
 @contextmanager
 def conectar():
     """Empresta uma conexao do pool e sempre a devolve ao terminar."""
     pool = _pool_postgres()
+    if not _ESQUEMA_PRONTO:
+        _garantir_esquema(pool)
     conn = pool.getconn()
     try:
         yield conn
@@ -110,8 +148,8 @@ def _senha_admin_inicial():
 
 
 def criar_tabelas():
-    with conectar() as conn:
-        _criar_tabelas(conn)
+    """Execucao manual (init_db.py). Usa o mesmo caminho unico do app."""
+    _garantir_esquema(_pool_postgres())
 
 
 def sincronizar_schema_banco(conn):
@@ -131,6 +169,8 @@ def sincronizar_schema_banco(conn):
         ("cor", "TEXT DEFAULT '#4F46E5'"),
         ("pdf", "TEXT DEFAULT ''"),
         ("quiz", "TEXT DEFAULT '[]'"),
+        ("categoria", "TEXT DEFAULT 'Outros'"),
+        ("ordem", "INTEGER DEFAULT 900"),
         ("autor", "TEXT DEFAULT ''"),
         ("ativo", "INTEGER DEFAULT 1"),
         ("data", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
@@ -165,23 +205,21 @@ def _criar_tabelas(conn):
             email TEXT NOT NULL,
             tipo TEXT NOT NULL,
             password TEXT NOT NULL,
+            foto_perfil BYTEA,
             primeiro_acesso INTEGER DEFAULT 1
         )
     ''')
 
     # 2. Inspeciona as colunas existentes na tabela
-    c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'usuarios'")
-    colunas_existentes = [coluna[1] for coluna in c.fetchall()]
-
+    #c.execute("SELECT * FROM information_schema.columns WHERE table_name = 'usuarios'")
+    # colunas_existentes = [coluna[1] for coluna in c.fetchall()]
+    # #apagado por redundancia, pois o comando abaixo ja cria as colunas caso nao existam, entao não precisa inspecionar
+   
     # 3. Adiciona as colunas faltantes sem apagar dados
-    if "primeiro_acesso" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primeiro_acesso INTEGER DEFAULT 1")
-
-    if "email" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''")
-
-    if "tipo" not in colunas_existentes:
-        c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'Aluno'")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS primeiro_acesso INTEGER DEFAULT 1")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'Aluno'")
+    c.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_perfil BYTEA")
         
     # --- E-MAIL ÚNICO ---
     # Índice único em vez de UNIQUE na definição da tabela: o SQLite não tem
@@ -215,18 +253,25 @@ def _criar_tabelas(conn):
     if "ativo" not in colunas_mural:
         c.execute("ALTER TABLE mural ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
 
-    # --- MURAL: APOSENTA A CIFRA ANTIGA ---
-    # As mensagens gravadas antes do AES-128-GCM usavam uma cifra de
-    # substituicao derivada do username -- reversivel por qualquer pessoa.
-    # Elas nao sao apagadas (o padrao do projeto e inativar, nao excluir),
-    # mas deixam de aparecer no mural. O filtro e idempotente: toda mensagem
-    # nova comeca com "aes-gcm-", entao nunca e afetada por este UPDATE.
-    c.execute(
-        "UPDATE mural SET ativo = 0 "
-        "WHERE mensagem_criptografada IS NULL "
-        "   OR mensagem_criptografada NOT LIKE 'aes-gcm-%'"
-    )
-
+    # Autorizacoes de compartilhamento da cifra pessoal.
+    #
+    # A cifra continua sendo derivada do username de cada pessoa. Esta tabela
+    # guarda apenas a permissao para o destinatario ver o dicionario do
+    # remetente no mural. O par remetente/destinatario e unico, entao compartilhar
+    # de novo so reativa a mesma permissao em vez de criar duplicatas.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS compartilhamentos_cifra (
+            id SERIAL PRIMARY KEY,
+            remetente TEXT NOT NULL,
+            destinatario TEXT NOT NULL,
+            ativo INTEGER DEFAULT 1,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (remetente, destinatario)
+        )
+    """)
+    c.execute("ALTER TABLE compartilhamentos_cifra ADD COLUMN IF NOT EXISTS remetente TEXT DEFAULT ''")
+    c.execute("ALTER TABLE compartilhamentos_cifra ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''")
+   
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
     # para os alunos. Segue o mesmo padrao do mural: nada e apagado, a linha
@@ -282,6 +327,22 @@ def _criar_tabelas(conn):
             c.execute("ALTER TABLE conteudos ADD COLUMN IF NOT EXISTS %s %s"
                       % (nome_coluna, definicao))
 
+    # A LGPD deixou de ser pergaminho: virou o Modulo 5, uma aula teorica.
+    # As linhas antigas nao sao apagadas (o texto pode ter sido editado pela
+    # coordenacao), apenas inativadas, para nao aparecerem mais na pagina
+    # "Exemplos de Crimes Digitais". O UPDATE e idempotente.
+    c.execute(
+        "UPDATE conteudos SET ativo = 0 WHERE chave = ANY(%s)",
+        (
+            [
+                "lei-geral-protecao-dados",
+                "principios-da-lgpd",
+                "responsabilidade-protecao-dados",
+                "importancia-lgpd-organizacoes",
+            ],
+        ),
+    )
+
     # --- MODULOS CRIADOS PELA PLATAFORMA ---
     #
     # Os modulos originais continuam em dados/modulos.json. Esta tabela
@@ -307,6 +368,8 @@ def _criar_tabelas(conn):
             cor TEXT DEFAULT '#4F46E5',
             pdf TEXT DEFAULT '',
             quiz TEXT DEFAULT '[]',
+            categoria TEXT DEFAULT 'Outros',
+            ordem INTEGER DEFAULT 900,
             autor TEXT NOT NULL,
             ativo INTEGER DEFAULT 1,
             data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -370,6 +433,15 @@ def _criar_tabelas(conn):
             PRIMARY KEY (username, modulo)
         )
     """)
+   #Criação da tabela de seguidores, que registra quem segue quem. A chave primária é composta pelos dois usernames, garantindo que não haja duplicatas.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS seguidores (
+            seguidor_username TEXT NOT NULL,
+            seguido_username TEXT NOT NULL,
+            data_inicio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (seguidor_username, seguido_username)
+        )
+    ''')
 
     # Garante a restrição única para tabelas criadas anteriormente sem a chave primária
     try:
@@ -386,9 +458,9 @@ def _criar_tabelas(conn):
     # exemplo cuja chave já está na tabela não é criado de novo. É o
     # mesmo esquema do admin acima -- o que já existe não é reescrito.
     #
-    # O que o professor edita depois pela página "Gerenciar Aulas" vale
-    # mais do que o que está no arquivo: por isso a semeadura não
-    # sobrescreve uma linha que já existe.
+    # O que o professor edita depois pela página "Gerenciar Conteúdos →
+    # Exemplos de Golpe" vale mais do que o que está no arquivo: por isso a
+    # semeadura não sobrescreve uma linha que já existe.
     _semear_exemplos_crime(c)
 
     conn.commit()
@@ -482,12 +554,58 @@ def _semear_exemplos_crime(c):
 
 #Funções Novas adicionadas
 
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
+def obter_primeiro_acesso(username):
+    """Le o status de primeiro acesso sem repetir a consulta a cada rerun."""
+    if not username:
+        return 1
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT primeiro_acesso FROM usuarios WHERE username = %s",
+            (username,),
+        )
+        resultado = c.fetchone()
+        conn.rollback()
+    return resultado[0] if resultado else 1
+
+
 def atualizar_primeiro_acesso(username):
     """Atualiza o status de primeiro acesso do aluno para 0 após o primeiro envio ao mural."""
     with conectar() as conn:
         c = conn.cursor()
         c.execute("UPDATE usuarios SET primeiro_acesso = 0 WHERE username = %s", (username,))
         conn.commit()
+    obter_primeiro_acesso.clear(username)
+
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
+def carregar_cifras_compartilhadas(destinatario):
+    """Lista os usuarios que compartilharam a cifra com o destinatario."""
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT remetente FROM compartilhamentos_cifra "
+            "WHERE destinatario = %s AND ativo = 1 AND remetente <> %s "
+            "ORDER BY remetente",
+            (destinatario, destinatario),
+        )
+        dados = tuple(linha[0] for linha in c.fetchall())
+        conn.rollback()
+    return dados
+
+def salvar_compartilhamento_cifra(remetente, destinatario):
+    """Autoriza o destinatario a ver o dicionario da cifra do remetente."""
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO compartilhamentos_cifra (remetente, destinatario, ativo) "
+            "VALUES (%s, %s, 1) "
+            "ON CONFLICT (remetente, destinatario) "
+            "DO UPDATE SET ativo = 1, data = CURRENT_TIMESTAMP",
+            (remetente, destinatario),
+        )
+        conn.commit()
+    carregar_cifras_compartilhadas.clear(destinatario)
 
 def salvar_mensagem_mural(username, mensagem_criptografada):
     """Salva a mensagem associada ao usuário que a enviou"""
@@ -498,14 +616,31 @@ def salvar_mensagem_mural(username, mensagem_criptografada):
             (username, mensagem_criptografada)
         )
         conn.commit()
+    carregar_mural.clear()
 
+
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_mural():
-    """Carrega todas as mensagens ativas para exibição pública"""
+    """Carrega as 100 mensagens ativas mais recentes para exibição pública.
+
+    A lista muda somente quando alguém publica ou inativa uma mensagem.
+    Por isso ela fica em cache e é invalidada pelas duas escritas abaixo,
+    em vez de consultar o banco a cada rerun do mural.
+
+    O LIMIT existe porque cada mensagem vira colunas e botões na tela, e o
+    st.cache_data entrega uma cópia da lista inteira a cada chamada: sem
+    teto, o mural ficaria mais pesado a cada mensagem publicada.
+    """
     with conectar() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, username, mensagem_criptografada, data FROM mural WHERE ativo = 1 ORDER BY id DESC")
+        c.execute(
+            "SELECT id, username, mensagem_criptografada, data FROM mural "
+            "WHERE ativo = 1 ORDER BY id DESC LIMIT 100"
+        )
         dados = c.fetchall()
+        conn.rollback()
     return dados
+
 
 def inativar_mensagem_mural(msg_id):
     """Inativa qualquer mensagem (Apenas para Professores e Admins)"""
@@ -513,6 +648,7 @@ def inativar_mensagem_mural(msg_id):
         c = conn.cursor()
         c.execute("UPDATE mural SET ativo = 0 WHERE id = %s", (msg_id,))
         conn.commit()
+    carregar_mural.clear()
 
 
 def salvar_conteudo(
@@ -544,54 +680,61 @@ def salvar_conteudo(
         c = conn.cursor()
         c.execute(
             "INSERT INTO conteudos (titulo, corpo, autor, ativo, chave, icone, "
-            "categoria, exemplo, sinais, protecao, origem) "
-            "VALUES (%s, %s, %s, 1, '', %s, %s, %s, %s, %s, 'publicado')",
-            (titulo, corpo, autor, icone, categoria, exemplo, sinais, protecao),
+            "categoria, exemplo, sinais, protecao, blocos, origem) "
+            "VALUES (%s, %s, %s, 1, '', %s, %s, %s, %s, %s, %s, 'publicado')",
+            (
+                titulo,
+                corpo,
+                autor,
+                icone,
+                categoria,
+                exemplo,
+                sinais,
+                protecao,
+                blocos_para_texto(blocos),
+            ),
         )
         conn.commit()
     carregar_pergaminhos.clear()
 
 
-def carregar_conteudos():
-    """Carrega todos os conteudos ativos, do mais novo para o mais antigo.
-
-    Devolve tuplas no formato antigo (id, titulo, corpo, autor, data),
-    porque a lista de "Gerenciar Aulas" usa esse formato. A pagina dos
-    pergaminhos usa carregar_pergaminhos(), que traz os campos do crime.
-    """
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, titulo, corpo, autor, data FROM conteudos WHERE ativo = 1 ORDER BY id DESC")
-        dados = c.fetchall()
-    return dados
-
-
-@st.cache_data(ttl=30, show_spinner=False)
-def carregar_pergaminhos(username):
-    """Sincroniza exemplos novos e carrega os ativos, na ordem gravada.
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_pergaminhos(incluir_inativos=False):
+    """Carrega os exemplos na ordem gravada.
 
     Devolve dicionarios, e nao tuplas, porque a pagina dos pergaminhos
     usa muitos campos de cada exemplo e a tupla de dez posicoes vira
-    uma lista de indices dificil de ler. Exemplos novos do JSON sao
-    inseridos nesta carga; chaves existentes nao sao sobrescritas. A
-    ordem e por id: os pre-colocados vem primeiro, na ordem do arquivo,
-    e o que a coordenacao publica depois entra no fim. O username separa
-    as chaves de cache por sessao; o conteudo continua publico e compartilhado.
+    uma lista de indices dificil de ler. A ordem e por id: os
+    pre-colocados vem primeiro, na ordem do arquivo, e o que a
+    coordenacao publica depois entra no fim.
+
+    Por padrao so os ativos sao devolvidos: e o que o aluno pode ver. A
+    pagina de gerenciamento passa incluir_inativos=True para conseguir
+    listar, editar e reativar o que foi tirado do ar.
+
+    Esta funcao e somente leitura. A semeadura dos exemplos do arquivo
+    dados/exemplos_crime.json fica em _criar_tabelas(), que e chamada na
+    preparacao do banco: carregar uma pagina nao deve abrir transacao de
+    escrita no banco.
     """
+    sql = (
+        "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
+        "sinais, protecao, chave, origem, blocos, ativo FROM conteudos"
+    )
+    if not incluir_inativos:
+        sql += " WHERE ativo = 1"
+    sql += " ORDER BY id ASC"
+
     with conectar() as conn:
         c = conn.cursor()
-        _semear_exemplos_crime(c)
-        c.execute(
-            "SELECT id, titulo, corpo, autor, data, icone, categoria, exemplo, "
-            "sinais, protecao, chave, origem, blocos FROM conteudos "
-            "WHERE ativo = 1 ORDER BY id ASC"
-        )
+        c.execute(sql)
         linhas = c.fetchall()
-        conn.commit()
+        conn.rollback()
 
     chaves = (
         "id", "titulo", "corpo", "autor", "data", "icone", "categoria",
         "exemplo", "sinais", "protecao", "chave", "origem", "blocos",
+        "ativo",
     )
     # "blocos" chega do banco como texto e volta como lista: quem desenha
     # a pagina nao quer saber com o que o SQLite guarda uma lista.
@@ -651,13 +794,22 @@ def inativar_conteudo(conteudo_id):
     carregar_pergaminhos.clear()
 
 
+def reativar_conteudo(conteudo_id):
+    """Devolve um exemplo inativado para a lista do aluno."""
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE conteudos SET ativo = 1 WHERE id = %s", (conteudo_id,))
+        conn.commit()
+    carregar_pergaminhos.clear()
+
+
 # ---------------------------------------------------------------------------
 # Modulos criados pela plataforma
 # ---------------------------------------------------------------------------
 #
 # Os modulos originais continuam em dados/modulos.json. A tabela "modulos"
-# guarda somente os que nascem na pagina "Gerenciar Modulos". As funcoes
-# abaixo sao o CRUD dessa tabela.
+# guarda somente os que nascem na pagina "Gerenciar Conteudos -> Modulos".
+# As funcoes abaixo sao o CRUD dessa tabela.
 #
 # O quiz e gravado como JSON de uma lista de:
 #   {"enunciado": "...", "alternativas": ["..."], "certa": 0}
@@ -710,23 +862,24 @@ def _quiz_para_texto(quiz):
     return json.dumps(quiz or [], ensure_ascii=False)
 
 
-@st.cache_data(ttl=30, show_spinner=False)
-def listar_modulos_banco(username):
+@st.cache_data(ttl=300, show_spinner=False)
+def listar_modulos_banco():
     """Devolve os modulos criados na plataforma, do mais antigo ao mais novo.
 
     O quiz volta como lista, e nao como texto: quem chama (o carregador
     dos modulos) espera o mesmo formato dos modulos do JSON.
-    O username particiona o cache por sessao; o catalogo em si continua
-    compartilhado entre os usuarios.
-    O cache e invalidado por salvar_modulo, atualizar_modulo e excluir_modulo.
+
+    O catalogo e publico e o mesmo para todos os perfis, por isso ele tem
+    uma unica entrada de cache -- sem o username na chave. O cache e
+    invalidado por salvar_modulo, atualizar_modulo e excluir_modulo.
     """
     with conectar() as conn:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as c:
                 c.execute(
                     "SELECT id, slug, titulo, resumo, icone, nivel, dificuldade, "
-                    "duracao, cor, pdf, quiz, autor, data FROM modulos "
-                    "WHERE ativo = 1 ORDER BY id ASC"
+                    "duracao, cor, pdf, quiz, categoria, ordem, autor, data "
+                    "FROM modulos WHERE ativo = 1 ORDER BY id ASC"
                 )
                 linhas = c.fetchall()
             # Consulta so de leitura: encerra a transacao para a conexao
@@ -758,19 +911,24 @@ def salvar_modulo(
     pdf,
     quiz,
     autor,
+    categoria="Outros",
 ):
     """Cria um modulo novo. Devolve (id, None) ou (None, motivo).
 
     O "motivo" e uma chave curta que a tela traduz em portugues:
     "slug_duplicado" ou o texto do erro inesperado.
+
+    A categoria e validada pelo chamador (a tela usa a lista de
+    modules/modulos.py). O valor fica no banco para o catalogo saber em que
+    aba o modulo aparece.
     """
     with conectar() as conn:
         c = conn.cursor()
         try:
             c.execute(
                 "INSERT INTO modulos (slug, titulo, resumo, icone, nivel, "
-                "dificuldade, duracao, cor, pdf, quiz, autor, ativo) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1) "
+                "dificuldade, duracao, cor, pdf, quiz, autor, categoria, ativo) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1) "
                 "RETURNING id",
                 (
                     slug,
@@ -784,6 +942,7 @@ def salvar_modulo(
                     pdf,
                     _quiz_para_texto(quiz),
                     autor,
+                    categoria,
                 ),
             )
             novo_id = c.fetchone()[0]
@@ -813,6 +972,7 @@ def atualizar_modulo(
     quiz,
     solicitante,
     tipo,
+    categoria="Outros",
 ):
     """Reescreve um modulo do banco respeitando quem criou.
 
@@ -833,20 +993,22 @@ def atualizar_modulo(
             cor,
             pdf,
             _quiz_para_texto(quiz),
+            categoria,
         )
         try:
             if tipo == "Administrador":
                 c.execute(
                     "UPDATE modulos SET slug = %s, titulo = %s, resumo = %s, "
                     "icone = %s, nivel = %s, dificuldade = %s, duracao = %s, "
-                    "cor = %s, pdf = %s, quiz = %s WHERE id = %s",
+                    "cor = %s, pdf = %s, quiz = %s, categoria = %s "
+                    "WHERE id = %s",
                     parametros + (modulo_id,),
                 )
             else:
                 c.execute(
                     "UPDATE modulos SET slug = %s, titulo = %s, resumo = %s, "
                     "icone = %s, nivel = %s, dificuldade = %s, duracao = %s, "
-                    "cor = %s, pdf = %s, quiz = %s "
+                    "cor = %s, pdf = %s, quiz = %s, categoria = %s "
                     "WHERE id = %s AND autor = %s",
                     parametros + (modulo_id, solicitante),
                 )
@@ -911,42 +1073,10 @@ def registrar_leitura(username, modulo):
         (username, modulo)
         )
         conn.commit()
-    carregar_estado_modulos.clear()
-    modulo_lido.clear()
-    modulos_lidos.clear()
+    carregar_estado_modulos.clear(username)
 
 
-@st.cache_data(ttl=30, show_spinner=False)
-def modulo_lido(username, modulo):
-    """Diz se o aluno ja terminou de ler o material de um modulo.
-
-    E o que libera o quiz. Devolve True ou False, nunca None: quem
-    chama so precisa da resposta.
-    """
-    if not username:
-        return False
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT 1 FROM leituras WHERE username = %s AND modulo = %s",
-            (username, modulo),
-        )
-        achou = c.fetchone() is not None
-    return achou
-
-
-@st.cache_data(ttl=30, show_spinner=False)
-def modulos_lidos(username):
-    """Devolve o conjunto de modulos que o aluno ja terminou de ler."""
-    if not username:
-        return set()
-    with conectar() as conn:
-        c = conn.cursor()
-        c.execute("SELECT modulo FROM leituras WHERE username = %s", (username,))
-        return {linha[0] for linha in c.fetchall()}
-
-
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
 def carregar_estado_modulos(username):
     """Carrega leituras e progresso do aluno com uma consulta ao banco.
 
@@ -956,18 +1086,21 @@ def carregar_estado_modulos(username):
     if not username:
         return {}, set()
 
+    # A melhor tentativa de cada modulo e escolhida pelo proprio banco
+    # (DISTINCT ON), em vez de trazer todas as tentativas e comparar no
+    # Python. A tabela progresso_modulos guarda uma linha por tentativa e so
+    # cresce; assim chega uma linha por modulo. O desempate e o mesmo de
+    # antes: mais acertos e, no empate, a tentativa mais antiga (menor id).
     with conectar() as conn:
         try:
             c = conn.cursor()
             c.execute(
-                "SELECT 'leitura' AS tipo, modulo, NULL::INTEGER AS acertos, "
-                "NULL::INTEGER AS total, NULL::TIMESTAMP AS data, "
-                "NULL::INTEGER AS ordem "
+                "SELECT modulo, NULL::INTEGER, NULL::INTEGER, NULL::TIMESTAMP, TRUE "
                 "FROM leituras WHERE username = %s "
                 "UNION ALL "
-                "SELECT 'progresso' AS tipo, modulo, acertos, total, data, id "
-                "FROM progresso_modulos WHERE username = %s "
-                "ORDER BY ordem NULLS FIRST",
+                "(SELECT DISTINCT ON (modulo) modulo, acertos, total, data, FALSE "
+                " FROM progresso_modulos WHERE username = %s "
+                " ORDER BY modulo, acertos DESC, id ASC)",
                 (username, username),
             )
             linhas = c.fetchall()
@@ -978,25 +1111,11 @@ def carregar_estado_modulos(username):
 
     lidos = set()
     progresso = {}
-    ordens_progresso = {}
-    for tipo, modulo, acertos, total, data, ordem in linhas:
-        if tipo == "leitura":
+    for modulo, acertos, total, data, eh_leitura in linhas:
+        if eh_leitura:
             lidos.add(modulo)
-            continue
-        if (
-            modulo not in progresso
-            or acertos > progresso[modulo]["acertos"]
-            or (
-                acertos == progresso[modulo]["acertos"]
-                and ordem < ordens_progresso[modulo]
-            )
-        ):
-            progresso[modulo] = {
-                "acertos": acertos,
-                "total": total,
-                "data": data,
-            }
-            ordens_progresso[modulo] = ordem
+        else:
+            progresso[modulo] = {"acertos": acertos, "total": total, "data": data}
     return progresso, lidos
 
 
@@ -1005,7 +1124,7 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
 
     Guarda uma linha por tentativa e nao apaga as anteriores: o historico
     fica para a equipe ver a evolucao do aluno. O que a tela usa e a melhor
-    nota de cada modulo, calculada em carregar_progresso_modulos.
+    nota de cada modulo, calculada em carregar_estado_modulos.
 
     Este e um registro de autoavaliacao -- nao e nota nem avaliacao formal
     de professor.
@@ -1017,39 +1136,47 @@ def salvar_progresso_modulo(username, modulo, acertos, total):
             (username, modulo, acertos, total),
         )
         conn.commit()
-    carregar_estado_modulos.clear()
-    carregar_progresso_modulos.clear()
+    carregar_estado_modulos.clear(username)
+    listar_progresso_recente.clear()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
-def carregar_progresso_modulos(username):
-    """Devolve {slug_do_modulo: melhor resultado} do usuario.
+@st.cache_data(ttl=60, show_spinner=False)
+def contar_usuarios_por_tipo():
+    """Conta as contas cadastradas por perfil para o painel inicial.
 
-    "Melhor resultado" e o que tem mais acertos -- e nao a ultima tentativa.
-    Refazer o quiz depois de errar nao deve apagar o quanto a pessoa ja
-    tinha acertado.
+    O cache curto evita uma consulta a cada tecla digitada na home; ele é
+    limpo quando alguém se cadastra.
+    """
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute("SELECT tipo, COUNT(*) FROM usuarios GROUP BY tipo")
+        linhas = c.fetchall()
+        conn.rollback()
+    return {tipo: total for tipo, total in linhas}
 
-    Devolve dicionario vazio, e nao None, quando o usuario ainda nao fez
-    nenhum quiz: quem chama so precisa do .get().
+
+@st.cache_data(ttl=60, show_spinner=False)
+def listar_progresso_recente(limite=6):
+    """Últimas tentativas de quiz de alunos, com o nome de quem respondeu.
+
+    Serve para a home de Professor/Administrador mostrar movimento real da
+    plataforma, em vez de números soltos. A consulta filtra por tipo porque
+    essa área acompanha a turma; as tentativas da própria coordenação não são
+    atividade de aluno e só poluiriam a lista.
     """
     with conectar() as conn:
         c = conn.cursor()
         c.execute(
-            "SELECT modulo, acertos, total, data FROM progresso_modulos "
-            "WHERE username = %s ORDER BY id",
-            (username,),
+            "SELECT p.username, u.nome, p.modulo, p.acertos, p.total, p.data "
+            "FROM progresso_modulos p "
+            "JOIN usuarios u ON u.username = p.username "
+            "WHERE u.tipo = 'Aluno' "
+            "ORDER BY p.data DESC, p.id DESC LIMIT %s",
+            (limite,),
         )
         linhas = c.fetchall()
-
-    progresso = {}
-    for modulo, acertos, total, data in linhas:
-        if modulo not in progresso or acertos > progresso[modulo]["acertos"]:
-            progresso[modulo] = {
-                "acertos": acertos,
-                "total": total,
-                "data": data,
-            }
-    return progresso
+        conn.rollback()
+    return linhas
 
 
 def verificar_login(username_digitado, senha_digitada):
@@ -1124,8 +1251,129 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
                 (username, nome, email, tipo, hash_str)
             )
             conn.commit()
+            contar_usuarios_por_tipo.clear()
             return "ok"
         except psycopg2.IntegrityError:
             # Duas submissões com o mesmo e-mail ao mesmo tempo: o índice único
             # barrou mesmo com a checagem acima. Mesma resposta da checagem.
             return "email_duplicado"
+
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
+def obter_dados_perfil(username):
+    """Consulta puramente relacional para resgatar apenas o nome e a foto de perfil do usuário."""
+    if not username:
+        return None
+    with conectar() as conn:
+        c = conn.cursor()
+        # Busca estritamente as 2 colunas necessárias (sem carregar o e-mail)
+        c.execute("SELECT nome, foto_perfil FROM usuarios WHERE username = %s", (username,))
+        resultado = c.fetchone()
+        if not resultado:
+             return None
+        nome, foto = resultado
+        return nome, (bytes(foto) if foto is not None else None)
+
+def atualizar_perfil(username, nova_senha, senha_atual, novo_nome): # Função para atualizar o usuário
+    with conectar() as conn: # Inicia o contexto conectando-se ao PostgreSQL de forma otimizada
+        c = conn.cursor() # Instancia o ponteiro de navegação no banco
+       # Se o usuário preencheu campos para trocar a senha
+        if nova_senha and senha_atual:
+            # Puxa o hash da senha antiga salva no banco[cite: 1, 5]
+            c.execute("SELECT password FROM usuarios WHERE username = %s", (username,))
+            hash_do_banco = c.fetchone()[0].encode('utf-8')
+            
+            # MÉTODO SEGURO: Verifica se a senha atual digitada confere com o hash original[cite: 1, 5]
+            if not bcrypt.checkpw(senha_atual.encode('utf-8'), hash_do_banco):
+                # Recusa a alteração se a senha antiga estiver errada
+                return "senha_atual_incorreta"
+            
+            # Se passou, criptografa a NOVA senha[cite: 1, 5]
+            salt = bcrypt.gensalt()
+            novo_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), salt).decode('utf-8')
+            c.execute(
+                "UPDATE usuarios SET nome=%s, password=%s WHERE username=%s",
+                (novo_nome, novo_hash, username)
+            )
+        else:
+            # Atualiza apenas informações gerais e foto (sem mexer na senha)
+            c.execute(
+                "UPDATE usuarios SET nome=%s WHERE username=%s",
+                (novo_nome, username)
+            )
+        conn.commit() # Confirma efetivamente a gravação da transação na base de dados
+        obter_dados_perfil.clear(username) # Limpa o cache de perfil para refletir as mudanças
+        listar_progresso_recente.clear() # O nome exibido na home também mudou
+        c.close() # Destrói o cursor liberando recursos locais do servidor
+
+def atualizar_foto(username, foto_bytes):
+    foto_db = psycopg2.Binary(foto_bytes) if foto_bytes else None
+    with conectar() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE usuarios SET foto_perfil = %s WHERE username = %s",
+            (foto_db, username),
+        )
+        conn.commit()
+        obter_dados_perfil.clear(username)  # Limpa o cache para refletir a nova foto
+
+@st.cache_data(ttl=300, max_entries=500, show_spinner=False)
+def listar_seguidos(username):
+    if not username:
+        return ()
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT seguido_username FROM seguidores "
+            "WHERE seguidor_username = %s ORDER BY seguido_username",
+            (username,),
+        )
+        dados = tuple(linha[0] for linha in c.fetchall())
+        conn.rollback()
+    return dados
+
+
+def seguir_usuario(seguidor, seguido):
+    if not seguido or seguidor == seguido:
+        return
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO seguidores (seguidor_username, seguido_username) "
+            "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (seguidor, seguido),
+        )
+        conn.commit()
+    listar_seguidos.clear(seguidor)
+
+
+def deixar_de_seguir(seguidor, seguido):
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "DELETE FROM seguidores "
+            "WHERE seguidor_username = %s AND seguido_username = %s",
+            (seguidor, seguido),
+        )
+        conn.commit()
+    listar_seguidos.clear(seguidor)
+
+
+def buscar_usuarios(termo, excluir=""):
+    termo = (termo or "").strip()
+    if len(termo) < 2:
+        return []
+    termo = termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    padrao = f"%{termo}%"
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT username, nome, tipo, foto_perfil FROM usuarios "
+            "WHERE (nome ILIKE %s OR username ILIKE %s) AND username <> %s "
+            "ORDER BY nome LIMIT 8",
+            (padrao, padrao, excluir),
+        )
+        dados = [
+            (u, nome, tipo, bytes(foto) if foto is not None else None)
+            for u, nome, tipo, foto in c.fetchall()
+        ]
+        conn.rollback()
+    return dados

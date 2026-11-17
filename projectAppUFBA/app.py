@@ -3,29 +3,43 @@ from datetime import datetime, timezone
 
 import extra_streamlit_components as stx
 import streamlit as st
+import html
+import re
 from modules.database import (
-    conectar,
-    modulos_lidos,
-    carregar_progresso_modulos,
+    obter_primeiro_acesso,
+    obter_dados_perfil,
+)
+from modules.perfilWidget import (
+    render_widget_perfil,
+    cancelar_selecao,
 )
 from modules.sessaoInterativa import render_sessao_interativa
-from modules.mainmenu import render_modulos
+from modules.mainmenu import (
+    render_modulos,
+    render_navegacao_modulos,
+    render_progresso_aluno,
+)
 from modules.paginaModulo import render_pagina_modulo
-from modules.pergaminhos import render_pergaminhos, render_gerenciar_crime
-from modules.gerenciar_modulos import render_gerenciar_modulos
+from modules.pergaminhos import render_pergaminhos
+from modules.gerenciar_conteudos import render_gerenciar_conteudos
 from modules.leitura import CHAVE_LEITURA, render_pagina_leitura
 from modules.modulos import carregar_modulos
-from modules.mainmenu import render_progresso_aluno
 from modules.login import (
     render_login,
-    obter_chave_professor_diaria,
-    segredo_da_chave_configurado,
     limpar_sessao_do_usuario,
     restaurar_cookie_login,
     opcoes_cookie_login,
     enviar_cookie_login,
 )
+from modules.home import render_home
 from modules.anuncio_simulado import render_anuncio_simulado
+from modules.estilo import aplicar_css, aplicar_responsividade
+
+def _chave_da_pagina(nome):
+    """Converte o rótulo do menu em uma key estável para o container."""
+    chave = re.sub(r"[^a-zA-Z0-9]+", "_", nome or "").strip("_").lower()
+    return "pagina_%s" % (chave or "inicio")
+
 
 # Configuração global
 st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
@@ -58,30 +72,42 @@ if cookie_login_pendente:
 #
 # Sem esta pergunta, um toque errado no "Sair" derrubava a sessão na hora e a
 # pessoa perdia a página em que estava.
+def _sair_da_conta():
+    # Os dados da pessoa saem junto com ela. Sem isto o próximo a usar
+    # esta aba encontrava o username, o módulo aberto e a leitura em
+    # curso do usuário anterior (ver limpar_sessao_do_usuario em
+    # modules/login.py). Só as chaves simples são apagadas aqui: o menu
+    # lateral está desenhado nesta tela, e as chaves de widget são
+    # varridas no login seguinte.
+    limpar_sessao_do_usuario()
+    st.session_state["_ignorar_cookie_login"] = True
+    st.session_state["_logout_cookie_key"] = uuid.uuid4().hex
+    st.session_state["pediu_logout"] = True
+    st.rerun(scope="app")
+    
+def _cancelar_saida():
+    # Mesmo motivo: sem o rerun do app inteiro, o diálogo não fecha.
+    st.rerun()
+
 @st.dialog("Sair da conta?", width="small")
 def _confirmar_saida():
     st.write("Você vai voltar para a tela de login.")
-    st.caption(
-        f"**{st.session_state.get('nome_usuario', 'Usuário')}** "
-        f"({st.session_state.get('tipo_usuario', 'Perfil não informado')})"
-    )
+    nome = st.session_state.get("nome_usuario") or ""
+    tipo = st.session_state.get("tipo_usuario") or ""
+    if nome:
+        st.caption(f"**{nome}** ({tipo})")
     confirmar, cancelar = st.columns(2)
-    if confirmar.button("Sair", type="primary", width="stretch"):
-        # Os dados da pessoa saem junto com ela. Sem isto o próximo a
-        # usar esta aba encontrava o username, o módulo aberto e a
-        # leitura em curso do usuário anterior (ver
-        # limpar_sessao_do_usuario em modules/login.py). Só as chaves
-        # simples são apagadas aqui: o menu lateral está desenhado nesta
-        # tela, e as chaves de widget são varridas no login seguinte.
-        limpar_sessao_do_usuario()
-        # Ignora o valor antigo do componente enquanto o navegador processa
-        # a expiração.
-        st.session_state["_ignorar_cookie_login"] = True
-        st.session_state["_logout_cookie_key"] = uuid.uuid4().hex
-        st.session_state["pediu_logout"] = True
-        st.rerun(scope="app")
-    if cancelar.button("Cancelar", width="stretch"):
-        st.rerun()
+    confirmar.button(
+        "Sair",
+        type="primary",
+        width="stretch",
+        on_click=_sair_da_conta,
+    )
+    cancelar.button(
+        "Cancelar",
+        width="stretch",
+        on_click=_cancelar_saida,
+    )
 
 
 if st.session_state.get("pediu_logout", False):
@@ -145,118 +171,19 @@ else:
     # Efeito colateral útil do key=: .st-key-botao_sair só envolve o botão do
     # logout, então o botão de recolher a barra fica de fora sem precisar de
     # nenhuma regra que o exclua.
-    st.markdown(
-        """
-        <style>
-        /* ---------- Menu da barra lateral ---------- */
-        /* O item ativo precisa ficar claro. Sem isto o item escolhido e o não
-           escolhido são idênticos — o mesmo defeito que o seletor de perfil
-           teve na tela de login, por causa do mesmo [role="radio"] que o
-           Streamlit 1.64 trocou por data-selected. */
-        .st-key-menu [data-testid="stRadioOption"] {
-            padding: 0.55rem 0.75rem;
-            margin-bottom: 0.15rem;
-            border-radius: 8px;
-            /* A barra da esquerda é o indicador de "você está aqui". Ela é
-               transparente no estado normal para não existir quando não há
-               nada selecionado. */
-            border-left: 3px solid transparent;
-            color: #e2e8f0;
-            transition: background-color 0.3s ease, color 0.3s ease,
-                        border-color 0.3s ease;
-        }
-        .st-key-menu [data-testid="stRadioOption"]:hover {
-            background-color: rgba(79, 70, 229, 0.16);
-        }
-        .st-key-menu [data-testid="stRadioOption"][data-selected="true"] {
-            background-color: rgba(79, 70, 229, 0.28);
-            border-left-color: #4F46E5;
-            color: #ffffff;
-            font-weight: 600;
-        }
-        .st-key-menu [data-testid="stRadioOption"][data-selected="true"]:hover {
-            background-color: rgba(79, 70, 229, 0.36);
-        }
-        .st-key-menu [data-testid="stRadioOption"]:active {
-            background-color: rgba(79, 70, 229, 0.42);
-        }
+    # O CSS fica em static/css/app_logado.css.
+    aplicar_css("app_logado.css")
 
-        /* ---------- Botão de sair ---------- */
-        /* Vermelho, que é o sinal convencional para sair. E o hover muda a cor
-           do texto, não só o fundo: sem isso a pessoa precisa ler o rótulo
-           para saber qual botão é. */
-        .st-key-botao_sair button {
-            border-radius: 8px;
-            transition: background-color 0.3s ease, color 0.3s ease,
-                        border-color 0.3s ease;
-        }
-        .st-key-botao_sair button:hover {
-            background-color: rgba(239, 68, 68, 0.16);
-            border-color: rgba(239, 68, 68, 0.45);
-            color: #fca5a5;
-        }
-        .st-key-botao_sair button:active {
-            background-color: rgba(239, 68, 68, 0.28);
-        }
+    # Ajustes gerais de tela estreita. Ficam depois do CSS acima de proposito:
+    # em empate de especificidade, a ultima regra vence.
+    aplicar_responsividade()
 
-        /* ---------- Press Start 2P nos títulos ---------- */
-        /* A fonte vem de [[theme.fontFaces]] na config.toml e é a mesma que o
-           login já usa, com o mesmo apelido sem espaços. O tamanho é pequeno
-           de propósito: o advance da Press Start 2P é 1em por caractere e a
-           largura útil da sidebar é 260px, medidos no navegador. A 18px o
-           título "Criptoeduca" ocupa 198px e sobra folga; a 24px, que é o
-           padrão do Streamlit na sidebar, daria 264px e estouraria.
-           Nos títulos de página a conta é a mesma, mas eles são longos: os
-           maiores passam de 50 caracteres e quebram em duas linhas. Uma fonte
-           pixelada aguenta a quebra com line-height 1.4. */
-        [data-testid="stSidebar"] h1 {
-            font-family: "PressStart2P", monospace;
-            font-size: 18px !important;
-            /* A Press Start 2P só tem o peso 400. Deixar 700 aqui faria o
-               navegador inventar um negrito falso, que borra os pixels. */
-            font-weight: 400;
-            line-height: 1.4;
-            /* Streamlit aplica tracking negativo em alguns textos; em fonte
-               monoespaçada isso fecha os glyphs e quebra a grade. */
-            letter-spacing: 0;
-            /* Sem isto o Chrome suaviza a borda dos pixels e o resultado fica
-               desfocado, que é o oposto do pretendido. */
-            -webkit-font-smoothing: none;
-            color: #f1f5f9;
-        }
-        [data-testid="stMain"] h1 {
-            font-family: "PressStart2P", monospace;
-            font-size: 18px !important;
-            font-weight: 400;
-            line-height: 1.4;
-            letter-spacing: 0;
-            -webkit-font-smoothing: none;
-            color: #f1f5f9;
-        }
-
-        /* "Usuário:" e "Perfil:" são contexto de quem está logado, não conteúdo.
-           O <strong> é o que os separa dos outros <p> da sidebar: é o único
-           detalhe que eles carregam e que nenhum outro parágrafo da barra
-           lateral tem. Os itens do menu, o rótulo "Navegação" e o texto do
-           botão de sair não usam negrito, então este seletor casa com
-           exatamente dois elementos. Fixar o tamanho aqui também evita que, ao
-           trocar de perfil, as duas linhas mudem de largura e a barra "pule". */
-        [data-testid="stSidebar"] p:has(strong) {
-            opacity: 0.6;
-            font-size: 0.85rem;
-        }
-
-        /* Quem pede menos animação não recebe transição */
-        @media (prefers-reduced-motion: reduce) {
-            .st-key-menu [data-testid="stRadioOption"],
-            .st-key-botao_sair button {
-                transition: none;
-            }
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Aviso deixado pelo dialogo do perfil (foto salva ou removida). Um
+    # st.toast chamado direto no callback do dialogo nao aparece no navegador,
+    # entao o callback guarda o texto e ele e mostrado aqui, no redesenho.
+    msg = st.session_state.pop("toast_notificacao", None)
+    if msg:
+        st.toast(msg)
     
     tipo = st.session_state["tipo_usuario"]
 
@@ -266,12 +193,12 @@ else:
         and tipo == "Aluno"
         and "primeiro_acesso" not in st.session_state
     ):
-        with conectar() as conn:
-            c = conn.cursor()
-            c.execute("SELECT primeiro_acesso FROM usuarios WHERE username = %s", (st.session_state["username"],))
-            res = c.fetchone()
-        if res:
-            st.session_state["primeiro_acesso"] = res[0]
+        # A leitura fica em cache: enquanto o aluno ainda nao publicou no
+        # mural, o app roda varias vezes (cada tecla do formulario) e nao
+        # pode consultar o banco em todas elas.
+        st.session_state["primeiro_acesso"] = obter_primeiro_acesso(
+            st.session_state["username"]
+        )
 
     # --- PRIMEIRO ACESSO: COERÊNCIA DO MENU ---
     #
@@ -308,11 +235,37 @@ else:
             unsafe_allow_html=True,
         )
 
-    # Barra lateral
-    st.sidebar.title("Criptoeduca")
-    st.sidebar.write(f"Usuário: **{st.session_state['nome_usuario']}**")
-    st.sidebar.write(f"Perfil: **{tipo}**")
+    # Barra lateral. Este bloco ja esta dentro do "else" de usuario logado,
+    # entao a consulta e direta: antes ela ficava dentro de um segundo if, e
+    # "dados" so existia se esse if fosse verdadeiro.
+    # Retorna exatamente (nome, foto_bytes), do cache.
+    dados = obter_dados_perfil(st.session_state.get("username"))
 
+    if dados:
+        nome_db, foto_bytes = dados
+        
+        with st.sidebar:
+          with st.container(key="cabecalho_sidebar", horizontal_alignment="center", gap="small"):
+            st.title("Criptoeduca")
+            if foto_bytes:
+                with st.container(
+                    key="moldura_avatar",
+                    width=118,
+                    horizontal_alignment="center",
+                ):
+                    st.image(foto_bytes, width=96)
+                st.markdown(
+                    f'<p class="ce-avatar-tag">{html.escape(tipo.upper())}</p>',
+                    unsafe_allow_html=True,
+                )
+            # Botão que abre a janela modal de edição
+            if st.button(
+                f"👤 {st.session_state.get('nome_usuario', nome_db)} ({st.session_state.get('tipo_usuario', '')})",
+                key="btn_abrir_perfil",
+                width="stretch",
+            ):
+                cancelar_selecao()   
+                render_widget_perfil()
     # Menus condicionais baseados no perfil do usuário.
     # O Administrador precisa da propria lista: antes ele caia no else e
     # recebia o menu do Aluno, porque so o Professor era distinguido.
@@ -324,13 +277,14 @@ else:
     #
     # "Conteúdos" do Aluno virou "Exemplos de Crimes Digitais": os
     # pergaminhos. O material que a coordenação publica em "Gerenciar
-    # Aulas" não disappeared -- ele virou o miolo dos pergaminhos. Por
-    # isso o Aluno não tem mais uma página de avisos: tem a página dos
-    # golpes, e o que a coordenação escreveu aparece lá dentro.
+    # Conteúdos > Exemplos de Golpe" não desapareceu -- ele virou o miolo
+    # dos pergaminhos. Por isso o Aluno não tem mais uma página de avisos:
+    # tem a página dos golpes, e o que a coordenação escreveu aparece lá
+    # dentro.
     if tipo == "Administrador":
-        opcoes = ["Painel da Coordenação", "Gerenciar Aulas", "Gerenciar Módulos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     elif tipo == "Professor":
-        opcoes = ["Painel Geral", "Turma", "Gerenciar Aulas", "Gerenciar Módulos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     else:
         opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado"]
 
@@ -342,13 +296,33 @@ else:
         st.session_state["menu"] = opcoes[0]
         del st.session_state["voltar_para_menu"]
 
+    # A home tem botoes que levam a outra pagina. Como ela e desenhada depois
+    # do radio, o clique nao pode gravar "menu" na hora: a chave do widget ja
+    # foi consumida neste run. O pedido chega por "navegar_para" e e aplicado
+    # aqui, antes do radio existir.
+    pedido_de_pagina = st.session_state.pop("navegar_para", None)
+    if (
+        pedido_de_pagina in opcoes
+        and not (tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1)
+    ):
+        st.session_state["menu"] = pedido_de_pagina
+
     pagina = st.sidebar.radio("Navegação", opcoes, key="menu")
+
+    # A hierarquia dos modulos aparece na propria lateralidade: recolhida,
+    # logo abaixo do menu, com as categorias e os modulos de cada uma. So
+    # existe quando a pagina aberta e a dos modulos, para nao poluir as
+    # outras telas.
+    if pagina == "Módulos de Aprendizado":
+        render_navegacao_modulos()
 
     st.sidebar.divider()
     if st.sidebar.button("🚪 Sair / Logout", key="botao_sair"):
         _confirmar_saida()
 
-    forcar_anuncio = st.sidebar.button(
+    # O botao de teste do pop-up e ferramenta da coordenacao: para o aluno
+    # ele estragaria a simulacao, que depende de o aviso chegar de surpresa.
+    forcar_anuncio = tipo == "Administrador" and st.sidebar.button(
         "🔔 Testar pop-up",
         key="botao_testar_anuncio",
         help="Abre imediatamente a notificação da simulação educativa.",
@@ -364,45 +338,19 @@ else:
         render_sessao_interativa(modo_voluntario=False)
         st.stop()
 
-    # Todas as paginas ocupam o mesmo placeholder. Ao trocar de menu, ele
-    # substitui o conteudo anterior antes que a nova pagina faca suas cargas.
-    pagina_conteudo = st.empty()
-    pagina_conteudo.empty()
-    with pagina_conteudo.container():
+    # Cada pagina tem seu proprio container com key. A key e o que permite
+    # ao Streamlit identificar o DOM daquela tela na transicao e descartar
+    # o anterior, em vez de deixar restos esmaecidos da pagina de origem.
+    with st.container(key=_chave_da_pagina(pagina)):
         # Conteudo condicional.
         # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
         # tres do Aluno, entao Professor e Administrador escolhiam uma pagina e
         # nao recebiam nada, nem o titulo.
-        if pagina == "Painel da Coordenação":
-            st.title("🛡️ Painel da Coordenação")
-            st.write("Visão geral da plataforma e credenciamento de professores.")
-
-            # Gera a mesma chave do dia usando a função do login.py
-            st.subheader("🔑 Chave de Acesso para Novos Professores")
-            st.info("Passe este código para os professores que forem se cadastrar hoje:")
-            # Exibe em um bloco clicável para fácil cópia
-            st.code(obter_chave_professor_diaria(), language="text")
-            st.caption("Esta chave expira automaticamente às 23:59:59 de hoje.")
-
-            # Aviso de configuração. Fica aqui e não em st.secrets porque quem
-            # precisa saber é a coordenação, e é a coordenação quem usa o painel —
-            # não quem programa o sistema. Fora do alcance dessa pessoa, o aviso é
-            # ruído.
-            if not segredo_da_chave_configurado():
-                st.warning(
-                    "Esta chave está sendo derivada do segredo padrão que vem no "
-                    "código-fonte. Ela tem 12 caracteres e é muito difícil de adivinhar, "
-                    "mas qualquer pessoa com uma cópia do repositório consegue calcular "
-                    "a chave do dia. Para fechar isso, crie "
-                    "`.streamlit/secrets.toml` com `CHAVE_SEGREDO = \"...\"` "
-                    "(esse caminho já está no .gitignore) e reinicie o app. "
-                    "Esta mensagem some sozinha quando o segredo estiver configurado.",
-                    icon="⚠️",
-                )
-
-        elif pagina == "Painel Geral":
-            st.title("📋 Painel Geral")
-            st.write("Aulas, quizzes e materiais do professor.")
+        if pagina in ("Painel da Coordenação", "Painel Geral", "Painel Principal"):
+            # A mesma home se adapta ao perfil: aluno, professor ou
+            # coordenacao. A chave diaria de professor continua no painel da
+            # coordenacao, dentro de modules/home.py.
+            render_home()
 
         elif pagina == "Turma":
             # Pagina reservada para o professor. Por enquanto e so o lugar:
@@ -413,26 +361,16 @@ else:
                 st.title("👥 Turma")
                 st.caption("Página da turma do professor.")
 
-        elif pagina == "Gerenciar Aulas":
-            # A publicacao da coordenacao virou a publicacao dos exemplos de
-            # crime: e o que o Professor e o Administrador escrevem aqui que
-            # vira pergaminho na pagina do aluno. O nome do item do menu
-            # continua "Gerenciar Aulas" porque e ele que o pessoal ja
-            # conhece.
-            render_gerenciar_crime()
-
-        elif pagina == "Gerenciar Módulos":
-            # Modulos criados aqui vao para o banco; os originais continuam
-            # em dados/modulos.json. A pagina aplica a hierarquia de autoria.
-            render_gerenciar_modulos()
+        elif pagina == "Gerenciar Conteúdos":
+            # A pagina reune os dois editores que antes eram itens
+            # separados: "Exemplos de Golpe" (pergaminhos) e "Modulos"
+            # (modulos de aprendizado). Modulos criados no editor vao para
+            # o banco; os originais continuam em dados/modulos.json.
+            render_gerenciar_conteudos()
 
         elif pagina == "Notas dos Alunos":
             st.title("🧮 Notas dos Alunos")
             st.write("Lançamento e consulta de notas.")
-
-        elif pagina == "Painel Principal":
-            st.title(f"Bem-vindo(a) de volta, {st.session_state['nome_usuario']}! 👋")
-            st.write("Aqui fica o painel da plataforma de estudos.")
 
         elif pagina == "Módulos de Aprendizado":
             # A home dos módulos é o mapa de missões (modules/mainmenu.py).
@@ -465,8 +403,9 @@ else:
 
         elif pagina == "Exemplos de Crimes Digitais":
             # A pagina dos pergaminhos. Substitui a antiga "Conteúdos": o que a
-            # coordenação publica em "Gerenciar Aulas" aparece aqui, dentro de um
-            # pergaminho, em vez de uma lista de avisos.
+            # coordenação publica em "Gerenciar Conteúdos → Exemplos de Golpe"
+            # aparece aqui, dentro de um pergaminho, em vez de uma lista de
+            # avisos.
             render_pergaminhos()
 
         elif pagina == "Meu Progresso":

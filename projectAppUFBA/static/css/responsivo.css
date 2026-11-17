@@ -1,0 +1,76 @@
+/* responsivo.css
+   Carregado por estilo.py com aplicar_css("responsivo.css") (modules/estilo.py).
+   Antes ficava como texto dentro do .py; o conteudo e o mesmo. */
+
+/* ---------- Ajustes gerais de tela estreita ---------- */
+@media (max-width: 900px) {
+    [data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-left: 1.25rem !important;
+        padding-right: 1.25rem !important;
+    }
+    [data-testid="stMain"] h1 {
+        font-size: clamp(16px, 3.4vw, 18px) !important;
+        line-height: 1.45 !important;
+        overflow-wrap: anywhere;
+    }
+    .stMarkdown p.ce-pixel {
+        font-size: clamp(18px, 4.5vw, 24px);
+        overflow-wrap: anywhere;
+    }
+}
+
+@media (max-width: 640px) {
+    [data-testid="stMainBlockContainer"],
+    .block-container {
+        padding-left: 0.9rem !important;
+        padding-right: 0.9rem !important;
+        padding-top: 1rem !important;
+    }
+    [data-testid="stMain"] h1 {
+        font-size: 16px !important;
+        line-height: 1.45 !important;
+        overflow-wrap: anywhere;
+    }
+
+    /* As abas do catalogo tem nomes longos ("Segurança Digital (4)").
+       Em vez de espremer ou quebrar, a faixa rola na horizontal. */
+    [data-baseweb="tab-list"] {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        scrollbar-width: thin;
+        -webkit-overflow-scrolling: touch;
+    }
+    [data-baseweb="tab"] {
+        font-size: 0.8rem !important;
+        padding-left: 0.6rem !important;
+        padding-right: 0.6rem !important;
+        white-space: nowrap;
+    }
+
+    /* Conteudo que nao cabe na largura (codigo, tabela, imagem) rola em vez
+       de empurrar a pagina inteira para o lado. */
+    [data-testid="stMain"] img {
+        max-width: 100%;
+        height: auto;
+    }
+    [data-testid="stCode"] pre {
+        overflow-x: auto !important;
+    }
+    [data-testid="stDataFrame"] {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    /* Alvo de toque confortavel nos botoes. */
+    .stButton button,
+    .stFormSubmitButton button {
+        min-height: 2.5rem;
+    }
+}
+
+@media (max-width: 380px) {
+    .stMarkdown p.ce-pixel {
+        font-size: 16px;
+    }
+}

@@ -14,6 +14,7 @@ from psycopg2 import OperationalError
 from modules.database import verificar_login, cadastrar_usuario
 from modules.leitura import CHAVE_LEITURA
 from modules import ratelimit
+from modules.estilo import aplicar_css
 
 # Alfabeto da chave do Professor: 36 símbolos, 10 dígitos e 26 letras.
 #
@@ -344,6 +345,7 @@ _CHAVES_DO_USUARIO = (
     "primeiro_acesso",
     "modulo_selecionado",
     CHAVE_LEITURA,
+    "navegar_para",
     "voltar_para_menu",
 )
 
@@ -385,19 +387,29 @@ def limpar_sessao_do_usuario(com_widgets=False):
         st.session_state.pop(chave, None)
 
 
-# run_every é o que conserta "esperar não funciona". Medido antes: o app não
-# tinha nenhum rerender automático (só dois st.rerun manuais, e st_autorefresh
-# nem instalado). O Streamlit só redesenha quando o script roda, e o script só
-# roda com interação do usuário — então o botão ficava cinza indefinidamente
-# depois do bloqueio, mesmo com a janela já vencida em memória. A reação
-# natural a uma tela travada é F5, que rotaciona o cookie XSRF e zera o
-# contador. Os dois sintomas eram o mesmo defeito.
+# Redesenho automático SÓ enquanto há bloqueio.
 #
-# st.fragment(run_every=...) existe nativamente no Streamlit 1.64 (assinatura
-# verificada: run_every: int | float | timedelta | str | None), então isto não
-# acrescenta dependência. O fragmento recria os widgets a cada ciclo, e o
-# clear_on_submit faz o recomeço sem apagar o que o usuário já digitou.
-@st.fragment(run_every="5s")
+# O Streamlit só redesenha quando o script roda, e o script só roda com
+# interação do usuário. Sem um redesenho automático, o botão ficava cinza
+# indefinidamente depois do bloqueio, mesmo com a janela já vencida em memória,
+# e a reação natural a uma tela travada é F5, que rotaciona o cookie XSRF e
+# zera o contador.
+#
+# Antes, os dois formulários tinham run_every="5s" o tempo todo: todo visitante
+# parado na tela de login rodava os dois fragmentos a cada 5 s, para sempre, e
+# o de cadastro ainda recalculava o HMAC da chave do dia. Agora o timer existe
+# só enquanto alguém está bloqueado. Este fragmento é chamado dentro do
+# formulário apenas nesse caso; quando a janela vence, ele pede um rerun do app
+# e deixa de ser desenhado, e o próprio Streamlit cancela o timer no navegador
+# (stop_auto_rerun). Tela de login parada não custa nada.
+@st.fragment(run_every="10s")
+def _aguardar_desbloqueio(acao, alvos):
+    """Libera o formulário sozinho quando a janela de bloqueio vence."""
+    if not any(ratelimit.excedeu(acao, alvo) for alvo in alvos):
+        st.rerun()
+
+
+@st.fragment
 def _formulario_login():
     with st.form("form_login", clear_on_submit=True):
         # clear_on_submit: a senha digitada não fica na tela depois do envio.
@@ -405,7 +417,7 @@ def _formulario_login():
         usuario_input = st.text_input("Usuário")
         senha_input = st.text_input("Senha", type="password")
 
-        login_bloqueado, _sobra, _alvos = _situacao_login(usuario_input)
+        login_bloqueado, _sobra, alvos = _situacao_login(usuario_input)
 
         if login_bloqueado:
             st.warning(
@@ -496,17 +508,25 @@ def _formulario_login():
                             else f"Restam {sobra} tentativa(s) em {ratelimit.JANELA_SEGUNDOS // 60} minutos. "
                         )
                     )
+                    if _bloqueado:
+                        # O bloqueio começou nesta tentativa. Sem o rerun, o
+                        # botão só desabilitaria na próxima interação, porque o
+                        # `disabled` é avaliado quando o formulário é desenhado.
+                        # O aviso de bloqueio do formulário substitui este erro.
+                        st.rerun()
 
-# Mesmo motivo do fragmento do login, e ainda mais visível aqui.
+    if login_bloqueado:
+        _aguardar_desbloqueio(ratelimit.LOGIN, alvos)
+
+# Mesmo esquema do login: sem timer permanente.
 #
-# Sem ele, o botão do cadastro ficava habilitado depois da 5ª chave errada: o
-# `disabled` é avaliado quando o formulário é desenhado, e o contador só estoura
-# durante o tratamento do envio, ou seja, um ciclo tarde. Medido antes da
-# correção: na 5ª tentativa o contador já mostrava "Restam 0", mas campo e botão
-# seguiam liberados e só travavam no clique seguinte — exatamente o "mostrar que
-# não tem como digitar" que foi pedido. E, igual ao login, sem fragmento o botão
-# nunca voltava sozinho quando a janela vencia: a tela ficava morta.
-@st.fragment(run_every="5s")
+# Dois cuidados, os mesmos que o timer de 5 s resolvia antes:
+# - na 5ª chave errada, o `disabled` já foi avaliado quando o formulário foi
+#   desenhado, então o campo e o botão ficariam liberados até o clique seguinte.
+#   Por isso a falha que esgota as tentativas pede um rerun na hora;
+# - o botão precisa voltar sozinho quando a janela vence. Isso é feito por
+#   _aguardar_desbloqueio, chamado só enquanto a chave está bloqueada.
+@st.fragment
 def _formulario_cadastro():
     # A chave válida para o dia. Determinística: mesma data e mesmo segredo
     # devolvem a mesma chave para a coordenação e para o formulário.
@@ -565,6 +585,7 @@ def _formulario_cadastro():
                 "Vale só para o cadastro com chave, não afeta o Aluno. "
                 f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
             )
+            _aguardar_desbloqueio(ratelimit.CHAVE_PROFESSOR, [None])
 
     with st.form("form_cadastro", clear_on_submit=True):
         # O campo da chave fica DENTRO do form, e isso não é um detalhe.
@@ -666,6 +687,11 @@ def _formulario_cadastro():
                              f"{ratelimit.JANELA_SEGUNDOS // 60} minutos."
                     )
                 )
+                if restantes == 0:
+                    # Bloqueou agora: redesenha para o campo e o botão já
+                    # aparecerem desabilitados. A mensagem acima está no
+                    # session_state e é mostrada de novo depois do rerun.
+                    st.rerun()
 
             # 4. Validação de e-mail
             elif email_input != email_confirm_input:
@@ -714,12 +740,12 @@ def _formulario_cadastro():
     # O aviso do último envio é redesenhado aqui, fora do formulário.
     #
     # Não dá para desenhar dentro: dentro do st.form nada aparece antes do
-    # envio, e o tique do fragmento — que existe para travar e destravar o
-    # campo da chave sozinho — redesenha o formulário inteiro sem reexecutar
-    # o tratamento do envio, levando junto toda mensagem. Medido: a confirmação
-    # "Conta criada com sucesso!" sumia entre 3,0s e 5,2s depois do clique.
-    # Guardar em session_state faz a mensagem sobreviver ao tique e durar até
-    # a próxima tentativa, que é o tempo que a pessoa precisa para ler.
+    # envio, e qualquer redesenho do fragmento (troca de perfil, o rerun de
+    # quando a chave bloqueia, ou o fim do bloqueio) redesenha o formulário
+    # inteiro sem reexecutar o tratamento do envio, levando junto toda
+    # mensagem. Guardar em session_state faz a mensagem sobreviver ao redesenho
+    # e durar até a próxima tentativa, que é o tempo que a pessoa precisa para
+    # ler.
     #
     # E some se o perfil mudou desde o envio: um aviso de Professor não tem o
     # que estar na tela quando a pessoa já passou para o cadastro de Aluno.
@@ -736,392 +762,13 @@ def _formulario_cadastro():
 
 
 def render_login():
+    with st.container(key="pagina_login"):
+        _render_login()
 
-    st.markdown("""
-    <style>
-        /* Centralização do conteúdo no topo */
-        .block-container {
-            padding-top: 3rem;
-            padding-bottom: 2rem;
-            max-width: 900px;
-        }
 
-        /* ---------- Superfícies ---------- */
-        /* O app usa o dark theme padrão do Streamlit: o cartão branco
-           original ficava ilegível sobre o fundo escuro. */
-        [data-testid="stForm"] {
-            background-color: #161a23;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            border-radius: 14px;
-            padding: 2rem;
-            box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
-        }
-
-        /* ---------- Cabeçalho ---------- */
-        /* As classes já existiam no CSS original, mas st.title() não aceita
-           classe: o elemento precisa ser emitido com p.login-title. */
-        div.stMarkdown p.login-title {
-            text-align: center;
-            /* A Press Start 2P é monoespaçada com advance de exatamente 1 em
-               por caractere, então a largura do título dá para calcular em
-               vez de medir: "Acesso ao CriptoEduca" tem 21 caracteres, e a
-               24px isso dá 504px (medido: 504,0px, ou 24,000px por caractere).
-               O título era maior (30px) até o texto encolher de "Acesso à
-               Plataforma Educativa" para o atual. Com os 29 caracteres
-               antigos, 30px dava 870px contra os 900px do .block-container:
-               uma sobra de 30px, e nessa margem o título quebrava e não
-               quebrava conforme o tamanho da janela. A 21 caracteres não há
-               mais aperto: a 30px seriam 630px contra 768px de espaço útil. */
-            font-size: 24px !important;
-            /* A Press Start 2P só tem o peso 400. Deixar 700 aqui fazia o
-               navegador inventar um negrito falso, que borra os pixels. */
-            font-weight: 400;
-            /* O nome tem que ser "PressStart2P", sem espaços, e é o mesmo nome
-               usado em [[theme.fontFaces]] na config.toml. Não é o nome real
-               da fonte: é um apelido. O Streamlit monta a regra do @font-face
-               sem aspas, e um nome com espaço geraria CSS inválido. */
-            font-family: "PressStart2P", monospace;
-            /* 1.4 e não 1.2: a caixa dos glyphs desta fonte é alta, e a 1.2
-               as linhas de pixels se encostam. */
-            line-height: 1.4;
-            /* Streamlit aplica tracking negativo em alguns textos. Em fonte
-               monoespaçada isso fecha a distância entre os glyphs e quebra
-               a grade. */
-            letter-spacing: 0;
-            /* Sem isto o Chrome suaviza as bordas dos pixels e o resultado
-               fica desfocado, que é justamente o oposto do pretendido. */
-            -webkit-font-smoothing: none;
-            color: #f1f5f9;
-            margin-bottom: 0.4rem;
-        }
-        div.stMarkdown p.login-subtitle {
-            text-align: center;
-            font-size: 14px;
-            color: #94a3b8;
-            margin-bottom: 1.5rem;
-        }
-
-        /* ---------- Abas ---------- */
-        [data-testid="stTabs"] [role="tablist"] {
-            background-color: #10141c;
-            border: 1px solid rgba(148, 163, 184, 0.12);
-            border-radius: 10px;
-            padding: 0.25rem;
-            gap: 0.25rem;
-        }
-        [data-testid="stTabs"] [role="tab"] {
-            color: #94a3b8;
-            font-weight: 600;
-            border-radius: 8px;
-            /* O flex:1 é o que tira as abas do canto. Sem ele cada aba mede
-               só o próprio texto: medido, a tablist tem 768px e as duas abas
-               ocupavam 102px somadas (36px e 66px), com 666px vazios à
-               direita. Com flex:1 as duas dividem a faixa inteira, e a aba
-               selecionada passa a ler como um bloco e não como um rótulo
-               solto grudado na esquerda. */
-            flex: 1;
-            /* O padding segura o rótulo longe da borda da aba. O vertical só
-               passou a valer porque veio junto com o min-height: a 40px de
-               altura e conteúdo de uns 19px, o min-height absorveria o
-               padding e nada mudaria na tela. */
-            padding: 0.6rem 1rem;
-            min-height: 46px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background-color 0.3s ease, color 0.3s ease;
-        }
-        [data-testid="stTabs"] [aria-selected="true"] {
-            background-color: #4F46E5;
-            color: #ffffff;
-        }
-
-        /* ---------- Campos ---------- */
-        /* A borda real do campo fica no elemento pai, não no input. */
-        [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
-            background-color: #1e2430;
-            border-radius: 10px;
-        }
-        [data-testid="stForm"] [data-testid="stWidgetLabel"] p {
-            color: #e2e8f0;
-            font-size: 13px;
-            font-weight: 600;
-        }
-        /* ---------- Seletor de perfil (st.radio) ---------- */
-        /* A regra antiga era para o stSelectbox do perfil. Não há mais nenhum
-           seletor dentro do formulário — o único que existe é o do perfil, e
-           ele foi parar fora do form de propósito (é o que faz o campo da
-           chave reagir na hora). Por isso estas regras não levam
-           [data-testid="stForm"]: alcançariam nada, e o radio ficaria com o
-           claro do tema, destoando dos campos de texto ao lado. */
-        [data-testid="stRadio"] [role="radiogroup"] {
-            background-color: #1e2430;
-            border-radius: 10px;
-            padding: 0.4rem 0.7rem;
-        }
-        [data-testid="stRadio"] [role="radiogroup"] label {
-            color: #e2e8f0;
-            font-size: 14px;
-            padding: 0.25rem 0;
-        }
-        /* O item marcado precisa ficar claro contra o fundo escuro, senão a
-           escolha some e o usuário não sabe qual perfil está selecionado.
-
-           Atenção ao seletor. O Streamlit 1.64 migrou o radio para React Aria
-           e a marcação mudou: não existe mais [role="radio"] nem
-           [aria-checked]. O estado vem em data-selected="true" e a opção é
-           label[data-testid="stRadioOption"]. As duas regras que usavam
-           [role="radio"] casavam com zero elementos, ou seja, o perfil
-           selecionado nunca chegou a ser destacado -- os dois itens
-           computavam exatamente a mesma cor e o mesmo peso. */
-        [data-testid="stRadio"] [data-testid="stRadioOption"][data-selected="true"] {
-            color: #ffffff;
-            font-weight: 600;
-        }
-        /* A regra do svg foi removida junto: o radio novo não tem svg nenhum.
-           O que se vê hoje é só o texto dentro de um div, então a cor do
-           círculo que ela pintava não tem mais onde ser aplicada. */
-
-        /* ---------- Botão ---------- */
-        /* O seletor original (div.stButton > button) estilizava todos os
-           botões do app. Este fica restrito ao botão do formulário. */
-        /* O Streamlit encolhe o container do botão de propósito, para o botão
-           abraçar o rótulo. Sem esta regra, width:100% no próprio botão é 100%
-           dos 68px que ele já ocupa: uma circularidade. A largura é forçada
-           no container, e o botão preenche. */
-        [data-testid="stForm"] [data-testid="stElementContainer"] {
-            width: 100%;
-        }
-        [data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
-            width: 100%;
-            background-color: #4F46E5;
-            color: #ffffff !important;
-            font-weight: 600;
-            font-size: 16px;
-            border-radius: 10px;
-            border: none;
-            min-height: 48px;
-            padding: 0.5rem 1rem;
-            transition: background-color 0.3s ease, transform 0.1s ease;
-        }
-        [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:hover {
-            background-color: #4338CA;
-            color: #ffffff !important;
-        }
-        [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:active {
-            transform: translateY(1px);
-        }
-
-        /* ---------- Foco ---------- */
-        /* Só o halo. Uma border-color aqui foi testada e não surte efeito:
-           a regra casa (:focus-within é true), mas a cor da borda continua
-           a do Streamlit, com ou sem !important. O halo aparece e some com o
-           foco, medido. Preferi um efeito verificável a uma declaração
-           decorativa no código. */
-        [data-testid="stForm"] [data-testid="stTextInputRootElement"]:focus-within {
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
-        }
-
-        /* ---------- Campo e botão bloqueados ---------- */
-        /* O CSS acima pinta o fundo do campo, então o cinza padrão de
-           desabilitado do tema não apareceria: o campo continuaria com a
-           mesma cara de um campo liberado. A opacidade é a diferença visível
-           entre "digitável" e "não digitável", que é o que o usuário precisa
-           ver. */
-        [data-testid="stForm"] [data-testid="stTextInputRootElement"]:has(input:disabled) {
-            opacity: 0.45;
-        }
-        [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        /* ---------- Aba de cadastro: dica de teste ---------- */
-        [data-testid="stForm"] [data-testid="stAlertContainer"] {
-            background-color: rgba(79, 70, 229, 0.12);
-            border: 1px solid rgba(99, 102, 241, 0.3);
-        }
-
-        /* ---------- Interatividade: hover e pressionado ---------- */
-        /* As transições ficam aqui, junto dos estados que elas animam, e não
-           na regra base de cada controle lá em cima: assim o par
-           transition/estado aparece no mesmo lugar, em vez de a transition
-           estar a duzentas linhas do :hover que ela faz existir.
-           0.3s ease em tudo, menos o "afundar" do :active, que continua em
-           0.1s. Um pressionar lento lê como lentidão e não como retorno; é a
-           cor que precisa de 0.3s para não piscar. */
-        /* Em todos os pares abaixo, a regra do item selecionado precisa ser
-           separada da do não selecionado. Sem o :not(), passar o mouse sobre
-           a aba que já está aberta apagaria a única pista de qual aba é a
-           que está aberta. */
-
-        /* Abas. O não selecionado ganha um fundo indigo fraco; o selecionado
-           escurece, na mesma direção do botão (#4F46E5 -> #4338CA). */
-        [data-testid="stTabs"] [role="tab"]:not([aria-selected="true"]):hover {
-            background-color: rgba(79, 70, 229, 0.16);
-            color: #e2e8f0;
-        }
-        [data-testid="stTabs"] [role="tab"]:not([aria-selected="true"]):active {
-            background-color: rgba(79, 70, 229, 0.30);
-        }
-        [data-testid="stTabs"] [role="tab"][aria-selected="true"]:hover {
-            background-color: #4338CA;
-        }
-        [data-testid="stTabs"] [role="tab"][aria-selected="true"]:active {
-            background-color: #3730A3;
-        }
-
-        /* Perfil (Aluno/Professor). O transform entra na lista porque este é
-           um dos controles que afunda no :active. */
-        [data-testid="stRadio"] [data-testid="stRadioOption"] {
-            transition: background-color 0.3s ease, color 0.3s ease,
-                        transform 0.1s ease;
-        }
-        /* Perfil (Aluno/Professor). O realce usa o azul #38bdf8, que era a cor
-           do círculo na marcação antiga; aqui ela volta no fundo, já que não
-           há mais círculo para pintar. Os seletores seguem a mesma correção
-           do bloco acima: stRadioOption e data-selected, nunca [role="radio"]
-           nem [aria-checked]. */
-        [data-testid="stRadio"] [data-testid="stRadioOption"]:not([data-selected="true"]):hover {
-            background-color: rgba(56, 189, 248, 0.10);
-            color: #ffffff;
-            border-radius: 6px;
-        }
-        [data-testid="stRadio"] [data-testid="stRadioOption"]:not([data-selected="true"]):active {
-            background-color: rgba(56, 189, 248, 0.20);
-        }
-        [data-testid="stRadio"] [data-testid="stRadioOption"]:active {
-            transform: translateY(1px);
-        }
-
-        [data-testid="stForm"] [data-testid="stTextInputRootElement"] {
-            transition: box-shadow 0.3s ease;
-        }
-        /* Campo de texto. Não é border-color: o comentário em "Foco" acima já
-           registra que a cor da borda não surte efeito aqui, porque a borda é
-           do elemento pai. O halo é o mesmo mecanismo do :focus-within, só
-           mais fraco.
-           O :not(:focus-within) é obrigatório. Esta regra e a de "Foco" têm a
-           mesma especificidade, e como esta vem depois, um :hover sem o :not
-           venceria o foco e trocaria o halo grosso pelo fino toda vez que o
-           mouse passasse sobre o campo em foco. */
-        [data-testid="stForm"] [data-testid="stTextInputRootElement"]:not(:focus-within):hover {
-            box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25);
-        }
-
-        /* Botão de mostrar a senha. filter em vez de color: o ícone é um
-           Material Symbols que herda a cor do campo, e brightness funciona
-           sem precisar saber qual é essa cor. */
-        [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
-            transition: filter 0.3s ease;
-        }
-        [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"]:hover {
-            filter: brightness(1.35);
-        }
-        [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"]:active {
-            filter: brightness(0.85);
-        }
-
-        /* ---------- Responsividade ---------- */
-        @media (max-width: 768px) {
-            .block-container {
-                padding-top: 2rem;
-                padding-bottom: 1.5rem;
-            }
-            [data-testid="stForm"] {
-                padding: 1.5rem;
-            }
-            div.stMarkdown p.login-title {
-                /* 21 caracteres a 20px = 420px, contra uns 736px de espaço
-                   útil nesta faixa. Não é mais medida contra quebra: o
-                   título já cabe em uma linha nesta altura de tela. */
-                font-size: 20px !important;
-            }
-            /* Tablet: alvo de toque confortável, sem ser o do celular */
-            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
-                min-height: 44px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .block-container {
-                padding-top: 1.25rem;
-                padding-bottom: 1rem;
-                padding-left: 0.75rem;
-                padding-right: 0.75rem;
-            }
-            [data-testid="stForm"] {
-                padding: 1.1rem;
-                border-radius: 12px;
-                box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.9);
-            }
-            div.stMarkdown p.login-title {
-                /* 21 caracteres a 16px = 336px, contra uns 456px de espaço
-                   útil com o padding de 0.75rem de cada lado. Mesmo assim o
-                   título não quebra em nenhuma das faixas: desde que o texto
-                   encolheu, a escada 20/16/14 é escala, e não é mais o que
-                   segura o título em uma linha. */
-                font-size: 16px !important;
-                margin-bottom: 0.35rem;
-            }
-            div.stMarkdown p.login-subtitle {
-                font-size: 13px;
-                margin-bottom: 1rem;
-                padding: 0 0.5rem;
-            }
-
-            /* Abas lado a lado ocupando a largura toda, com alvo de toque de 44px */
-            [data-testid="stTabs"] [role="tablist"] {
-                padding: 0.2rem;
-                gap: 0.2rem;
-            }
-            [data-testid="stTabs"] [role="tab"] {
-                padding: 0.7rem 0.35rem;
-                font-size: 14px;
-                min-height: 44px;
-            }
-
-            /* 16px evita o zoom automático do iOS ao focar o campo */
-            [data-testid="stForm"] [data-testid="stTextInputRootElement"] input,
-            [data-testid="stRadio"] label {
-                font-size: 16px !important;
-            }
-
-            /* No celular o botão é o alvo de toque mais importante da tela */
-            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button {
-                min-height: 48px;
-            }
-        }
-
-        @media (max-width: 360px) {
-            div.stMarkdown p.login-title {
-                font-size: 14px !important;
-            }
-            [data-testid="stTabs"] [role="tab"] {
-                font-size: 13px;
-                padding: 0.6rem 0.2rem;
-            }
-        }
-
-        /* Quem pede menos animação não recebe transição */
-        /* A lista cresceu quando as transições de 0.3s entraram. Com só a do
-           botão aqui, quem tem prefers-reduced-motion ligado continuava
-           recebendo 0.3s de transição em todo o resto. */
-        @media (prefers-reduced-motion: reduce) {
-            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button,
-            [data-testid="stTabs"] [role="tab"],
-            [data-testid="stRadio"] [data-testid="stRadioOption"],
-            [data-testid="stForm"] [data-testid="stTextInputRootElement"],
-            [data-testid="stTextInputRootElement"] [data-testid="stIconMaterial"] {
-                transition: none;
-            }
-            [data-testid="stForm"] [class*="st-key-FormSubmitter"] button:active,
-            [data-testid="stRadio"] [data-testid="stRadioOption"]:active {
-                transform: none;
-            }
-        }
-    </style>
-    """, unsafe_allow_html=True)
+def _render_login():
+    # O CSS da tela de login fica em static/css/login.css.
+    aplicar_css("login.css")
 
     st.markdown(
         '<p class="login-title">Acesso ao CriptoEduca</p>'
@@ -1130,7 +777,9 @@ def render_login():
     )
     aba_login, aba_cadastro = st.tabs(["Entrar", "Criar Conta"])
     with aba_login:
-        _formulario_login()
+        with st.container(key="aba_login"):
+            _formulario_login()
 
     with aba_cadastro:
-        _formulario_cadastro()
+        with st.container(key="aba_cadastro"):
+            _formulario_cadastro()
