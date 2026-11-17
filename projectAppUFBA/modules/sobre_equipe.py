@@ -1,6 +1,8 @@
+import base64
 import html
 import json
 import logging
+import mimetypes
 from pathlib import Path
 
 import streamlit as st
@@ -18,12 +20,36 @@ def _formatar_horas(valor):
     return horas if horas.lower().endswith("h") else f"{horas} h"
 
 
+def _avatar_src(valor):
+    """Devolve algo que o navegador consiga usar no atributo src da imagem.
+
+    O avatar do Roberto está no projeto, mas o Streamlit não serve arquivos
+    arbitrários do repositório como URL: um src relativo com barras de Windows
+    vira uma URL inválida. Aqui o arquivo é lido no servidor e vira data URI;
+    URLs http(s) seguem sendo usadas direto, como antes.
+    """
+    texto = str(valor or "").strip()
+    if not texto or texto.startswith(("http://", "https://", "data:")):
+        return texto
+
+    relativo = texto.replace("\\", "/")
+    caminho = (ARQUIVO_EQUIPE.parent / relativo).resolve()
+    if not caminho.is_file():
+        logger.warning("Avatar local não encontrado: %s", caminho)
+        return ""
+
+    tipo, _ = mimetypes.guess_type(caminho.name)
+    tipo = tipo or "image/jpeg"
+    codificado = base64.b64encode(caminho.read_bytes()).decode("ascii")
+    return f"data:{tipo};base64,{codificado}"
+
+
 def _card_equipe(membro):
     nome = html.escape(str(membro.get("nome", "Membro da equipe")), quote=True)
     funcao = html.escape(str(membro.get("funcao", "")), quote=True)
     horas = html.escape(_formatar_horas(membro.get("horas")), quote=True)
     resumo = html.escape(str(membro.get("resumo", "")), quote=True)
-    avatar = html.escape(str(membro.get("avatar", "")), quote=True)
+    avatar = html.escape(_avatar_src(membro.get("avatar", "")), quote=True)
 
     return html_bruto(f"""
     <div class="ce-card" style="min-height: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);">
