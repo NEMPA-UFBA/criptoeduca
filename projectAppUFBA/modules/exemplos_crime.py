@@ -1,10 +1,26 @@
 """Le os exemplos de crimes digitais do arquivo dados/exemplos_crime.json.
 
 Por que JSON e nao Python: quem escreve o conteudo do curso nao e
-programador. O texto de cada golpe (titulo, descricao, exemplo de
-mensagem, sinais de alerta, como se proteger) fica num arquivo de
-texto que qualquer pessoa abre no Bloco de Notas, edita e salva. Nao
-ha codigo para mexer, nenhuma funcao para chamar.
+programador. O conteudo de cada golpe fica num arquivo de texto que
+qualquer pessoa abre no Bloco de Notas, edita e salva. Nao ha codigo
+para mexer, nenhuma funcao para chamar.
+
+O conteudo e uma lista de BLOCOS, e nao um monte de campos com nome
+fixo. Cada bloco tem um tipo e um texto:
+
+    { "tipo": "titulo",    "texto": "Como o golpe acontece" }
+    { "tipo": "subtitulo", "texto": "Sinais de alerta" }
+    { "tipo": "paragrafo", "texto": "..." }
+    { "tipo": "fonte",     "texto": "Banco Central, 2026" }
+
+A lista e ordem: o que vem primeiro e o que aparece primeiro, e os
+tipos podem se repetir quantas vezes forem necessarias. Isto existe
+porque o material da escola vem em documento, e um documento e
+secoes, subsecoes e paragrafos na ordem em que foram escritos -- o
+molde de campos fixos perdia essa ordem.
+
+A "fonte" e o credito do texto, no rodape do pergaminho: sai pequena
+e esmaecida de proposito, para assinar sem competir com o texto.
 
 Este arquivo faz a parte chata: ler o JSON, tirar os comentarios,
 checar se os campos obrigatorios existem e explicar o que esta errado
@@ -12,9 +28,14 @@ checar se os campos obrigatorios existem e explicar o que esta errado
 a pagina de crimes mostra o que precisa ser corrigido e segue com os
 exemplos que prestam.
 
+Formato antigo: arquivos (e linhas de banco) gravados com "corpo",
+"exemplo", "sinais" e "protecao" continuam sendo aceitos -- eles sao
+convertidos em blocos aqui, na mesma ordem em que apareciam na tela,
+entao nenhum conteudo ja publicado fica vazio.
+
 O texto do arquivo pode ser lorem ipsum de proposito: ele e o molde
-que o professor troca pelo conteudo real. O que o app precisa e que o
-molde tenha os campos certos.
+que a coordenacao troca pelo conteudo real. O que o app precisa e que
+o molde tenha os campos certos.
 """
 
 import json
@@ -35,6 +56,20 @@ RE_CHAVE = re.compile(r"^[a-z0-9-]+$")
 # Sinais e protecao sao listas de texto no JSON. O banco guarda como
 # texto corrido, uma linha por item, entao a conversao acontece aqui.
 SEPARADOR_LINHAS = "\n"
+
+# Os quatro tipos de bloco que o pergaminho aceita. A ordem da tupla e a
+# ordem em que eles aparecem no formulario de montagem.
+TIPOS_BLOCO = ("titulo", "subtitulo", "paragrafo", "fonte")
+
+# Como o tipo e escrito na tela. E por isto que a validacao e feita com
+# o dicionario e nao com a tupla: o rotulo que a pessoa escolhe e este,
+# e o que vai para o JSON e a chave.
+ROTULO_TIPO = {
+    "titulo": "Título",
+    "subtitulo": "Subtítulo",
+    "paragrafo": "Parágrafo",
+    "fonte": "Fonte",
+}
 
 
 def _tirar_comentarios(texto):
@@ -77,6 +112,102 @@ def _lista_de_textos(bruto, onde, erros, obrigatorio=True):
     return itens
 
 
+def _carregar_blocos(bruto, onde, erros, obrigatorio=False):
+    """Valida a lista de blocos de um exemplo. Devolve a lista pronta.
+
+    Cada item precisa ser um objeto { "tipo": ..., "texto": ... }, com um
+    dos tipos conhecidos e texto nao vazio. Item ruim e descartado com
+    aviso, e nao derruba os outros.
+    """
+    if bruto is None:
+        if obrigatorio:
+            erros.append("%s: faltou a lista de 'blocos'." % onde)
+        return []
+    if not isinstance(bruto, list):
+        erros.append("%s: 'blocos' precisa ser uma lista (entre colchetes "
+                     "[ ])." % onde)
+        return []
+    if not bruto:
+        if obrigatorio:
+            erros.append("%s: a lista de 'blocos' esta vazia." % onde)
+        return []
+
+    blocos = []
+    for i, item in enumerate(bruto, start=1):
+        if not isinstance(item, dict):
+            erros.append("%s: o bloco %d precisa ser um objeto entre chaves "
+                         "{ }." % (onde, i))
+            continue
+        tipo = str(item.get("tipo") or "").strip().lower()
+        if tipo not in ROTULO_TIPO:
+            erros.append("%s: o bloco %d tem um tipo que nao existe (%r). "
+                         "Use um destes: %s."
+                         % (onde, i, tipo, ", ".join(TIPOS_BLOCO)))
+            continue
+        texto = str(item.get("texto") or "").strip()
+        if not texto:
+            erros.append("%s: o bloco %d (%s) esta sem texto."
+                         % (onde, i, ROTULO_TIPO[tipo]))
+            continue
+        blocos.append({"tipo": tipo, "texto": texto})
+
+    if obrigatorio and not blocos:
+        erros.append("%s: nenhum bloco valido. Confira os tipos e os textos."
+                     % onde)
+    return blocos
+
+
+def _blocos_de_campos_antigos(bruto):
+    """Monta os blocos a partir dos campos do formato antigo.
+
+    Antes do formato de blocos, cada exemplo tinha "corpo", "exemplo",
+    "sinais" e "protecao". Em vez de apagar esse conteudo, ele e
+    convertido, na mesma ordem em que era lido na tela: o que ja existe
+    continua aparecendo, so que como blocos.
+
+    Converte sem registrar erro de proposito: este caminho so e
+    percorrido quando nao ha "blocos" no arquivo, ou seja, quando o
+    arquivo ainda esta no formato antigo -- e la as listas podem ficar
+    de fora sem que nada esteja errado.
+    """
+    blocos = []
+
+    corpo = str(bruto.get("corpo") or "").strip()
+    if corpo:
+        blocos.append({"tipo": "paragrafo", "texto": corpo})
+
+    exemplo = str(bruto.get("exemplo") or "").strip()
+    if exemplo:
+        blocos.append({"tipo": "subtitulo", "texto": "Exemplo de mensagem"})
+        blocos.append({"tipo": "paragrafo", "texto": exemplo})
+
+    for rotulo, campo in (("Sinais de alerta", "sinais"),
+                          ("Como se proteger", "protecao")):
+        itens = _lista_de_textos(bruto.get(campo), rotulo, [], obrigatorio=False)
+        if itens:
+            blocos.append({"tipo": "subtitulo", "texto": rotulo})
+            for item in itens:
+                blocos.append({"tipo": "paragrafo", "texto": item})
+
+    return blocos
+
+
+def resumo_do_bloco(blocos):
+    """O primeiro paragrafo do pergaminho.
+
+    Serve para a coluna "corpo" do banco, que e texto corrido e que as
+    listas antigas (paineis, exportacoes) continuam lendo. Se nao houver
+    paragrafo, usa o texto do primeiro bloco que tiver.
+    """
+    for bloco in blocos:
+        if bloco.get("tipo") == "paragrafo" and bloco.get("texto"):
+            return bloco["texto"]
+    for bloco in blocos:
+        if bloco.get("texto"):
+            return bloco["texto"]
+    return ""
+
+
 def _carregar_exemplo(bruto, posicao, erros):
     """Valida um exemplo. Devolve o exemplo pronto, ou None se estiver ruim.
 
@@ -104,18 +235,34 @@ def _carregar_exemplo(bruto, posicao, erros):
         erros.append("%s ('%s'): faltou o 'titulo'." % (onde, chave))
         return None
 
+    # O conteudo: blocos do formato novo, ou os campos antigos convertidos
+    # quando o arquivo ainda esta no formato antigo.
+    blocos = _carregar_blocos(
+        bruto.get("blocos"),
+        "%s ('%s'): 'blocos'" % (onde, chave),
+        erros,
+    )
+    if not blocos:
+        blocos = _blocos_de_campos_antigos(bruto)
+
     return {
         "chave": chave,
         "titulo": titulo,
         "icone": (bruto.get("icone") or "📜").strip(),
         "categoria": (bruto.get("categoria") or "").strip(),
-        "corpo": (bruto.get("corpo") or "").strip(),
+        "blocos": blocos,
+        # Campos do formato antigo. Continuam saindo daqui porque o banco
+        # ainda tem essas colunas e porque um arquivo velho pode trazê-los.
+        # "corpo" e o resumo derivado dos blocos, e nao o que veio do
+        # arquivo: as duas coisas nao precisam ser a mesma.
+        "corpo": resumo_do_bloco(blocos),
         "exemplo": (bruto.get("exemplo") or "").strip(),
         "sinais": _lista_de_textos(bruto.get("sinais"),
-                                   "%s ('%s'): 'sinais'" % (onde, chave), erros),
+                                   "%s ('%s'): 'sinais'" % (onde, chave),
+                                   erros, obrigatorio=False),
         "protecao": _lista_de_textos(bruto.get("protecao"),
                                      "%s ('%s'): 'protecao'" % (onde, chave),
-                                     erros),
+                                     erros, obrigatorio=False),
     }
 
 

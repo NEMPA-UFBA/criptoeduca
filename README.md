@@ -6,9 +6,10 @@ Projeto de Pesquisa (FENIC) — NEMPA/UFBA e Colégio Estadual Álpio Franca.
 > **Nota sobre a linha de descrição:** a versão anterior do README dizia
 > "via Aritmética Modular". O código do repositório não usa Aritmética Modular
 > em lugar nenhum — nenhuma biblioteca de criptografia assimétrica, nenhum
-> cálculo modular. O que existe é bcrypt para senhas e uma chave diária
-> derivada por HMAC-SHA256. A descrição foi corrigida para não prometer uma
-> técnica que o app não implementa.
+> cálculo modular. O que existe é bcrypt para senhas, uma chave diária
+> derivada por HMAC-SHA256 e AES-128-GCM no laboratório de criptografia. A
+> descrição foi corrigida
+> para não prometer uma técnica que o app não implementa.
 
 ---
 
@@ -32,26 +33,43 @@ distribuída pela coordenação dentro do sistema. Aluno se cadastra sem chave.
 
 Requisitos: Python 3.10 ou superior.
 
+Execute os comandos abaixo a partir do diretório `projectAppUFBA`.
+
 ```bash
 # 1. Dependências
-pip install streamlit bcrypt
+python -m pip install -r requirements.txt
 
 # 2. Segredos (só é obrigatório se o banco ainda não tiver o usuário admin)
-cp .streamlit/secrets.example.toml .streamlit/secrets.toml
+cp .streamlit/secrets_example.toml .streamlit/secrets.toml
 # edite o ADMIN_SENHA no arquivo criado
 # o CHAVE_SEGREDO é opcional, mas veja a seção "A chave do dia" abaixo
 
-# 3. Subir o app
+# 3. Preparar o banco (banco novo ou após mudanças de schema)
+python -m modules.init_db
+
+# 4. Subir o app
 streamlit run app.py
 ```
 
 O app abre em `http://localhost:8501`.
 
+Execute `python -m modules.init_db` somente uma vez para cada banco novo ou
+quando uma mudança exigir preparação do schema. A preparação não roda nos
+reruns normais da interface. Exemplos novos de `dados/exemplos_crime.json`
+são inseridos ao abrir a página **Exemplos de Crimes Digitais**; exemplos
+existentes são preservados e não são sobrescritos.
+
+As colunas esperadas por `modulos` são sincronizadas nesse comando de
+preparação. Ao adicionar uma coluna usada pelo aplicativo, atualize a lista
+`expected_columns` em `modules/database.py` e execute o comando antes de
+publicar a versão. Não execute alterações de schema a cada conexão ou rerun:
+em produção, prefira aplicar migrações como etapa explícita do deploy.
+
 ### Sobre o `.streamlit/secrets.toml`
 
 O arquivo é lido pelo Streamlit automaticamente — no Community Cloud, local e
 em self-hosted — e já está no `.gitignore`, então o valor de verdade nunca
-entra no Git. O `secrets.example.toml` é a documentação do que o app espera.
+entra no Git. O `secrets_example.toml` é a documentação do que o app espera.
 
 A senha do `admin` é lida **uma única vez**: no primeiro boot, só se o banco
 ainda não tiver esse usuário. Depois disso o que autentica é o hash bcrypt no
@@ -78,7 +96,7 @@ projectAppUFBA/
 ├── app.py                     # roteamento por perfil e as seis páginas
 ├── plataforma.db              # SQLite (versionado)
 ├── .streamlit/
-│   └── secrets.example.toml   # modelo do gerenciador de segredos
+│   └── secrets_example.toml   # modelo do gerenciador de segredos
 ├── dados/
 │   ├── modulos.json           # OS MÓDULOS — quem escreve o curso mexe aqui
 │   ├── exemplos_crime.json    # OS EXEMPLOS DE CRIMES (os pergaminhos)
@@ -88,6 +106,7 @@ projectAppUFBA/
 └── modules/
     ├── login.py               # login, cadastro, validações, chave do dia
     ├── database.py            # conexão, tabelas, hash, verificação
+    ├── init_db.py             # preparação explícita do banco
     ├── ratelimit.py           # limitador de tentativas em memória
     ├── modulos.py             # leitor do JSON (dados, não layout)
     ├── exemplos_crime.py      # leitor dos exemplos de crime
@@ -97,7 +116,8 @@ projectAppUFBA/
     ├── quiz.py                # o quiz do módulo, com gabarito
     ├── pergaminhos.py         # os pergaminhos: exemplos de crimes digitais
     ├── estilo.py              # folha de estilo da identidade visual
-    └── sessaoInterativa.py    # mural criptografado
+    ├── criptografia.py        # AES-128-GCM do laboratório (cifrar/decifrar)
+    └── sessaoInterativa.py    # mural com chave por mensagem
 ```
 
 ### `dados/modulos.json`
@@ -109,9 +129,16 @@ campo, e a documentação completa está em
 [`dados/README.md`](projectAppUFBA/dados/README.md).
 
 Cada módulo tem `slug`, `titulo`, `resumo`, `icone`, `nivel`,
-`dificuldade`, `duracao`, `cor`, `pdf` e `quiz`. O `slug` serve para três
-coisas ao mesmo tempo: chave do botão na tela, identificador na página e
-nome do arquivo de PDF (`static/modulos/<slug>.pdf`).
+`dificuldade`, `duracao`, `cor`, `categoria`, `ordem`, `pdf` e `quiz`. O
+`slug` serve para três coisas ao mesmo tempo: chave do botão na tela,
+identificador na página e nome do arquivo de PDF
+(`static/modulos/<slug>.pdf`).
+
+`categoria` escolhe a aba do catálogo (**Criptografia**, **Segurança
+Digital**, **Legislação e Impacto** ou **Matemática Aplicada**; o que não
+estiver na lista cai em **Outros**), e `ordem` decide a posição dentro da
+aba. Os módulos criados pela tela também escolhem a categoria, gravada na
+tabela `modulos`.
 
 O campo `certa` do quiz aceita o **número** da alternativa (contando a
 partir de 1) ou o **texto** dela — o número é mais seguro para quem digita
@@ -148,10 +175,20 @@ Um módulo quebrado é descartado, e os outros continuam aparecendo.
 
 A home é o **Mapa de Missões**: cards em grade, com ícone, nível,
 dificuldade, tempo estimado, e uma caixa de progresso ("X de Y módulos
-concluídos"). O botão "Iniciar módulo" grava o `slug` em `st.session_state` e
-a mesma rota da sidebar passa a desenhar a página do módulo; o botão "Voltar
-ao mapa" apaga o `slug` e a home volta. Não é uma segunda página no menu: é
-a mesma rota com um estado.
+concluídos"). Os módulos ficam em **abas por categoria** — Criptografia,
+Segurança Digital, Legislação e Impacto e Matemática Aplicada —, e cada aba
+mostra quantos módulos dela já foram concluídos. A categoria **Outros** só
+vira aba quando existe algum módulo nela.
+
+A hierarquia também aparece na lateralidade: com a página de módulos aberta,
+um expander recolhido na sidebar (**"Ir para um módulo"**) lista as
+categorias e os módulos de cada uma, e leva direto ao módulo escolhido. É o
+mesmo estado da página, sem uma segunda rota.
+
+O botão "Iniciar módulo" grava o `slug` em `st.session_state` e a mesma rota
+da sidebar passa a desenhar a página do módulo; o botão "Voltar ao mapa"
+apaga o `slug` e a home volta. Não é uma segunda página no menu: é a mesma
+rota com um estado.
 
 A página do módulo já tem o cabeçalho (título, resumo, badges), a seção de
 material e a seção de quiz. **O PDF não aparece na página do módulo** —
@@ -166,9 +203,11 @@ Quem escreve o conteúdo do curso edita `dados/modulos.json` e coloca os
 PDFs em `static/modulos/`. Nenhuma mudança de código é necessária para
 adicionar, remover ou reescrever um módulo.
 
-Os quatro PDFs de teste já estão em `static/modulos/`, com o nome igual ao
-`slug` de cada módulo. Substituir o arquivo pelo PDF verdadeiro, com o
-**mesmo nome**, já resolve: a página passa a mostrar o novo conteúdo.
+Os PDFs de teste já estão em `static/modulos/`, com o nome igual ao `slug`
+de cada módulo. Os módulos 1 a 5 e a Aritmética Modular usam **PDFs em branco
+propositais** e um **quiz de teste** com uma pergunta; o material definitivo
+será publicado pela equipe. O laboratório AES e os módulos complementares
+continuam com o conteúdo que já existia.
 
 ### `modules/pergaminhos.py` e `dados/exemplos_crime.json`
 
@@ -201,12 +240,12 @@ porque a classe real inclui o id.
 O conteúdo dos pergaminhos vem de dois lugares, e os dois são a mesma
 coisa na tela:
 
-- **`dados/exemplos_crime.json`** — os exemplos pré-colocados, semeados no
-  primeiro boot. O texto que vem no arquivo é **lorem ipsum** de propósito:
+- **`dados/exemplos_crime.json`** — exemplos pré-colocados, inseridos ao
+  abrir a página. O texto que vem no arquivo é **lorem ipsum** de propósito:
   é um molde, e o que o Professor escreve vale mais do que o que está no
-  arquivo. A semeadura é idempotente pela `chave`: um exemplo que já
-  existe não é recriado, então a edição feita na tela **não é
-  sobrescrita** no próximo boot.
+  arquivo. A semeadura só insere uma `chave` que ainda não existe; exemplos
+  já existentes no banco não são atualizados nem inativados por mudanças no
+  JSON.
 - **A publicação em "Gerenciar Aulas"** — o que o Professor e a
   Coordenação publicam ali vira pergaminho, na mesma lista.
 
@@ -281,11 +320,47 @@ Duas armadilhas do `st.markdown` com HTML, ambas medidas no navegador:
 Por isso `estilo.html_bruto()` tira a indentação e remove as linhas em
 branco de todo HTML montado pelo app.
 
+### `modules/criptografia.py` e o laboratório AES
+
+O laboratório AES usa **AES-128-GCM**, com a chave derivada da frase que a
+pessoa digita. O texto cifrado é um único bloco base64url; o laboratório não
+grava nada no banco e mostra apenas esse bloco na tela.
+
+O caminho de uma mensagem:
+
+1. A frase-chave passa por **PBKDF2-HMAC-SHA256** (600.000 iterações) com um
+   *salt* aleatório de 16 bytes, e vira a chave de 16 bytes do AES.
+2. Um **nonce** aleatório de 12 bytes é sorteado para cada mensagem. A mesma
+   mensagem com a mesma chave gera ciphertexts diferentes.
+3. O **GCM** cifra e autentica: chave errada ou ciphertext alterado levantam
+   `InvalidTag` em vez de devolver texto errado.
+4. Iterações, salt, nonce e ciphertext+tag são empacotados dentro do próprio
+   bloco base64. A chave nunca é gravada. O texto cifrado fica apenas na
+   sessão do navegador.
+
+A chave pode ter qualquer tamanho; o formulário só exige que não seja vazia.
+Chaves curtas são fáceis de adivinhar, então a tela recomenda uma frase longa.
+
+O número de iterações fica dentro do bloco para que uma mudança futura de
+parâmetros não torne mensagens antigas ilegíveis. O formato antigo com campos
+separados por `$` continua sendo aceito na decifração. O número de iterações
+lido do bloco tem limite de sanidade, para um texto forjado não travar a
+página.
+
+**Por que não ECB.** O ECB cifra cada bloco de 16 bytes isoladamente: o mesmo
+bloco de texto vira o mesmo bloco cifrado, a mesma mensagem com a mesma chave
+dá sempre o mesmo resultado, e não há IV nem autenticação. É o modo que os
+materiais de segurança usam como exemplo de *como não fazer*. O GCM custa o
+mesmo esforço de código e não ensina a lição errada.
+
 ### `modules/database.py`
 
-- `conectar()` — abre o SQLite.
-- `criar_tabelas()` — cria a tabela se faltar, **soma colunas** novas sem
-  apagar dados e garante o índice único de e-mail.
+- `conectar()` — empresta e devolve conexões de um pool PostgreSQL compartilhado
+  entre as threads do app. O pool mantém até 10 conexões por processo, e cada
+  tentativa de conexão tem timeout de 10 segundos.
+- `criar_tabelas()` — cria tabelas/colunas ausentes sem apagar dados e
+  garante índices. É executada pelo comando `python -m modules.init_db`,
+  não durante os reruns da interface.
 - `cadastrar_usuario(...)` — devolve um motivo (`"ok"`, `"usuario_duplicado"`,
   `"email_duplicado"`) em vez de `True`/`False`, para que a tela possa
   distinguir os dois casos de duplicidade.
@@ -370,6 +445,9 @@ Vale ser explícito, porque parte do que parece proteção não é.
 ### Feito
 
 - Senhas com **bcrypt**, nunca texto puro, nunca no código.
+- **Laboratório com AES-128-GCM**: a chave vem da frase digitada via PBKDF2,
+  o nonce é aleatório e o GCM autentica o texto. O laboratório não grava no
+  banco.
 - **Índice único de e-mail**: o mesmo e-mail não pode abrir duas contas.
 - **Rate limit** no login e na chave do Professor, com janela deslizante real
   (medida, não só teórica).
@@ -424,6 +502,12 @@ em 5 — nenhum contou, e a chave errada nunca chegou a ser comparada.
 único, a tela dizia "este e-mail já está cadastrado" e o nome de usuário
 ficava livre para teste. Agora ela diz as duas coisas. É uma troca: integridade
 dos dados contra uma enumeração de usuários.
+
+**A chave do mural não é armazenada, e isso é uma faca de dois gumes.** Quem
+esquece a frase perde a mensagem para sempre; não há recuperação. Além disso,
+o servidor vê a chave em memória no instante do envio — o que o AES protege é
+o que fica gravado no banco, não o tráfego até o servidor. Quem souber a
+chave decifra a mensagem, inclusive de outra pessoa.
 
 **A senha é validada só por forma** (1 maiúscula, 1 minúscula, 1 número), não
 por força real. E não há recuperação de senha: quem esquece está perdido.
@@ -532,9 +616,10 @@ navegador.
 Branch `Nicolas`. O trabalho de segurar a chave de 12 caracteres, o rate limit
 corrigido e os dois formulários está commitado.
 
-**`requirements.txt` continua faltando.** `streamlit` e `bcrypt` não estão
-declarados em lugar nenhum, o que bloqueia deploy fora desta máquina. É o
-pendente mais concreto da lista.
+**`requirements.txt` agora declara as três dependências.** `streamlit`,
+`bcrypt` e `cryptography` estão fixados no arquivo, então o deploy fora desta
+máquina tem o que instalar. O `cryptography` entrou junto com o AES-128-GCM do
+mural.
 
 **A suíte de teste não está no repositório.** A rodada 3 escreveu 49
 verificações (`AppTest`) cobrindo a chave, o perfil, o rate limit e o login,

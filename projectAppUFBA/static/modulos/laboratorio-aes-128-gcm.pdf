@@ -1,0 +1,102 @@
+%PDF-1.4
+%âãÏÓ
+1 0 obj
+<</Type/Catalog/Pages 2 0 R>>
+endobj
+2 0 obj
+<</Type/Pages/Kids[5 0 R 7 0 R]/Count 2>>
+endobj
+3 0 obj
+<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>
+endobj
+4 0 obj
+<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>
+endobj
+5 0 obj
+<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 3 0 R/F2 4 0 R>>>>/Contents 6 0 R>>
+endobj
+6 0 obj
+<</Length 4453>>
+stream
+BT /F2 18.0 Tf 50.0 790.0 Td (Laboratório de Criptografia AES-128-GCM) Tj ET
+BT /F1 11.0 Tf 50.0 764.0 Td (Material de leitura do módulo especial) Tj ET
+BT /F1 10.5 Tf 50.0 748.0 Td () Tj ET
+BT /F2 13.0 Tf 60.0 740.0 Td (1. Criptografia simétrica) Tj ET
+BT /F1 10.5 Tf 50.0 718.0 Td (AES \(Advanced Encryption Standard\) é uma cifra simétrica: a mesma chave que cifra a) Tj ET
+BT /F1 10.5 Tf 50.0 703.0 Td (mensagem também a decifra. Ele trabalha com blocos de 128 bits e aceita chaves de 128,) Tj ET
+BT /F1 10.5 Tf 50.0 688.0 Td (192 ou 256 bits. Neste laboratório usamos a chave de 128 bits, ou seja, 16 bytes.) Tj ET
+BT /F1 10.5 Tf 50.0 673.0 Td (Cifras simétricas são rápidas e por isso aparecem em toda parte: conexões HTTPS,) Tj ET
+BT /F1 10.5 Tf 50.0 658.0 Td (arquivos no disco, mensagens e backups. O desafio é o mesmo de sempre: as duas partes) Tj ET
+BT /F1 10.5 Tf 50.0 643.0 Td (precisam combinar a chave secreta sem que ninguém a descubra.) Tj ET
+BT /F1 10.5 Tf 50.0 628.0 Td () Tj ET
+BT /F2 13.0 Tf 60.0 620.0 Td (2. O que o modo GCM acrescenta) Tj ET
+BT /F1 10.5 Tf 50.0 598.0 Td (O AES sozinho cifra um bloco. Para cifrar mensagens maiores, ele precisa de um modo de) Tj ET
+BT /F1 10.5 Tf 50.0 583.0 Td (operação. O GCM \(Galois/Counter Mode\) combina o modo CTR, que cifra os dados, com um) Tj ET
+BT /F1 10.5 Tf 50.0 568.0 Td (código de autenticação chamado GHASH.) Tj ET
+BT /F1 10.5 Tf 50.0 553.0 Td (O resultado não é apenas o texto cifrado: o GCM também produz uma tag de autenticação.) Tj ET
+BT /F1 10.5 Tf 50.0 538.0 Td (Quem recebe a mensagem calcula a tag de novo e compara. Se um único byte do texto) Tj ET
+BT /F1 10.5 Tf 50.0 523.0 Td (cifrado tiver sido alterado, a verificação falha e a decifração é recusada, em vez de) Tj ET
+BT /F1 10.5 Tf 50.0 508.0 Td (devolver um texto sem sentido.) Tj ET
+BT /F1 10.5 Tf 50.0 493.0 Td () Tj ET
+BT /F2 13.0 Tf 60.0 485.0 Td (3. Nonce: o número que nunca se repete) Tj ET
+BT /F1 10.5 Tf 50.0 463.0 Td (Cada mensagem recebe um nonce aleatório de 12 bytes. O nonce não é secreto, mas precisa) Tj ET
+BT /F1 10.5 Tf 50.0 448.0 Td (ser único para cada mensagem cifrada com a mesma chave. Se o mesmo nonce for) Tj ET
+BT /F1 10.5 Tf 50.0 433.0 Td (reutilizado, a segurança do GCM é comprometida.) Tj ET
+BT /F1 10.5 Tf 50.0 418.0 Td (É por causa do nonce que a mesma mensagem, cifrada com a mesma chave, gera textos) Tj ET
+BT /F1 10.5 Tf 50.0 403.0 Td (cifrados diferentes a cada vez. Isso é proposital: impede que duas mensagens iguais) Tj ET
+BT /F1 10.5 Tf 50.0 388.0 Td (sejam reconhecidas apenas olhando o texto cifrado.) Tj ET
+BT /F1 10.5 Tf 50.0 373.0 Td () Tj ET
+BT /F2 13.0 Tf 60.0 365.0 Td (4. A frase-chave e o PBKDF2) Tj ET
+BT /F1 10.5 Tf 50.0 343.0 Td (Uma frase-chave digitada por uma pessoa não tem necessariamente os 16 bytes exatos que o) Tj ET
+BT /F1 10.5 Tf 50.0 328.0 Td (AES espera, e também não tem aleatoriedade suficiente. Por isso o laboratório usa) Tj ET
+BT /F1 10.5 Tf 50.0 313.0 Td (PBKDF2-HMAC-SHA256, com um salt aleatório de 16 bytes e 600.000 repetições.) Tj ET
+BT /F1 10.5 Tf 50.0 298.0 Td (O salt garante que a mesma frase-chave produza chaves diferentes em dispositivos) Tj ET
+BT /F1 10.5 Tf 50.0 283.0 Td (diferentes, o que atrapalha tabelas prontas de senhas. As repetições deixam cada) Tj ET
+BT /F1 10.5 Tf 50.0 268.0 Td (tentativa de adivinhar a frase-chave mais cara para um atacante.) Tj ET
+BT /F1 10.5 Tf 50.0 253.0 Td () Tj ET
+BT /F2 13.0 Tf 60.0 245.0 Td (5. O envelope) Tj ET
+BT /F1 10.5 Tf 50.0 223.0 Td (O laboratório não guarda a chave. O que ele mostra é um envelope com tudo que é) Tj ET
+BT /F1 10.5 Tf 50.0 208.0 Td (necessário para decifrar, menos a chave: a versão do formato, o salt, o nonce, o texto) Tj ET
+BT /F1 10.5 Tf 50.0 193.0 Td (cifrado e a tag de autenticação. Quem tiver o envelope e a frase-chave consegue) Tj ET
+BT /F1 10.5 Tf 50.0 178.0 Td (decifrar; sem a chave, a mensagem é irrecuperável.) Tj ET
+BT /F1 10.5 Tf 50.0 163.0 Td () Tj ET
+BT /F2 13.0 Tf 60.0 155.0 Td (6. Boas práticas) Tj ET
+BT /F1 10.5 Tf 64.0 133.0 Td (- Use frases-chave longas e difíceis de adivinhar.) Tj ET
+BT /F1 10.5 Tf 64.0 118.0 Td (- Nunca reutilize um nonce com a mesma chave; deixe a biblioteca gerar o nonce.) Tj ET
+BT /F1 10.5 Tf 64.0 103.0 Td (- Guarde o envelope completo. Sem o salt, o nonce ou a tag, a decifração falha.) Tj ET
+BT /F1 10.5 Tf 64.0 88.0 Td (- Não publique dados sensíveis no mural: o laboratório não grava nada no banco.) Tj ET
+endstream
+endobj
+7 0 obj
+<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 3 0 R/F2 4 0 R>>>>/Contents 8 0 R>>
+endobj
+8 0 obj
+<</Length 813>>
+stream
+BT /F1 10.5 Tf 64.0 790.0 Td (- Em produção, use bibliotecas auditadas, como a cryptography do Python ou o) Tj ET
+BT /F1 10.5 Tf 64.0 775.0 Td (libsodium.) Tj ET
+BT /F1 10.5 Tf 50.0 760.0 Td () Tj ET
+BT /F2 13.0 Tf 60.0 752.0 Td (7. O que você vai testar) Tj ET
+BT /F1 10.5 Tf 50.0 730.0 Td (Depois de terminar a leitura e responder ao quiz, o botão do laboratório é liberado.) Tj ET
+BT /F1 10.5 Tf 50.0 715.0 Td (Nele você pode cifrar uma mensagem, copiar o envelope, decifrar com a mesma frase-chave) Tj ET
+BT /F1 10.5 Tf 50.0 700.0 Td (e tentar decifrar com uma chave errada para ver a autenticação recusar o texto.) Tj ET
+BT /F1 10.5 Tf 50.0 685.0 Td (Nada do que você escrever no laboratório é salvo ou publicado: o texto existe apenas na) Tj ET
+BT /F1 10.5 Tf 50.0 670.0 Td (sessão do seu navegador.) Tj ET
+endstream
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000060 00000 n 
+0000000117 00000 n 
+0000000205 00000 n 
+0000000298 00000 n 
+0000000419 00000 n 
+0000004921 00000 n 
+0000005042 00000 n 
+trailer
+<</Size 9/Root 1 0 R>>
+startxref
+5903
+%%EOF

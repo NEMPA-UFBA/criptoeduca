@@ -11,17 +11,19 @@ exatamente para isto que ele serve agora.
 """
 
 import html
+import logging
 
 import streamlit as st
 
-from modules.database import carregar_progresso_modulos
-from modules.database import modulos_lidos as modulos_lidos_no_banco
+from modules.database import carregar_estado_modulos
 from modules.estilo import aplicar_estilo, html_bruto
-from modules.modulos import carregar_modulos
+from modules.leitura import CHAVE_LEITURA
+from modules.modulos import CATEGORIAS_EXIBIDAS, carregar_modulos
 
 # Quantos cards cabem numa linha. Tres em tela larga, e o CSS encolhe o card
 # em tela estreita. O Streamlit nao tem media query para numero de colunas.
 COLUNAS = 3
+logger = logging.getLogger(__name__)
 
 
 def _html(trecho):
@@ -29,38 +31,31 @@ def _html(trecho):
     return html_bruto(trecho)
 
 
-def _progresso_do_aluno():
-    """Progresso do usuario logado: {slug: {acertos, total, data}}.
+def _selecionar_modulo(slug):
+    """Abre o modulo escolhido no proximo rerun, sem st.rerun manual.
 
-    Devolve dicionario vazio para quem nao tem usuario na sessao (o app
-    so desenha esta pagina depois do login, mas o mural e o login
-    compartilham o mesmo arquivo de sessao -- melhor nao assumir).
+    Tambem fecha a pagina de leitura, se houver uma aberta: o app desenha a
+    leitura antes da pagina do modulo, e sem esta limpeza o clique no menu
+    lateral continuaria mostrando o material anterior.
     """
+    st.session_state["modulo_selecionado"] = slug
+    st.session_state.pop(CHAVE_LEITURA, None)
+
+
+def _estado_do_aluno():
+    """Carrega notas e leituras do usuário em uma única consulta."""
     username = st.session_state.get("username")
     if not username:
-        return {}
+        return {}, set()
     try:
-        return carregar_progresso_modulos(username)
+        return carregar_estado_modulos(username)
     except Exception:
-        # O progresso e enfeite. Se o banco estiver travado, a lista de
-        # modulos tem que aparecer mesmo assim.
-        return {}
-
-
-def _modulos_lidos():
-    """Conjunto de slugs cujo material o aluno ja terminou de ler.
-
-    E o que libera o quiz. Vem do banco (modules/leitura.py), e nao da
-    sessao, porque a leitura precisa sobreviver ao fechamento do
-    navegador.
-    """
-    username = st.session_state.get("username")
-    if not username:
-        return set()
-    try:
-        return modulos_lidos_no_banco(username)
-    except Exception:
-        return set()
+        logger.exception("Falha ao carregar o estado dos módulos do aluno")
+        st.warning(
+            "Não consegui carregar seu progresso agora. "
+            "A lista de módulos continua disponível."
+        )
+        return {}, set()
 
 
 def _caixa_progresso(concluidos, total):
@@ -110,6 +105,11 @@ def _card_html(modulo, concluido, lido=False):
     badge_lido = (
         '<span class="ce-badge ce-badge-lido">📖 Lido</span>' if lido else ""
     )
+    badge_especial = (
+        '<span class="ce-badge">🧪 Laboratório</span>'
+        if modulo.get("especial")
+        else ""
+    )
 
     return _html(
         f"""
@@ -125,6 +125,7 @@ def _card_html(modulo, concluido, lido=False):
             <span class="ce-badge">⏱️ {duracao}</span>
             {badge_lido}
             {badge_ok}
+            {badge_especial}
           </div>
         </div>
         """
@@ -133,6 +134,11 @@ def _card_html(modulo, concluido, lido=False):
 
 def render_modulos():
     """Desenha a pagina-índice dos modulos."""
+    with st.container(key="pagina_catalogo_modulos"):
+        _render_catalogo_modulos()
+
+
+def _render_catalogo_modulos():
     aplicar_estilo()
 
     st.markdown(
@@ -145,7 +151,8 @@ def render_modulos():
         unsafe_allow_html=True,
     )
 
-    modulos, erros = carregar_modulos()
+    with st.spinner("Carregando módulos..."):
+        modulos, erros = carregar_modulos()
 
     if erros:
         # O arquivo dados/modulos.json foi editado por alguém e tem
@@ -172,11 +179,63 @@ def render_modulos():
         )
         return
 
-    progresso = _progresso_do_aluno()
-    lidos = _modulos_lidos()
+    with st.spinner("Carregando seu progresso..."):
+        progresso, lidos = _estado_do_aluno()
+    # Todos os modulos entram na conta, inclusive o laboratorio AES: ele
+    # agora tem leitura e quiz como qualquer outro.
     concluidos = sum(1 for m in modulos if m["slug"] in progresso)
     st.markdown(
-        _caixa_progresso(concluidos, len(modulos)), unsafe_allow_html=True
+        _caixa_progresso(concluidos, len(modulos)),
+        unsafe_allow_html=True,
+    )
+
+    grupos = _agrupar_por_categoria(modulos)
+    abas = st.tabs(
+        ["%s (%d)" % (categoria, len(lista)) for categoria, lista in grupos]
+    )
+    for indice, (aba, (categoria, lista)) in enumerate(zip(abas, grupos)):
+        with aba:
+            # A key do container identifica a aba no DOM e evita que o
+            # Streamlit reaproveite os cards de uma aba na outra durante a
+            # transicao (o mesmo motivo dos containers de pagina).
+            with st.container(key="aba_catalogo_%d" % indice):
+                _render_grupo(categoria, lista, progresso, lidos)
+
+
+def _agrupar_por_categoria(modulos):
+    """Divide os modulos nas abas, na ordem fixa das categorias.
+
+    As quatro categorias do curso aparecem sempre, mesmo vazias: a aba vazia
+    e a informacao de que aquela parte do curso ainda esta sendo montada.
+    "Outros" so entra quando existe algum modulo la, para nao criar uma aba
+    permanente para o que e excecao.
+    """
+    por_categoria = {categoria: [] for categoria in CATEGORIAS_EXIBIDAS}
+    for modulo in modulos:
+        por_categoria.setdefault(modulo["categoria"], []).append(modulo)
+
+    grupos = []
+    for categoria in CATEGORIAS_EXIBIDAS:
+        grupos.append((categoria, por_categoria[categoria]))
+    for categoria, lista in por_categoria.items():
+        if categoria not in CATEGORIAS_EXIBIDAS and lista:
+            grupos.append((categoria, lista))
+    return grupos
+
+
+def _render_grupo(categoria, modulos, progresso, lidos):
+    """Desenha os cards de uma categoria, em linhas de tres colunas."""
+    if not modulos:
+        st.info(
+            "Nenhum módulo em **%s** ainda. O material desta categoria está "
+            "em preparação." % categoria
+        )
+        return
+
+    concluidos = sum(1 for modulo in modulos if modulo["slug"] in progresso)
+    st.caption(
+        "%d de %d módulo(s) concluído(s) nesta categoria."
+        % (concluidos, len(modulos))
     )
 
     for linha_inicio in range(0, len(modulos), COLUNAS):
@@ -201,22 +260,65 @@ def render_modulos():
                         _card_html(modulo, slug in progresso, slug in lidos),
                         unsafe_allow_html=True,
                     )
-                    if st.button(
+                    st.button(
                         "Iniciar módulo →",
                         key=f"iniciar_modulo_{slug}",
                         type="primary",
                         width="stretch",
-                    ):
-                        st.session_state["modulo_selecionado"] = slug
-                        st.rerun()
+                        on_click=_selecionar_modulo,
+                        args=(slug,),
+                    )
+
+
+def render_navegacao_modulos():
+    """Atalho de modulos na barra lateral, agrupado por categoria.
+
+    A sidebar continua com um unico item de menu ("Modulos de Aprendizado");
+    esta lista e a hierarquia dentro dele. Fica recolhida por padrao para
+    nao empurrar o menu para baixo, e usa botoes com on_click para nao
+    gravar session_state depois que o widget da pagina ja nasceu.
+    """
+    # on_change="rerun" + .open: os botoes (um por modulo) so sao criados
+    # com o expander aberto. Antes eram criados a cada clique, mesmo fechado.
+    expander = st.sidebar.expander(
+        "🗺️ Ir para um módulo",
+        key="exp_nav_modulos",
+        on_change="rerun",
+    )
+    if not expander.open:
+        return
+
+    modulos, _erros = carregar_modulos()
+    if not modulos:
+        return
+
+    with expander:
+        for categoria, lista in _agrupar_por_categoria(modulos):
+            if not lista:
+                continue
+            st.caption(categoria)
+            for modulo in lista:
+                st.button(
+                    "%s %s" % (modulo.get("icone", "📘"), modulo["titulo"]),
+                    key="nav_modulo_%s" % modulo["slug"],
+                    width="stretch",
+                    on_click=_selecionar_modulo,
+                    args=(modulo["slug"],),
+                )
 
 
 def render_progresso_aluno():
-    """Desenha a pagina "Meu Progresso".
+    """Desenha a pagina "Meu Progresso" dentro do container identificado."""
+    with st.container(key="conteudo_meu_progresso"):
+        _render_progresso_aluno()
 
-    Mostra o que o aluno ja fez de verdade: quais materiais ele
-    terminou de ler (o que libera o quiz) e qual foi a melhor nota de
-    cada quiz. Tudo sai do banco, e nao de um texto de exemplo.
+
+def _render_progresso_aluno():
+    """Mostra o que o aluno ja fez de verdade.
+
+    Quais materiais ele terminou de ler (o que libera o quiz) e qual foi
+    a melhor nota de cada quiz. Tudo sai do banco, e nao de um texto de
+    exemplo.
 
     A pagina esta numa funcao e nao no app.py porque o app.py e um
     script do Streamlit, rodado no nivel do modulo: um "return" la
@@ -228,9 +330,7 @@ def render_progresso_aluno():
     st.title("📊 Desempenho")
     st.write("O que você já leu e as suas notas nos quizzes.")
 
-    username = st.session_state.get("username", "")
-    lidos = _modulos_lidos()
-    progresso = _progresso_do_aluno()
+    progresso, lidos = _estado_do_aluno()
 
     modulos, _erros = carregar_modulos()
     if not modulos:

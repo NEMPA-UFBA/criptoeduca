@@ -26,53 +26,60 @@ por modulo, entao a liberacao do quiz sobrevive a fechar o navegador.
 """
 
 import html
+import os
+from urllib.parse import quote
 
 import streamlit as st
 
 from modules.database import (
+    carregar_estado_modulos,
     registrar_leitura,
-    modulo_lido,
 )
 from modules.estilo import html_bruto
-from modules.modulos import modulo_por_slug, caminho_pdf, pdf_disponivel
+from modules.modulos import PASTA_PDFS, modulo_por_slug, caminho_pdf
 
 # Chave da sessao que diz qual modulo esta em leitura. Enquanto ela
 # existir, o app desenha a pagina de leitura.
 CHAVE_LEITURA = "leitura_em_curso"
 
 
-def _pdf_para_visualizar(modulo):
-    """Descobre o PDF do modulo, olhando nos dois lugares possiveis.
+def _caminho_pdf_seguro(modulo):
+    """Devolve o caminho absoluto do PDF, limitado à pasta de materiais."""
+    caminho = caminho_pdf(modulo)
+    if caminho is None:
+        return None, None
 
-    O PDF esta em dois lugares: a pasta static/modulos/ (que e o que o
-    app serve ao navegador) e a tabela "conteudos" do banco (que e o
-    que a coordenacao publica). O de arquivo vem primeiro, porque e o
-    material de leitura do modulo; o do banco e o material extra
-    publicado junto.
+    pasta_absoluta = os.path.realpath(PASTA_PDFS)
+    caminho_absoluto = os.path.realpath(os.path.abspath(caminho))
+    try:
+        if os.path.commonpath((pasta_absoluta, caminho_absoluto)) != pasta_absoluta:
+            return None, "O caminho do PDF está fora da pasta de materiais."
+    except ValueError:
+        return None, "O caminho do PDF está fora da pasta de materiais."
+
+    try:
+        if not os.path.isfile(caminho_absoluto):
+            return None, "O arquivo PDF não foi encontrado na pasta de materiais."
+    except OSError as erro:
+        return None, "Não consegui ler o PDF: %s" % erro
+
+    return caminho_absoluto, None
+
+
+def _url_do_pdf_estatico(caminho_absoluto):
+    """Monta a URL pública do PDF servido pela pasta static do Streamlit.
+
+    O visualizador de PDF do componente antigo parava de desenhar as
+    páginas em algumas versões do Chrome. O iframe abaixo usa o leitor
+    nativo do navegador, que recebe o mesmo arquivo por esta URL.
+
+    O caminho relativo é calculado a partir de PASTA_PDFS, então um PDF
+    fora dessa pasta nunca chega aqui: _caminho_pdf_seguro já recusou.
     """
-    if pdf_disponivel(modulo):
-        return caminho_pdf(modulo)
-    return None
-
-
-def _url_do_pdf(modulo):
-    """URL publica do PDF do modulo, para o <iframe> exibir.
-
-    Os parametros depois do "#" sao do VISUALIZADOR NATIVO do navegador
-    (o Chrome, o Edge e o Firefox embedded tem o mesmo), e nao do
-    Streamlit:
-
-      toolbar=0   -> esconde a barra de ferramentas. E o que tira do
-                      aluno a caneta de ANOTACAO, com que da para
-                      "editar" o PDF desenhando por cima. Sem isso, o
-                      aluno podia marcar o material do professor.
-      navpanes=0  -> esconde o painel de miniaturas.
-      view=FitH   -> ajusta a altura da pagina no visor.
-    """
-    nome = (modulo.get("pdf") or "").rsplit("/", 1)[-1]
-    if not nome:
-        return None
-    return "/app/static/modulos/%s#toolbar=0&navpanes=0&view=FitH" % nome
+    relativo = os.path.relpath(caminho_absoluto, PASTA_PDFS)
+    relativo = relativo.replace(os.sep, "/")
+    base = (st.get_option("server.baseUrlPath") or "").rstrip("/")
+    return f"{base}/app/static/modulos/{quote(relativo)}"
 
 
 def render_pagina_leitura(slug):
@@ -96,6 +103,11 @@ def render_pagina_leitura(slug):
     resumo = html.escape(modulo.get("resumo", ""))
     cor = html.escape(modulo.get("cor", "#4F46E5"))
 
+    with st.container(key=f"pagina_leitura_{slug}"):
+        _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor)
+
+
+def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
     st.markdown(
         html_bruto(
             f"""
@@ -117,31 +129,26 @@ def render_pagina_leitura(slug):
     )
 
     # ---------- O material ----------
-    caminho = _pdf_para_visualizar(modulo)
-    url = _url_do_pdf(modulo)
+    caminho_absoluto, erro_pdf = _caminho_pdf_seguro(modulo)
 
-    if url:
+    if erro_pdf:
+        st.error(erro_pdf)
+    elif caminho_absoluto is not None:
         # Sem botao de baixar. O botao entregava o arquivo do professor
         # na mao do aluno, e quem tem o arquivo pode edita-lo e
         # redistribuir -- o material do professor saia da pagina dele.
         #
-        # A leitura acontece dentro do app, com o visualizador do
-        # navegador em modo somente-leitura (toolbar=0 na URL, ver
-        # _url_do_pdf). Sem a barra de ferramentas, some a caneta de
-        # anotacao com que da para "editar" o PDF desenhando por cima.
+        # O PDF vai num iframe apontando para a URL estatica do proprio
+        # Streamlit. O leitor nativo do navegador desenha as paginas; o
+        # componente streamlit-pdf-viewer ficava com a area em branco no
+        # Chrome atual (o PDF.js dele não montava as páginas).
+        url_pdf = _url_do_pdf_estatico(caminho_absoluto)
         st.markdown(
             html_bruto(
-                f"""
-                <iframe
-                    src="{html.escape(url)}"
-                    width="100%"
-                    height="820"
-                    style="border:1px solid rgba(148, 163, 184, 0.25);
-                           border-radius:12px;
-                           background:#1e293b;"
-                    title="Material de leitura do módulo">
-                </iframe>
-                """
+                f'<iframe src="{html.escape(url_pdf, quote=True)}" '
+                'width="100%" height="800" '
+                'style="border:0;border-radius:12px;background:#fff;" '
+                'title="Material de leitura do módulo"></iframe>'
             ),
             unsafe_allow_html=True,
         )
@@ -162,21 +169,26 @@ def render_pagina_leitura(slug):
     # ---------- Os botoes ----------
     col1, col2 = st.columns(2)
 
-    if col1.button(
+    col1.button(
         "✅ Concluir a leitura e liberar o quiz",
-        key="concluir_leitura",
+        key=f"concluir_leitura_{slug}",
         type="primary",
         width="stretch",
-    ):
-        _registrar_e_voltar(slug)
+        on_click=_registrar_e_voltar,
+        args=(slug,),
+    )
 
-    if col2.button(
+    col2.button(
         "← Voltar sem concluir",
-        key="voltar_sem_concluir",
+        key=f"voltar_sem_concluir_{slug}",
         width="stretch",
-    ):
-        st.session_state.pop(CHAVE_LEITURA, None)
-        st.rerun()
+        on_click=_voltar_sem_concluir,
+    )
+
+
+def _voltar_sem_concluir():
+    """Fecha a leitura sem registrar nada no banco."""
+    st.session_state.pop(CHAVE_LEITURA, None)
 
 
 def _registrar_e_voltar(slug):
@@ -185,6 +197,9 @@ def _registrar_e_voltar(slug):
     O registro e no banco, e nao so na sessao: se o aluno fechar o
     navegador e voltar amanha, o quiz continua liberado. E o que faz a
     leitura valer alguma coisa.
+
+    Roda como callback do botao. O rerun que redesenha a pagina do
+    modulo ja acontece depois do callback, entao nao ha st.rerun aqui.
     """
     username = st.session_state.get("username", "")
     if username:
@@ -193,13 +208,11 @@ def _registrar_e_voltar(slug):
     # A leitura acabou. A pagina do modulo reaparece, com o quiz
     # liberado.
     st.session_state.pop(CHAVE_LEITURA, None)
-    st.rerun()
 
 
 def abrir_leitura(slug):
-    """Comeca a leitura de um modulo. Usado pelo botao do modulo."""
+    """Comeca a leitura de um modulo. Usado como callback do botao."""
     st.session_state[CHAVE_LEITURA] = slug
-    st.rerun()
 
 
 def quiz_liberado(slug):
@@ -207,8 +220,12 @@ def quiz_liberado(slug):
 
     A leitura e o que libera o quiz. Um modulo sem leitura registrada
     fica com o quiz bloqueado -- e o aluno ve o porque.
+
+    Usa o mesmo cache de carregar_estado_modulos que a pagina do modulo,
+    em vez de uma segunda consulta so para esta resposta.
     """
     username = st.session_state.get("username", "")
     if not username:
         return False
-    return modulo_lido(username, slug)
+    _, lidos = carregar_estado_modulos(username)
+    return slug in lidos

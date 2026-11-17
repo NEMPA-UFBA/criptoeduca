@@ -1,7 +1,10 @@
 # Dependências do EduStream.
 #
-# Só duas, e as duas são de verdade. Todo o resto do projeto (sqlite3, hmac,
-# hashlib, ipaddress, re, threading, time, datetime, collections) é da
+# Seis dependências usadas diretamente: Streamlit (interface),
+# extra-streamlit-components (cookies),
+# bcrypt (senhas), cryptography (AES-128-GCM), psycopg2-binary (driver
+# PostgreSQL) e python-dotenv (carrega o .env local). Todo o resto do projeto
+# (hmac, hashlib, ipaddress, re, threading, time, datetime, collections) é da
 # biblioteca padrão do Python.
 #
 # Versões fixadas, não ">=", porque este arquivo existe para resolver um
@@ -17,4 +20,8 @@
 # isto foi verificado usa Python 3.14.
 
 streamlit==1.64.0
+extra-streamlit-components==0.1.81
 bcrypt==5.0.0
+psycopg2-binary==2.9.13
+python-dotenv==1.2.4
+cryptography==50.0.2

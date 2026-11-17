@@ -220,7 +220,7 @@ __marimo__/
 # Sem o **, este padrao nao casava com nada e a senha do admin em
 # secrets.toml entraria no commit. Conferido com git check-ignore.
 **/.streamlit/secrets.toml
-# O modelo de secrets.example.toml continua versionado de proposito: e a
+# O modelo de secrets_example.toml continua versionado de proposito: e a
 # documentacao do que o app espera encontrar, e nao tem valor secreto.
 
 # Bancos SQLite locais. O plataforma.db ja estava rastreado antes desta regra,
@@ -228,3 +228,4 @@ __marimo__/
 # bancos criados daqui para frente.
 *.db
 *.db-journal
+projectAppUFBA/plataforma.db

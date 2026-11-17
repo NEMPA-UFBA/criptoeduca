@@ -4,115 +4,97 @@ Esta e a pagina que abre quando o aluno clica em "Iniciar modulo" no mapa de
 missoes (modules/mainmenu.py). Ela reune, na mesma tela:
 
   - o cabecalho do modulo (titulo, nivel, dificuldade, tempo);
-  - o material de leitura em PDF, exibido dentro da propria pagina;
-  - o quiz do modulo, logo abaixo do material.
+  - o atalho para o material de leitura, que abre a pagina de leitura;
+  - o quiz do modulo, liberado depois que a leitura e concluida.
 
-O material e exibido num <iframe> com o PDF servido pelo proprio
-Streamlit, mais um botao para baixar o arquivo. Nao existe widget
-nativo de PDF no Streamlit -- nao ha st.pdf -- entao o embed era a
-opcao que mantem a leitura dentro da pagina do modulo.
+O modulo especial do laboratorio AES segue o mesmo fluxo: leitura, quiz e,
+so depois dos dois, o botao que abre o laboratorio de cifrar e decifrar.
 """
 
 import html
-from urllib.parse import quote
 
 import streamlit as st
 
+from modules.database import carregar_estado_modulos
 from modules.estilo import aplicar_estilo, html_bruto
-from modules.modulos import modulo_por_slug, pdf_disponivel, caminho_pdf
+from modules.criptografia_aes import render_laboratorio_aes
+from modules.modulos import modulo_por_slug, pdf_disponivel
 from modules.leitura import abrir_leitura, quiz_liberado
 from modules.quiz import render_quiz
 
 
-def bytes_do_pdf(modulo):
-    """Le o arquivo do PDF do módulo e devolve os bytes.
+def _voltar_ao_mapa():
+    """Limpa o modulo aberto; o rerun natural do clique redesenha o mapa."""
+    st.session_state.pop("modulo_selecionado", None)
 
-    Devolve None quando o arquivo não está na pasta: quem chama já
-    checou com pdf_disponivel, mas a checagem é feita duas vezes porque
-    entre uma e outra o arquivo pode sumir. Um None aqui vira um erro
-    claro na tela, e não um traceback.
+
+def _abrir_laboratorio(chave):
+    st.session_state[chave] = True
+
+
+def _fechar_laboratorio(chave):
+    st.session_state[chave] = False
+
+
+def _modulo_concluido(slug):
+    """Diz se o aluno ja leu o material e respondeu ao quiz do modulo.
+
+    O laboratorio AES so libera depois das duas coisas: a leitura marca o
+    modulo em "leituras", e o quiz grava uma tentativa em
+    "progresso_modulos". Uma sem a outra nao basta.
     """
-    caminho = caminho_pdf(modulo)
-    if not caminho:
-        return None
+    username = st.session_state.get("username")
+    if not username:
+        return False
     try:
-        with open(caminho, "rb") as arquivo:
-            return arquivo.read()
-    except OSError:
-        return None
+        progresso, lidos = carregar_estado_modulos(username)
+    except Exception:
+        return False
+    return slug in lidos and slug in progresso
 
 
-# Altura, em pixels, do visor do PDF dentro da pagina.
-#
-# O visor e um <iframe> com o PDF do Streamlit. Nao existe widget nativo de
-# PDF no Streamlit -- nao ha st.pdf -- entao as duas opcoes sao o embed ou
-# um link para abrir em outra aba. O embed foi escolhido porque a leitura
-# acontece sem sair da pagina do modulo, que e o que o aluno quer.
-ALTURA_PDF = 820
+def _render_laboratorio_especial(slug):
+    """Mostra o botao do laboratorio AES e, ao abrir, o laboratorio."""
+    st.divider()
+    st.subheader("🧪 Laboratório AES-128-GCM")
 
-
-def _url_publica_do_pdf(modulo):
-    """URL publica do PDF do modulo.
-
-    O Streamlit serve a pasta "static" em /app/static/. Como o PDF fica
-    dentro dela, o caminho publico e o mesmo arquivo com o prefixo.
-
-    O nome do arquivo vem do manifesto, entao pode ter acento ou espaco
-    (o "pdf" aceita caminho com pasta). A URL precisa disso codificado,
-    e nao cru: um espaco quebra a requisição.
-    """
-    caminho = modulo.get("pdf") or ""
-    if "/" in caminho:
-        caminho = caminho.rsplit("/", 1)[-1]
-    return "/app/static/modulos/" + quote(caminho)
-
-
-def _mostrar_pdf(modulo):
-    """Desenha o PDF do módulo, com um botão para baixar.
-
-    O botão de baixar fica logo acima do visor porque nem todo
-    navegador mostra a barra de ferramentas do leitor embutido, e o
-    aluno precisa de um caminho para abrir o arquivo na mão.
-
-    ESTA FUNCAO NAO E USADA NA PAGINA DO MODULO. O PDF fica na pagina de
-    leitura (modules/leitura.py). Aqui ela continua caso o material
-    precise ser mostrado em outro lugar.
-    """
-    url = _url_publica_do_pdf(modulo)
-    conteudo = bytes_do_pdf(modulo)
-
-    if conteudo is None:
-        st.error(
-            "O material deste módulo sumiu da pasta `static/modulos/`. "
-            "Recarregue a página (F5) para tentar de novo."
-        )
-        return
-
-    with st.container(key="modulo_material"):
-        st.download_button(
-            "⬇️ Baixar o material (PDF)",
-            data=conteudo,
-            file_name=(modulo.get("pdf") or "material.pdf").rsplit("/", 1)[-1],
-            mime="application/pdf",
-            key="baixar_material_modulo",
-        )
-
+    if not _modulo_concluido(slug):
         st.markdown(
             html_bruto(
-                f"""
-                <iframe
-                    src="{html.escape(url)}"
-                    width="100%"
-                    height="{ALTURA_PDF}"
-                    style="border:1px solid rgba(148, 163, 184, 0.25);
-                           border-radius:12px;
-                           background:#1e293b;"
-                    title="Material de leitura do módulo">
-                </iframe>
+                """
+                <div class="ce-aviso">🔒 <strong>O laboratório está
+                bloqueado.</strong> Conclua a leitura do material e responda
+                ao quiz para liberar o botão de teste.</div>
                 """
             ),
             unsafe_allow_html=True,
         )
+        return
+
+    st.caption(
+        "Você concluiu a leitura e o quiz. Agora pode cifrar e decifrar "
+        "mensagens de verdade — nada é publicado no mural."
+    )
+
+    chave_aberto = "aes_lab_aberto_%s" % slug
+    if not st.session_state.get(chave_aberto):
+        st.button(
+            "🧪 Testar o laboratório AES",
+            key="abrir_lab_%s" % slug,
+            type="primary",
+            on_click=_abrir_laboratorio,
+            args=(chave_aberto,),
+        )
+        return
+
+    st.button(
+        "Fechar o laboratório",
+        key="fechar_lab_%s" % slug,
+        on_click=_fechar_laboratorio,
+        args=(chave_aberto,),
+    )
+
+    render_laboratorio_aes()
 
 
 def render_pagina_modulo(slug):
@@ -128,19 +110,32 @@ def render_pagina_modulo(slug):
         st.rerun()
         return
 
+    with st.container(key=f"pagina_modulo_{slug}"):
+        _render_conteudo_modulo(modulo, slug)
+
+
+def _render_conteudo_modulo(modulo, slug):
     # Voltar para o mapa. O botao fica antes do cabecalho porque e a acao
     # de onde a pessoa veio.
-    if st.button("⬅️ Voltar ao mapa de missões", key="voltar_mapa_modulos"):
-        st.session_state.pop("modulo_selecionado", None)
-        st.rerun()
+    st.button(
+        "⬅️ Voltar ao mapa de missões",
+        key=f"voltar_mapa_modulos_{slug}",
+        on_click=_voltar_ao_mapa,
+    )
 
     cor = html.escape(modulo.get("cor", "#4F46E5"))
     icone = html.escape(modulo.get("icone", "📘"))
     titulo = html.escape(modulo.get("titulo", ""))
     resumo = html.escape(modulo.get("resumo", ""))
+    categoria = html.escape(modulo.get("categoria", ""))
     nivel = html.escape(modulo.get("nivel", ""))
     dificuldade = html.escape(modulo.get("dificuldade", ""))
     duracao = html.escape(modulo.get("duracao", ""))
+    badge_especial = (
+        '<span class="ce-badge">🧪 Laboratório</span>'
+        if modulo.get("especial")
+        else ""
+    )
 
     st.markdown(
         html_bruto(
@@ -149,9 +144,11 @@ def render_pagina_modulo(slug):
               <h2>{icone} {titulo}</h2>
               <p>{resumo}</p>
               <div class="ce-tags">
+                <span class="ce-badge">🗂️ {categoria}</span>
                 <span class="ce-badge ce-badge-nivel">{nivel}</span>
                 <span class="ce-badge">📖 {dificuldade}</span>
                 <span class="ce-badge">⏱️ {duracao}</span>
+                {badge_especial}
               </div>
             </div>
             """
@@ -191,13 +188,13 @@ def render_pagina_modulo(slug):
     # pagina com o "Concluir a leitura", e e aperta-lo que libera o
     # quiz.
     st.markdown("")
-    if st.button(
+    st.button(
         "📖 Abrir a página de leitura",
         key="abrir_leitura_%s" % modulo.get("slug", ""),
         type="primary",
-    ):
-        abrir_leitura(modulo.get("slug", ""))
-        st.rerun()
+        on_click=abrir_leitura,
+        args=(modulo.get("slug", ""),),
+    )
 
     st.divider()
 
@@ -219,3 +216,11 @@ def render_pagina_modulo(slug):
             ),
             unsafe_allow_html=True,
         )
+
+    # --- Laboratorio especial ---
+    #
+    # O laboratorio AES e a recompensa do modulo: o botao so aparece
+    # depois que o aluno leu o material e respondeu ao quiz. Fica no fim
+    # da pagina, depois do resultado do quiz.
+    if modulo.get("especial") == "aes":
+        _render_laboratorio_especial(modulo.get("slug", ""))
