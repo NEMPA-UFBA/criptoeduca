@@ -27,9 +27,9 @@ por modulo, entao a liberacao do quiz sobrevive a fechar o navegador.
 
 import html
 import os
-from urllib.parse import quote
 
 import streamlit as st
+from streamlit_pdf_viewer import pdf_viewer
 
 from modules.database import (
     carregar_estado_modulos,
@@ -64,22 +64,6 @@ def _caminho_pdf_seguro(modulo):
         return None, "Não consegui ler o PDF: %s" % erro
 
     return caminho_absoluto, None
-
-
-def _url_do_pdf_estatico(caminho_absoluto):
-    """Monta a URL pública do PDF servido pela pasta static do Streamlit.
-
-    O visualizador de PDF do componente antigo parava de desenhar as
-    páginas em algumas versões do Chrome. O iframe abaixo usa o leitor
-    nativo do navegador, que recebe o mesmo arquivo por esta URL.
-
-    O caminho relativo é calculado a partir de PASTA_PDFS, então um PDF
-    fora dessa pasta nunca chega aqui: _caminho_pdf_seguro já recusou.
-    """
-    relativo = os.path.relpath(caminho_absoluto, PASTA_PDFS)
-    relativo = relativo.replace(os.sep, "/")
-    base = (st.get_option("server.baseUrlPath") or "").rstrip("/")
-    return f"{base}/app/static/modulos/{quote(relativo)}"
 
 
 def render_pagina_leitura(slug):
@@ -137,21 +121,7 @@ def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
         # Sem botao de baixar. O botao entregava o arquivo do professor
         # na mao do aluno, e quem tem o arquivo pode edita-lo e
         # redistribuir -- o material do professor saia da pagina dele.
-        #
-        # O PDF vai num iframe apontando para a URL estatica do proprio
-        # Streamlit. O leitor nativo do navegador desenha as paginas; o
-        # componente streamlit-pdf-viewer ficava com a area em branco no
-        # Chrome atual (o PDF.js dele não montava as páginas).
-        url_pdf = _url_do_pdf_estatico(caminho_absoluto)
-        st.markdown(
-            html_bruto(
-                f'<iframe src="{html.escape(url_pdf, quote=True)}" '
-                'width="100%" height="800" '
-                'style="border:0;border-radius:12px;background:#fff;" '
-                'title="Material de leitura do módulo"></iframe>'
-            ),
-            unsafe_allow_html=True,
-        )
+        pdf_viewer(caminho_absoluto, width=700, height=800)
     else:
         st.info(
             "Este módulo ainda não tem material em PDF na pasta "
