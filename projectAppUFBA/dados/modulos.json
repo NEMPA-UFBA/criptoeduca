@@ -66,17 +66,17 @@
       ]
     },
     {
-      "slug": "lgpd",
-      "titulo": "LGPD",
-      "resumo": "A Lei Geral de Proteção de Dados: o que são dados pessoais, quais são os princípios da lei, quais direitos o titular tem e quem responde quando os dados vazam.",
+      "slug": "definicao-da-lgpd",
+      "titulo": "Definição da LGPD",
+      "resumo": "Definição e estudo da aplicação das leis, quais os intuitos da LGPD?",
       "icone": "⚖️",
-      "nivel": "Módulo 5",
-      "dificuldade": "Intermediário",
+      "nivel": "Módulo 1",
+      "dificuldade": "Fácil",
       "duracao": "~15 min",
       "cor": "#8b5cf6",
       "categoria": "Legislação e Impacto",
       "ordem": 5,
-      "pdf": "lgpd.pdf",
+      "pdf": "definicao-da-lgpd.pdf",
       "quiz": [
         {
           "enunciado": "O que significa a sigla LGPD?",
