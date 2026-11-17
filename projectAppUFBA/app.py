@@ -34,6 +34,7 @@ from modules.login import (
 from modules.home import render_home
 from modules.anuncio_simulado import render_anuncio_simulado
 from modules.estilo import aplicar_css, aplicar_responsividade
+from modules.sobre_equipe import render_sobre_equipe
 
 def _chave_da_pagina(nome):
     """Converte o rótulo do menu em uma key estável para o container."""
@@ -282,11 +283,11 @@ else:
     # tem a página dos golpes, e o que a coordenação escreveu aparece lá
     # dentro.
     if tipo == "Administrador":
-        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
     elif tipo == "Professor":
-        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
     else:
-        opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado"]
+        opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
 
     # O botão "Voltar para o Menu Principal" mora na página do mural, que é
     # desenhada depois do radio. Gravar st.session_state["menu"] de lá levanta
@@ -410,3 +411,6 @@ else:
 
         elif pagina == "Meu Progresso":
             render_progresso_aluno()
+
+        elif pagina == "Equipe e Diário de Bordo":
+            render_sobre_equipe()
