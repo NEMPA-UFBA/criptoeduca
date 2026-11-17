@@ -289,13 +289,10 @@ E cada alternativa começa **desmarcada** (`index=None`) — sem isso o
 Streamlit marcava a primeira opção como resposta antes de o aluno
 escolher qualquer coisa.
 
-**O PDF fica só na página de leitura, e é somente-leitura.** A URL do
-`<iframe>` leva `#toolbar=0`, que esconde a barra de ferramentas do
-visualizador nativo do navegador — e com ela a **caneta de anotação**,
-com que o aluno "editava" o material do professor desenhando por cima.
-Medido: sem o parâmetro, a barra (`1000x56`) e a caneta (`32x32`) ficam
-visíveis; com ele, nenhum dos dois aparece. Não há botão de baixar o
-arquivo: ele entregava o material do professor na mão do aluno.
+**O PDF fica só na página de leitura.** Ele é renderizado pelo componente
+`streamlit-pdf-viewer`, em vez de um `<iframe>` com o leitor nativo do
+navegador: o iframe apresentava problemas com a política CSP do ambiente de
+nuvem. A interface não oferece um botão próprio para baixar o arquivo.
 
 **Por que a leitura é uma página do app e não um arquivo solto em
 `static/`:** porque a sessão do Streamlit morre quando o navegador sai
@@ -616,10 +613,10 @@ navegador.
 Branch `Nicolas`. O trabalho de segurar a chave de 12 caracteres, o rate limit
 corrigido e os dois formulários está commitado.
 
-**`requirements.txt` agora declara as três dependências.** `streamlit`,
-`bcrypt` e `cryptography` estão fixados no arquivo, então o deploy fora desta
-máquina tem o que instalar. O `cryptography` entrou junto com o AES-128-GCM do
-mural.
+**`requirements.txt` declara as dependências do app**, incluindo `streamlit`,
+`streamlit-pdf-viewer`, `extra-streamlit-components`, `bcrypt`,
+`cryptography`, `psycopg2-binary` e `python-dotenv`, para que o deploy fora
+desta máquina tenha o que instalar.
 
 **A suíte de teste não está no repositório.** A rodada 3 escreveu 49
 verificações (`AppTest`) cobrindo a chave, o perfil, o rate limit e o login,
