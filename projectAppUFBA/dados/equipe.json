@@ -18,7 +18,7 @@
     "funcao": "Desenvolvedor Backend & Infraestrutura",
     "horas": "45 h",
     "resumo": "Integração do PostgreSQL, implementação de persistência de login segura com JWT/Cookies e otimização do Streamlit Cloud.",
-    "avatar": "https://ui-avatars.com/api/?name=Daniel+Aguiar&background=1E88E5&color=fff&size=128"
+    "avatar": "..\\static\\fotos\\daniel.jpg"
   },
   {
     "nome": "Nicolas",
