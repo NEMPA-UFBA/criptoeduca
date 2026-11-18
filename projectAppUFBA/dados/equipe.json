@@ -11,7 +11,7 @@
     "funcao": "Orientadora & Coord. Pedagógica",
     "horas": "50+ h",
     "resumo": "Mentoria pedagógica, auditoria de UX/UI para adequação ao Ensino Médio e gestão dos Diários de Bordo.",
-    "avatar": "https://ui-avatars.com/api/?name=Juliana+Maria&background=D81B60&color=fff&size=128"
+    "avatar": "..\\static\\fotos\\juliana.jpg"
   },
   {
     "nome": "Daniel Aguiar",
@@ -32,7 +32,7 @@
     "funcao": "Pesquisadora Jurídico-Social",
     "horas": "35 h",
     "resumo": "Levantamento documental sobre a LGPD, curadoria de engenharia social aplicada a fraudes e estruturação pedagógica contra Phishing.",
-    "avatar": "https://ui-avatars.com/api/?name=Alana+Victoria&background=8E24AA&color=fff&size=128"
+    "avatar": "..\\static\\fotos\\alana.jpg"
   },
   {
     "nome": "Yasmim",
