@@ -4,21 +4,21 @@
     "funcao": "Coorientador & Líder Técnico (NEMPA)",
     "horas": "50+ h",
     "resumo": "Gestão ágil da equipe (Scrum/Sprints), auditoria do banco de dados Serverless (Neon/PostgreSQL) e blindagem da arquitetura de segurança do app.",
-    "avatar": "https://ui-avatars.com/api/?name=Roberto+Santanna&background=0D8ABC&color=fff&size=128"
+    "avatar": "..\\static\\fotos\\roberto.jpg"
   },
   {
     "nome": "Juliana Maria",
     "funcao": "Orientadora & Coord. Pedagógica",
     "horas": "50+ h",
     "resumo": "Mentoria pedagógica, auditoria de UX/UI para adequação ao Ensino Médio e gestão dos Diários de Bordo.",
-    "avatar": "https://ui-avatars.com/api/?name=Juliana+Maria&background=D81B60&color=fff&size=128"
+    "avatar": "..\\static\\fotos\\juliana.jpg"
   },
   {
     "nome": "Daniel Aguiar",
     "funcao": "Desenvolvedor Backend & Infraestrutura",
     "horas": "45 h",
     "resumo": "Integração do PostgreSQL, implementação de persistência de login segura com JWT/Cookies e otimização do Streamlit Cloud.",
-    "avatar": "https://ui-avatars.com/api/?name=Daniel+Aguiar&background=1E88E5&color=fff&size=128"
+    "avatar": "..\\static\\fotos\\daniel.jpg"
   },
   {
     "nome": "Nicolas",
@@ -32,7 +32,7 @@
     "funcao": "Pesquisadora Jurídico-Social",
     "horas": "35 h",
     "resumo": "Levantamento documental sobre a LGPD, curadoria de engenharia social aplicada a fraudes e estruturação pedagógica contra Phishing.",
-    "avatar": "https://ui-avatars.com/api/?name=Alana+Victoria&background=8E24AA&color=fff&size=128"
+    "avatar": "..\\static\\fotos\\alana.jpg"
   },
   {
     "nome": "Yasmim",

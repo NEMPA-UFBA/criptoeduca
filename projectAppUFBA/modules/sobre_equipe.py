@@ -1,11 +1,13 @@
+import base64
 import html
 import json
 import logging
+import mimetypes
 from pathlib import Path
 
 import streamlit as st
 
-from modules.estilo import aplicar_estilo, html_bruto
+from modules.estilo import aplicar_css, aplicar_estilo, html_bruto
 
 logger = logging.getLogger(__name__)
 ARQUIVO_EQUIPE = Path(__file__).resolve().parent.parent / "dados" / "equipe.json"
@@ -18,12 +20,36 @@ def _formatar_horas(valor):
     return horas if horas.lower().endswith("h") else f"{horas} h"
 
 
+def _avatar_src(valor):
+    """Devolve algo que o navegador consiga usar no atributo src da imagem.
+
+    O avatar do Roberto está no projeto, mas o Streamlit não serve arquivos
+    arbitrários do repositório como URL: um src relativo com barras de Windows
+    vira uma URL inválida. Aqui o arquivo é lido no servidor e vira data URI;
+    URLs http(s) seguem sendo usadas direto, como antes.
+    """
+    texto = str(valor or "").strip()
+    if not texto or texto.startswith(("http://", "https://", "data:")):
+        return texto
+
+    relativo = texto.replace("\\", "/")
+    caminho = (ARQUIVO_EQUIPE.parent / relativo).resolve()
+    if not caminho.is_file():
+        logger.warning("Avatar local não encontrado: %s", caminho)
+        return ""
+
+    tipo, _ = mimetypes.guess_type(caminho.name)
+    tipo = tipo or "image/jpeg"
+    codificado = base64.b64encode(caminho.read_bytes()).decode("ascii")
+    return f"data:{tipo};base64,{codificado}"
+
+
 def _card_equipe(membro):
     nome = html.escape(str(membro.get("nome", "Membro da equipe")), quote=True)
     funcao = html.escape(str(membro.get("funcao", "")), quote=True)
     horas = html.escape(_formatar_horas(membro.get("horas")), quote=True)
     resumo = html.escape(str(membro.get("resumo", "")), quote=True)
-    avatar = html.escape(str(membro.get("avatar", "")), quote=True)
+    avatar = html.escape(_avatar_src(membro.get("avatar", "")), quote=True)
 
     return html_bruto(f"""
     <div class="ce-card" style="min-height: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);">
@@ -39,27 +65,31 @@ def _card_equipe(membro):
 def render_sobre_equipe():
     """Exibe a equipe do projeto e o diário resumido de atividades."""
     aplicar_estilo()
-    st.title("👥 Equipe e Diário de Bordo")
-    st.write("Conheça as pessoas do projeto e acompanhe suas contribuições.")
+    # A key do contêiner dá um alvo estável para o CSS da página, sem depender
+    # da key que app.py gera a partir do rótulo do menu.
+    aplicar_css("equipe.css")
+    with st.container(key="equipe_diario"):
+        st.title("👥 Equipe e Diário de Bordo")
+        st.write("Conheça as pessoas do projeto e acompanhe suas contribuições.")
 
-    try:
-        with ARQUIVO_EQUIPE.open(encoding="utf-8") as arquivo:
-            equipe = json.load(arquivo)
-    except (OSError, json.JSONDecodeError):
-        logger.exception("Falha ao carregar os dados da equipe em %s", ARQUIVO_EQUIPE)
-        st.error("Não foi possível carregar os dados da equipe.")
-        return
+        try:
+            with ARQUIVO_EQUIPE.open(encoding="utf-8") as arquivo:
+                equipe = json.load(arquivo)
+        except (OSError, json.JSONDecodeError):
+            logger.exception("Falha ao carregar os dados da equipe em %s", ARQUIVO_EQUIPE)
+            st.error("Não foi possível carregar os dados da equipe.")
+            return
 
-    if not isinstance(equipe, list):
-        logger.error("O arquivo de equipe deve conter uma lista: %s", ARQUIVO_EQUIPE)
-        st.error("Os dados da equipe estão em um formato inválido.")
-        return
+        if not isinstance(equipe, list):
+            logger.error("O arquivo de equipe deve conter uma lista: %s", ARQUIVO_EQUIPE)
+            st.error("Os dados da equipe estão em um formato inválido.")
+            return
 
-    for inicio in range(0, len(equipe), 2):
-        colunas = st.columns(2)
-        for coluna, membro in zip(colunas, equipe[inicio : inicio + 2]):
-            if not isinstance(membro, dict):
-                logger.warning("Registro de membro inválido em %s", ARQUIVO_EQUIPE)
-                continue
-            with coluna:
-                st.markdown(_card_equipe(membro), unsafe_allow_html=True)
+        for inicio in range(0, len(equipe), 2):
+            colunas = st.columns(2)
+            for coluna, membro in zip(colunas, equipe[inicio : inicio + 2]):
+                if not isinstance(membro, dict):
+                    logger.warning("Registro de membro inválido em %s", ARQUIVO_EQUIPE)
+                    continue
+                with coluna:
+                    st.markdown(_card_equipe(membro), unsafe_allow_html=True)

@@ -265,8 +265,19 @@ else:
                 key="btn_abrir_perfil",
                 width="stretch",
             ):
-                cancelar_selecao()   
+                cancelar_selecao()
+                # A key das abas persiste depois que o diálogo fecha. Sem isto,
+                # quem veio do atalho do mural continuaria abrindo o perfil na
+                # aba Seguir usuários para sempre.
+                st.session_state["abas_widget_perfil"] = "👤 Meu perfil"
                 render_widget_perfil()
+
+        # Atalho "Seguir pessoas" do mural. O clique acontece depois da barra
+        # lateral, então o pedido chega na passada seguinte por esta chave.
+        if st.session_state.pop("abrir_seguir_usuarios", False):
+            cancelar_selecao()
+            st.session_state["abas_widget_perfil"] = "🤝 Seguir usuários"
+            render_widget_perfil()
     # Menus condicionais baseados no perfil do usuário.
     # O Administrador precisa da propria lista: antes ele caia no else e
     # recebia o menu do Aluno, porque so o Professor era distinguido.

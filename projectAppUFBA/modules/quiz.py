@@ -25,7 +25,7 @@ exatamente o que nao deve acontecer.
 Agora sao dois estados que nao coexistem:
 
     SEM RESULTADO  ->  as perguntas e o botao "Ver meu resultado"
-    COM RESULTADO  ->  a nota, o gabarito e o botao "Tentar de novo"
+    COM RESULTADO  ->  a nota, o gabarito, "Tentar de novo" e "Voltar para os Modulos"
 
 O gabarito so existe no segundo estado. Para voltar ao primeiro, o
 aluno aperta "Tentar de novo", que limpa as respostas marcadas. Nao ha
@@ -115,6 +115,17 @@ def _enviar_tentativa(slug, perguntas, username):
     # envio muda coisas FORA dele (a nota na pagina, o laboratorio AES que
     # libera depois do quiz, o progresso na barra lateral), entao aqui o app
     # inteiro e redesenhado uma vez.
+    st.rerun()
+
+
+def _voltar_aos_modulos():
+    """Fecha o modulo aberto e volta ao mapa de missoes.
+
+    O quiz e um fragmento: mexer em session_state so redesenha o fragmento.
+    O modulo e lido em app.py, fora dele, entao o rerun aqui precisa ser o
+    completo -- o mesmo recurso que _enviar_tentativa ja usa no envio.
+    """
+    st.session_state.pop("modulo_selecionado", None)
     st.rerun()
 
 
@@ -290,4 +301,12 @@ def _desenhar_resultado(resultado, perguntas, slug):
         key="tentar_de_novo_%s" % slug,
         on_click=_limpar_respostas,
         args=(slug, perguntas),
+    )
+
+    # O pedido aparece EMBAIXO do gabarito: depois de ver a nota, o aluno
+    # costuma querer escolher outro modulo sem ter de subir ate o cabecalho.
+    st.button(
+        "⬅️ Voltar para os Módulos",
+        key="voltar_modulos_quiz_%s" % slug,
+        on_click=_voltar_aos_modulos,
     )

@@ -146,13 +146,19 @@ def validar_email_formato(email):
     padrao = r"^[\w\.-]+@[\w\.-]+\.\w+$"
     return bool(re.fullmatch(padrao, email))
 
+def requisitos_senha(senha):
+    """Devolve o estado de cada requisito da senha, para o checklist em tempo real."""
+    return {
+        "maiuscula": any(c.isupper() for c in senha),
+        "minuscula": any(c.islower() for c in senha),
+        "numero": any(c.isdigit() for c in senha),
+        "tamanho": len(senha) >= 6,
+    }
+
+
 def validar_forca_senha(senha):
-    """Garante que a senha tenha pelo menos 1 letra maiúscula, 1 minúscula e 1 número."""
-    tem_maiuscula = any(c.isupper() for c in senha)
-    tem_minuscula = any(c.islower() for c in senha)
-    tem_numero = any(c.isdigit() for c in senha)
-    
-    return tem_maiuscula and tem_minuscula and tem_numero
+    """Garante maiúscula, minúscula, número e no mínimo 6 caracteres."""
+    return all(requisitos_senha(senha).values())
 
 
 def segredo_da_chave_padrao():
@@ -243,6 +249,33 @@ def chave_equivale(digitada, valida):
 # do fragmento. Ver _formulario_cadastro para o porquê.
 _CHAVE_DO_RESULTADO = "_cadastro_resultado"
 _CHAVE_DO_PERFIL = "_cadastro_resultado_perfil"
+_CHAVE_LIMPAR_CAMPOS = "_cadastro_limpar_campos"
+_CHAVE_IR_PARA_LOGIN = "_cadastro_ir_para_login"
+_CHAVE_MENSAGEM_LOGIN = "_cadastro_mensagem_login"
+_ABAS_LOGIN = "abas_login"
+
+# Campos do cadastro. Fora do st.form, cada um precisa de key própria: é a key
+# que permite limpar depois do envio e que faz o navegador devolver o valor a
+# cada digitação (dentro de form nada volta até o submit).
+_CAMPOS_CADASTRO = (
+    "cadastro_chave",
+    "cadastro_nome",
+    "cadastro_usuario",
+    "cadastro_email",
+    "cadastro_email_confirm",
+    "cadastro_senha",
+    "cadastro_senha_confirm",
+)
+
+# Só e-mail e senha proibem espaço. Nome e usuário podem ter espaço, e a chave
+# do Professor já é tolerante a espaço nas pontas — limpar todos os campos
+# apagaria "Maria Silva" do nome, o que não foi pedido.
+_CAMPOS_SEM_ESPACOS = (
+    "cadastro_email",
+    "cadastro_email_confirm",
+    "cadastro_senha",
+    "cadastro_senha_confirm",
+)
 
 
 def _guardar_resultado(nivel, texto):
@@ -428,6 +461,10 @@ def _formulario_login():
         btn_entrar = st.form_submit_button("Entrar", disabled=login_bloqueado)
 
         if btn_entrar:
+            # A instrução de cadastro já cumpriu o papel assim que a pessoa
+            # tenta entrar. Some na mesma hora, inclusive se errar a senha.
+            st.session_state.pop(_CHAVE_MENSAGEM_LOGIN, None)
+
             # O bloqueio fica no topo da cadeia: quem está bloqueado não gasta
             # consulta ao banco.
             if login_bloqueado:
@@ -532,26 +569,28 @@ def _formulario_cadastro():
     # devolvem a mesma chave para a coordenação e para o formulário.
     chave_valida_hoje = obter_chave_professor_diaria()
 
-    # O seletor de perfil fica FORA do formulário, de propósito. Dentro de
-    # st.form o Streamlit agrupa tudo e nada redesenha até o envio, então
-    # condicionar o campo da chave ao perfil só apareceria depois de enviar —
-    # pior que mostrar sempre. Fora do form, cada troca de perfil reroda a tela
-    # na hora.
-    #
-    # Efeito colateral bom: clear_on_submit só limpa widgets dentro do form, o
-    # que o perfil sobrevive ao envio. Antes o perfil voltava para "Aluno" a
-    # cada tentativa, e era por isso que o aviso de bloqueio precisava ficar
-    # independente do perfil.
-    #
+    # Limpeza pedida por um cadastro bem-sucedido. Precisa acontecer antes de
+    # qualquer widget ser desenhado: mexer na key de um widget depois de
+    # instanciado levanta StreamlitAPIException.
+    if st.session_state.pop(_CHAVE_LIMPAR_CAMPOS, False):
+        for campo in _CAMPOS_CADASTRO:
+            st.session_state.pop(campo, None)
+
+    # Espaço em e-mail e senha é erro de digitação, não dado. Como os campos
+    # ficaram fora do form, o script roda a cada tecla: limpar no início impede
+    # que o espaço chegue ao widget, ao checklist e ao banco. Também cobre
+    # colagem com quebra de linha e o preenchimento automático do navegador.
+    for campo in _CAMPOS_SEM_ESPACOS:
+        valor = st.session_state.get(campo)
+        if isinstance(valor, str):
+            sem_espacos = re.sub(r"\s+", "", valor)
+            if sem_espacos != valor:
+                st.session_state[campo] = sem_espacos
+
     # st.radio, e não st.selectbox: nesta versão do Streamlit o selectbox virou
     # um campo de busca, que aceita digitação livre e filtra a lista enquanto a
-    # pessoa escreve. Medido: digitando "Coordenador" o campo mostra a palavra e
-    # a lista responde "No results", e o valor é descartado na saída, voltando
-    # para "Aluno" sozinho. Ou seja, não quebrava nada — o valor inválido nunca
-    # chegava ao banco — mas a pessoa vê o texto que digitou na tela e ele some
-    # sem explicação. Num campo que decide se a chave aparece ou não, isso é
-    # pior do que deixar a chave sempre visível. Com duas opções, o radio mostra
-    # as duas e resolve em um clique, sem digitação nenhuma.
+    # pessoa escreve. Com duas opções, o radio mostra as duas e resolve em um
+    # clique, sem digitação nenhuma.
     tipo_usuario_input = st.radio(
         "Perfil de Acesso",
         ["Aluno", "Professor"],
@@ -571,14 +610,6 @@ def _formulario_cadastro():
         # ainda se cadastra como Aluno, e o radio continua vivo para a troca.
         chave_bloqueada = ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR)
 
-        # Com o seletor fora do form o perfil não reseta mais, então o aviso pode
-        # ficar amarrado a ele: some junto com o campo, que é o esperado. O texto
-        # segue dizendo que vale só para o cadastro com chave, porque o limite
-        # é da chave.
-        #
-        # O aviso fica fora do form de propósito: dentro de st.form nada é
-        # desenhado antes do envio, então a pessoa bloqueio e habilitada não
-        # veria nada.
         if chave_bloqueada:
             st.warning(
                 "Chave do Professor bloqueada por excesso de tentativas. "
@@ -587,34 +618,20 @@ def _formulario_cadastro():
             )
             _aguardar_desbloqueio(ratelimit.CHAVE_PROFESSOR, [None])
 
-    with st.form("form_cadastro", clear_on_submit=True):
-        # O campo da chave fica DENTRO do form, e isso não é um detalhe.
-        #
-        # Ele já esteve fora, e o cadastro de Professor estava quebrado por causa
-        # disso: ao enviar, o servidor recebia o campo da chave sempre vazio e
-        # rejeitava a chave certa. Medido no navegador com a chave do dia na
-        # tela e no log do servidor: `recebido='' valida='B3247UPY2KM8'`. O
-        # AppTest não pegou nada disso porque escreve o estado dos widgets
-        # direto no servidor, sem passar pelo navegador — é a diferença entre
-        # testar a lógica e testar o programa.
-        #
-        # O que precisa ficar fora do form é o SELETOR DE PERFIL, que é o que
-        # dispara o redesenho imediato. O campo da chave só precisa aparecer
-        # quando o perfil é Professor, e isso continua funcionando: o radio está
-        # fora, então trocar o perfil reroda o fragmento e o form inteiro é
-        # redesenhado com o campo dentro.
+    # Sem st.form: dentro dele o Streamlit só devolve os valores no submit, e
+    # por isso nada do que depende de digitação (borda do e-mail, checklist da
+    # senha) poderia atualizar em tempo real. A key nos widgets substitui o
+    # clear_on_submit — a limpeza acontece no começo desta função, só no sucesso.
+    with st.container(key="form_cadastro"):
         if tipo_usuario_input == "Professor":
+            # Sem max_chars de propósito: o Streamlit corta o valor no limite e
+            # o corte acontece antes do strip() da comparação, o que rejeitava a
+            # chave correta colada com espaço. A tolerância a caixa e a espaço
+            # nas pontas fica em chave_equivale.
             chave_prof_input = st.text_input(
                 f"Chave de Verificação ({TAMANHO_CHAVE} caracteres)",
                 type="password",
-                # Sem max_chars de propósito. Parece boa ideia — impedir que uma
-                # chave colada com espaço no fim queime uma das 5 tentativas — mas
-                # faz o contrário: o Streamlit CORTA o valor no limite, e o corte
-                # acontece antes do strip() da comparação. Medido: "  b3247upy2km8 "
-                # (16 caracteres) virava "  b3247upy2k" e a chave correta era
-                # rejeitada. Num campo mascarado a pessoa não tem como ver o
-                # erro, então é a pior forma de falha possível. A tolerância a
-                # caixa e a espaço das pontas fica por conta de chave_equivale.
+                key="cadastro_chave",
                 help=(
                     "Bloqueada por excesso de tentativas. Aguarde a janela."
                     if chave_bloqueada
@@ -624,29 +641,83 @@ def _formulario_cadastro():
                 disabled=chave_bloqueada,
             )
 
-        nome_input = st.text_input("Nome Completo")
-        novo_usuario_input = st.text_input("Nome de Usuário")
+        nome_input = st.text_input("Nome Completo", key="cadastro_nome")
+        novo_usuario_input = st.text_input("Nome de Usuário", key="cadastro_usuario")
 
-        email_input = st.text_input("E-mail")
-        email_confirm_input = st.text_input("Confirme o E-mail")
+        st.text_input("E-mail", key="cadastro_email")
+        st.text_input("Confirme o E-mail", key="cadastro_email_confirm")
 
-        nova_senha_input = st.text_input(
+        email_input = st.session_state.get("cadastro_email", "")
+        email_confirm_input = st.session_state.get("cadastro_email_confirm", "")
+
+        # Aviso ANTES de enviar: assim que os dois campos estão preenchidos e
+        # divergem, os dois ficam com borda vermelha e a mensagem aparece. O
+        # botão também desabilita, para ninguém enviar um cadastro inválido.
+        emails_divergem = bool(
+            email_input and email_confirm_input and email_input != email_confirm_input
+        )
+        if emails_divergem:
+            st.markdown(
+                '<style>'
+                '.st-key-cadastro_email [data-testid="stTextInputRootElement"],'
+                '.st-key-cadastro_email_confirm [data-testid="stTextInputRootElement"],'
+                '.st-key-cadastro_email [data-testid="stTextInputRootElement"]:focus-within,'
+                '.st-key-cadastro_email_confirm [data-testid="stTextInputRootElement"]:focus-within {'
+                'border-color: #ef4444 !important;'
+                'box-shadow: 0 0 0 2px #ef4444 !important;'
+                '}'
+                '</style>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<p class="erro-email">Os e-mails digitados não coincidem.</p>',
+                unsafe_allow_html=True,
+            )
+
+        st.text_input(
             "Nova Senha",
             type="password",
-            help="Requisitos: 1 maiúscula, 1 minúscula e 1 número."
+            key="cadastro_senha",
+            help="Mínimo de 6 caracteres, com maiúscula, minúscula e número.",
+        )
+
+        # Checklist em tempo real: o valor da key é devolvido a cada tecla, então
+        # cada item troca de cor sem precisar enviar o formulário.
+        nova_senha_input = st.session_state.get("cadastro_senha", "")
+        requisitos = requisitos_senha(nova_senha_input)
+
+        def _item_checklist(texto, ok):
+            classe = "ok" if ok else "falta"
+            marca = "✓" if ok else "✗"
+            return f'<span class="senha-item {classe}">{marca} {texto}</span>'
+
+        st.markdown(
+            '<div class="senha-requisitos">'
+            + _item_checklist("Letra maiúscula", requisitos["maiuscula"])
+            + _item_checklist("Letra minúscula", requisitos["minuscula"])
+            + _item_checklist("Número", requisitos["numero"])
+            + _item_checklist("Mínimo de 6 caracteres", requisitos["tamanho"])
+            + '</div>',
+            unsafe_allow_html=True,
         )
 
         # A senha é digitada duas vezes de propósito. Num campo mascarado não
         # dá para reler o que foi escrito, então um erro de digitação viraria
         # uma conta com uma senha que ninguém sabe qual é — e não há
         # "esqueci minha senha" nesta plataforma para consertar isso depois.
-        # Segue o mesmo padrão do campo de e-mail, que já confirma.
-        nova_senha_confirm_input = st.text_input(
+        st.text_input(
             "Confirme a Nova Senha",
             type="password",
+            key="cadastro_senha_confirm",
         )
+        nova_senha_confirm_input = st.session_state.get("cadastro_senha_confirm", "")
 
-        btn_cadastrar = st.form_submit_button("Finalizar Cadastro", disabled=chave_bloqueada)
+        btn_cadastrar = st.button(
+            "Finalizar Cadastro",
+            key="btn_cadastrar",
+            disabled=chave_bloqueada or emails_divergem,
+            width="stretch",
+        )
 
         if btn_cadastrar:
             # Nenhum envio começa com o aviso antigo na tela. O perfil vai junto
@@ -693,7 +764,8 @@ def _formulario_cadastro():
                     # session_state e é mostrada de novo depois do rerun.
                     st.rerun()
 
-            # 4. Validação de e-mail
+            # 4. Validação de e-mail. O caso de divergência já é avisado antes
+            #    do envio (e bloqueia o botão); este ramo é a rede de segurança.
             elif email_input != email_confirm_input:
                 _guardar_resultado("error", "Os e-mails digitados não coincidem.")
             elif not validar_email_formato(email_input):
@@ -709,8 +781,8 @@ def _formulario_cadastro():
             elif not validar_forca_senha(nova_senha_input):
                 _guardar_resultado(
                     "error",
-                    "A senha deve conter pelo menos uma letra maiúscula, "
-                    "uma minúscula e um número."
+                    "A senha deve ter no mínimo 6 caracteres, com pelo menos "
+                    "uma letra maiúscula, uma minúscula e um número."
                 )
 
             # 7. Salvar no banco
@@ -727,9 +799,19 @@ def _formulario_cadastro():
                     # Aluno não tem chave para limpar.
                     if tipo_usuario_input == "Professor":
                         ratelimit.zerar(ratelimit.CHAVE_PROFESSOR)
-                    _guardar_resultado(
-                        "success", "Conta criada com sucesso! Faça login na aba ao lado."
+                    # Sucesso não fica como aviso embaixo do cadastro: a pessoa
+                    # vai para a aba Entrar e recebe a instrução lá. Em erro,
+                    # nada disto acontece — o formulário permanece preenchido.
+                    st.session_state[_CHAVE_MENSAGEM_LOGIN] = (
+                        "Conta criada com sucesso! Agora entre com seu usuário "
+                        "e senha na aba Entrar."
                     )
+                    st.session_state[_CHAVE_LIMPAR_CAMPOS] = True
+                    st.session_state[_CHAVE_IR_PARA_LOGIN] = True
+                    # Pedir o rerun aqui permite limpar as keys no topo da
+                    # função, antes de os widgets existirem — o clear_on_submit
+                    # do antigo st.form fazia exatamente isso.
+                    st.rerun()
                 elif motivo == "email_duplicado":
                     _guardar_resultado(
                         "warning", "Este e-mail já está cadastrado nesta plataforma."
@@ -737,18 +819,8 @@ def _formulario_cadastro():
                 else:
                     _guardar_resultado("warning", "Este nome de usuário já está em uso.")
 
-    # O aviso do último envio é redesenhado aqui, fora do formulário.
-    #
-    # Não dá para desenhar dentro: dentro do st.form nada aparece antes do
-    # envio, e qualquer redesenho do fragmento (troca de perfil, o rerun de
-    # quando a chave bloqueia, ou o fim do bloqueio) redesenha o formulário
-    # inteiro sem reexecutar o tratamento do envio, levando junto toda
-    # mensagem. Guardar em session_state faz a mensagem sobreviver ao redesenho
-    # e durar até a próxima tentativa, que é o tempo que a pessoa precisa para
-    # ler.
-    #
-    # E some se o perfil mudou desde o envio: um aviso de Professor não tem o
-    # que estar na tela quando a pessoa já passou para o cadastro de Aluno.
+    # O aviso do último envio continua fora do cartão, como antes: sobrevive a
+    # redesenho do fragmento e some se o perfil mudou desde o envio.
     _resultado = st.session_state.get(_CHAVE_DO_RESULTADO)
     if _resultado and st.session_state.get(_CHAVE_DO_PERFIL) == tipo_usuario_input:
         _nivel, _texto = _resultado
@@ -770,13 +842,30 @@ def _render_login():
     # O CSS da tela de login fica em static/css/login.css.
     aplicar_css("login.css")
 
+    # Um cadastro bem-sucedido pediu a ida para Entrar. A key do radio de abas
+    # precisa ser gravada ANTES de st.tabs existir: mexer nela depois daria
+    # StreamlitAPIException (a key já teria sido consumida neste run).
+    if st.session_state.pop(_CHAVE_IR_PARA_LOGIN, False):
+        st.session_state[_ABAS_LOGIN] = "Entrar"
+
     st.markdown(
         '<p class="login-title">Acesso ao CriptoEduca</p>'
         '<p class="login-subtitle">Entre com suas credenciais ou crie sua conta para continuar</p>',
         unsafe_allow_html=True,
     )
-    aba_login, aba_cadastro = st.tabs(["Entrar", "Criar Conta"])
+    # on_change="rerun" é o que faz a key valer: com o padrão "ignore" as abas
+    # não guardam estado e não poderiam ser trocadas por código.
+    aba_login, aba_cadastro = st.tabs(
+        ["Entrar", "Criar Conta"],
+        key=_ABAS_LOGIN,
+        on_change="rerun",
+    )
     with aba_login:
+        # A instrução do cadastro aparece aqui, na tela de login, e some
+        # quando a pessoa tenta entrar (ver _formulario_login).
+        mensagem_login = st.session_state.get(_CHAVE_MENSAGEM_LOGIN)
+        if mensagem_login:
+            st.success(mensagem_login)
         with st.container(key="aba_login"):
             _formulario_login()
 
