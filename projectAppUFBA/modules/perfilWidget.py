@@ -5,6 +5,7 @@ import math
 from PIL import Image
 
 from modules.estilo import aplicar_css
+from modules.senhas import tem_espaco, validar_forca_senha
 # Importa módulos de renderização da UI
 # Puxa do gerenciador de banco de dados otimizado as tarefas de atualização e leitura
 from modules.database import (
@@ -61,11 +62,6 @@ def alternar_avatar(rel_path):
 def cancelar_selecao():
     st.session_state.pop("avatar_selecionado", None)
 
-def validar_forca_senha(senha):
-    tem_maiuscula = any(c.isupper() for c in senha)
-    tem_minuscula = any(c.islower() for c in senha)
-    tem_numero = any(c.isdigit() for c in senha)
-    return tem_maiuscula and tem_minuscula and tem_numero
 
 # Sem st.toast aqui, de proposito. Verificado no navegador: um toast chamado
 # no callback de um botao DENTRO de um dialogo nao aparece (o Streamlit avisa
@@ -200,7 +196,17 @@ def _render_aba_perfil(username_atual):
                 st.divider()
                 st.subheader("🔒 Alteração de Senha")
                 senha_atual = st.text_input("Senha Atual", type="password")
-                nova_senha = st.text_input("Nova Senha", type="password")
+                # O formulário (st.form) só roda o script no envio, então não
+                # dá para ter o checklist ao vivo do cadastro aqui. A regra
+                # fica visível no "?" do campo, antes de a pessoa digitar.
+                nova_senha = st.text_input(
+                    "Nova Senha",
+                    type="password",
+                    help=(
+                        "Mínimo de 6 caracteres, com letra maiúscula, letra "
+                        "minúscula e número. Sem espaços."
+                    ),
+                )
                 confirma_senha = st.text_input("Confirme", type="password")
 
                 if st.form_submit_button("Salvar Modificações", type="primary"):
@@ -211,8 +217,23 @@ def _render_aba_perfil(username_atual):
                         if nova_senha != confirma_senha:
                             st.error("As novas senhas não coincidem.")
                             st.stop()
+                        # Espaço na senha nova tem aviso próprio, antes da
+                        # regra geral. A regra geral (validar_forca_senha) já recusava,
+                        # mas com uma mensagem que listava tudo de uma vez, e a
+                        # pessoa não sabia que o problema era o espaço. A senha
+                        # é recusada, nunca "corrigida": tirar o espaço em
+                        # silêncio gravaria uma senha diferente da digitada.
+                        if tem_espaco(nova_senha):
+                            st.error(
+                                "A nova senha não pode ter espaços. Digite-a "
+                                "sem espaço nenhum, nem no começo nem no fim."
+                            )
+                            st.stop()
                         if not validar_forca_senha(nova_senha):
-                            st.error("A nova senha precisa de maiúscula, minúscula e número.")
+                            st.error(
+                                "A nova senha precisa ter no mínimo 6 caracteres, com "
+                                "maiúscula, minúscula e número, sem espaços e com no máximo 72 bytes."
+                            )
                             st.stop()
 
                     resultado = atualizar_perfil(
@@ -221,6 +242,14 @@ def _render_aba_perfil(username_atual):
 
                     if resultado == "senha_atual_incorreta":
                         st.error("Senha atual incorreta.")
+                    elif resultado == "senha_nova_invalida":
+                        # Só chega aqui se a checagem acima for removida ou
+                        # contornada: o banco também recusa (ver
+                        # atualizar_perfil em modules/database.py).
+                        st.error(
+                            "A nova senha precisa ter no mínimo 6 caracteres, com "
+                            "maiúscula, minúscula e número, sem espaços e com no máximo 72 bytes."
+                        )
                     else:
                         st.session_state['nome_usuario'] = novo_nome
                         st.success("Perfil atualizado!")

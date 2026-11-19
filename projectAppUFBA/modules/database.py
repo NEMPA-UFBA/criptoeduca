@@ -12,6 +12,12 @@ import logging
 import threading
 from streamlit.errors import StreamlitSecretNotFoundError
 from dotenv import load_dotenv
+from modules.senhas import (
+    candidatas_de_senha,
+    senha_cabe_no_bcrypt,
+    senha_confere,
+    validar_forca_senha,
+)
 
 # Carrega o .env ao lado da aplicação, independente do diretório de execução.
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1179,6 +1185,15 @@ def listar_progresso_recente(limite=6):
     return linhas
 
 
+# Hash de uma senha que ninguém usa, criado uma vez quando o módulo é carregado
+# (custo ~0,25 s, uma vez por processo). Serve só para o login gastar o mesmo
+# tempo quando o usuário NÃO existe: sem ele, a resposta vinha na hora para
+# usuário inexistente e em ~0,25 s para usuário existente (o tempo do bcrypt),
+# e medindo isso dava para descobrir quais nomes de usuário estão cadastrados.
+# Mesmo custo (gensalt() padrão, 12) dos hashes reais, para o tempo bater.
+_HASH_FICTICIO = bcrypt.hashpw(b"senha-ficticia-so-para-igualar-o-tempo", bcrypt.gensalt()).decode("utf-8")
+
+
 def verificar_login(username_digitado, senha_digitada):
     """Busca o hash no banco e valida a senha digitada no container.
 
@@ -1186,6 +1201,15 @@ def verificar_login(username_digitado, senha_digitada):
     nome: o perfil nunca era lido do banco, então login.py nunca gravava
     tipo_usuario na sessão e todo mundo caía no menu do Aluno.
     """
+    # Nenhuma versão testável da senha (só espaços, ou acima de 72 bytes mesmo
+    # sem os espaços): não pode estar certa. Sai antes de ir ao banco, e nunca
+    # chega ao bcrypt, que levantaria ValueError com mais de 72 bytes.
+    # O limite é conferido em cada versão (candidatas_de_senha), e não na senha
+    # digitada: "Abc123" com muitos espaços pode passar de 72 bytes e caber
+    # depois de limpa.
+    if not candidatas_de_senha(senha_digitada):
+        return None
+
     for tentativa in range(2):
         try:
             with conectar() as conn:
@@ -1209,14 +1233,18 @@ def verificar_login(username_digitado, senha_digitada):
     if resultado:
         nome_usuario, tipo_usuario, hash_do_banco_str = resultado
 
-        # 2. Prepara os dados em formato de bytes para o bcrypt
-        senha_digitada_bytes = senha_digitada.encode('utf-8')
-        hash_salvo_bytes = hash_do_banco_str.encode('utf-8')
-
-        # 3. COMPARAÇÃO EXPLÍCITA OCORRE AQUI:
-        # bcrypt.checkpw extrai o salt do hash salvo e verifica a senha digitada
-        if bcrypt.checkpw(senha_digitada_bytes, hash_salvo_bytes):
+        # COMPARAÇÃO EXPLÍCITA OCORRE AQUI. senha_confere testa a senha como
+        # foi digitada e, se ela tinha espaço, também sem os espaços (ver
+        # modules/senhas.py: contas antigas podem ter espaço na senha). Em cada
+        # teste, bcrypt.checkpw extrai o salt do hash salvo e compara.
+        if senha_confere(senha_digitada, hash_do_banco_str):
             return nome_usuario, tipo_usuario  # Nome e perfil para a sessão
+    else:
+        # Usuário inexistente: faz a MESMA comparação contra o hash fictício e
+        # descarta o resultado. senha_confere testa o mesmo número de versões
+        # da senha que testaria com um hash real (1, ou 2 se houver espaço),
+        # então o tempo fica igual ao de um usuário existente com senha errada.
+        senha_confere(senha_digitada, _HASH_FICTICIO)
 
     return None  # Retorna None se o usuário não existir ou a senha for inválida
 
@@ -1240,7 +1268,10 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
             if c.fetchone():
                 return "email_duplicado"
 
-            # 2. Gravação
+            # 2. Gravação. Última barreira: a tela já valida, mas quem chama
+            #    esta função direto não passa pela tela.
+            if not senha_cabe_no_bcrypt(senha_pura):
+                raise ValueError("Senha acima de 72 bytes: o bcrypt não a aceita.")
             senha_bytes = senha_pura.encode('utf-8')
             salt = bcrypt.gensalt()
             hash_bytes = bcrypt.hashpw(senha_bytes, salt)
@@ -1278,12 +1309,32 @@ def atualizar_perfil(username, nova_senha, senha_atual, novo_nome): # Função p
         c = conn.cursor() # Instancia o ponteiro de navegação no banco
        # Se o usuário preencheu campos para trocar a senha
         if nova_senha and senha_atual:
+            # Segunda trava da regra da senha nova (a primeira é a tela do
+            # perfil, em perfilWidget.py). Aqui é a última parada antes do
+            # UPDATE: qualquer caminho que chame esta função, hoje ou no
+            # futuro, não consegue gravar senha com espaço, curta ou fora do
+            # limite do bcrypt. Vem antes da consulta e do bcrypt da senha
+            # atual porque não depende deles e evita trabalho à toa; a regra é
+            # pública, então responder antes não revela nada sobre a conta.
+            if not validar_forca_senha(nova_senha):
+                return "senha_nova_invalida"
+            # Senha atual sem nenhuma versão testável (só espaços, ou acima de
+            # 72 bytes mesmo sem os espaços) não pode estar certa.
+            if not candidatas_de_senha(senha_atual):
+                return "senha_atual_incorreta"
             # Puxa o hash da senha antiga salva no banco[cite: 1, 5]
             c.execute("SELECT password FROM usuarios WHERE username = %s", (username,))
-            hash_do_banco = c.fetchone()[0].encode('utf-8')
-            
-            # MÉTODO SEGURO: Verifica se a senha atual digitada confere com o hash original[cite: 1, 5]
-            if not bcrypt.checkpw(senha_atual.encode('utf-8'), hash_do_banco):
+            linha = c.fetchone()
+            # Conta apagada no meio da sessão: antes, fetchone() devolvia None e
+            # o [0] derrubava a tela com TypeError. Agora é "senha incorreta".
+            if linha is None:
+                return "senha_atual_incorreta"
+
+            # MÉTODO SEGURO: confere a senha atual com o hash original, com a
+            # mesma regra de espaços do login (senha_confere). Sem isso, quem
+            # entra digitando "Abc 123" não conseguiria trocar a senha
+            # digitando a senha atual do mesmo jeito.
+            if not senha_confere(senha_atual, linha[0]):
                 # Recusa a alteração se a senha antiga estiver errada
                 return "senha_atual_incorreta"
             
@@ -1376,4 +1427,4 @@ def buscar_usuarios(termo, excluir=""):
             for u, nome, tipo, foto in c.fetchall()
         ]
         conn.rollback()
-    return dados
+    return dados

@@ -121,7 +121,14 @@ def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
         # Sem botao de baixar. O botao entregava o arquivo do professor
         # na mao do aluno, e quem tem o arquivo pode edita-lo e
         # redistribuir -- o material do professor saia da pagina dele.
-        pdf_viewer(caminho_absoluto, width=700, height=800)
+        # Sem width fixo: o padrão do componente é "100%" da coluna. Com
+        # width=700 a página transbordava em telas menores que isso
+        # (celular), e o aluno precisava rolar para os lados para ler.
+        #
+        # Sem cache dos bytes, de propósito: ler 150 KB do disco é barato; o
+        # custo real é o componente mandar o PDF ao navegador, e isso o
+        # st.cache_data não evita.
+        pdf_viewer(caminho_absoluto, height=800)
     else:
         st.info(
             "Este módulo ainda não tem material em PDF na pasta "

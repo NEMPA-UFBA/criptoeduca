@@ -1,0 +1,1045 @@
+diff --git a/projectAppUFBA/app.py b/projectAppUFBA/app.py
+index f74747b..478dcf7 100644
+--- a/projectAppUFBA/app.py
++++ b/projectAppUFBA/app.py
+@@ -272,8 +272,10 @@ else:
+                 st.session_state["abas_widget_perfil"] = "👤 Meu perfil"
+                 render_widget_perfil()
+ 
+-        # Atalho "Seguir pessoas" do mural. O clique acontece depois da barra
+-        # lateral, então o pedido chega na passada seguinte por esta chave.
++        # Atalho "Seguir pessoas" do mural. O mural é desenhado depois da
++        # barra lateral, por isso o botão de lá não abre o diálogo direto: o
++        # callback dele só grava esta chave. Callbacks rodam ANTES do script,
++        # então o pedido é lido aqui mesmo, na passada disparada pelo clique.
+         if st.session_state.pop("abrir_seguir_usuarios", False):
+             cancelar_selecao()
+             st.session_state["abas_widget_perfil"] = "🤝 Seguir usuários"
+@@ -294,11 +296,15 @@ else:
+     # tem a página dos golpes, e o que a coordenação escreveu aparece lá
+     # dentro.
+     if tipo == "Administrador":
+-        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
++        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+     elif tipo == "Professor":
+-        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
++        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
+     else:
+-        opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
++        opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado"]
++    # Páginas comuns a todos os perfis entram uma vez só, aqui. Repetir o
++    # rótulo nas três listas é como ele acaba escrito diferente em uma delas,
++    # e o elif lá embaixo deixa de casar para aquele perfil.
++    opcoes.append("Equipe e Diário de Bordo")
+ 
+     # O botão "Voltar para o Menu Principal" mora na página do mural, que é
+     # desenhada depois do radio. Gravar st.session_state["menu"] de lá levanta
+diff --git a/projectAppUFBA/dados/equipe.json b/projectAppUFBA/dados/equipe.json
+index 9742eb9..06f9835 100644
+--- a/projectAppUFBA/dados/equipe.json
++++ b/projectAppUFBA/dados/equipe.json
+@@ -4,41 +4,41 @@
+     "funcao": "Coorientador & Líder Técnico (NEMPA)",
+     "horas": "50+ h",
+     "resumo": "Gestão ágil da equipe (Scrum/Sprints), auditoria do banco de dados Serverless (Neon/PostgreSQL) e blindagem da arquitetura de segurança do app.",
+-    "avatar": "..\\static\\fotos\\roberto.jpg"
++    "avatar": "roberto.jpg"
+   },
+   {
+     "nome": "Juliana Maria",
+     "funcao": "Orientadora & Coord. Pedagógica",
+     "horas": "50+ h",
+     "resumo": "Mentoria pedagógica, auditoria de UX/UI para adequação ao Ensino Médio e gestão dos Diários de Bordo.",
+-    "avatar": "..\\static\\fotos\\juliana.jpg"
++    "avatar": "juliana.jpg"
+   },
+   {
+     "nome": "Daniel Aguiar",
+     "funcao": "Desenvolvedor Backend & Infraestrutura",
+     "horas": "45 h",
+     "resumo": "Integração do PostgreSQL, implementação de persistência de login segura com JWT/Cookies e otimização do Streamlit Cloud.",
+-    "avatar": "..\\static\\fotos\\daniel.jpg"
++    "avatar": "daniel.jpg"
+   },
+   {
+     "nome": "Nicolas",
+     "funcao": "Desenvolvedor Frontend & UI/UX",
+     "horas": "40 h",
+     "resumo": "Construção da interface gráfica, estilização gamificada em CSS, roteamento de componentes e gestão do repositório Git.",
+-    "avatar": "https://ui-avatars.com/api/?name=Nicolas&background=1E88E5&color=fff&size=128"
++    "avatar": ""
+   },
+   {
+     "nome": "Alana Victória",
+     "funcao": "Pesquisadora Jurídico-Social",
+     "horas": "35 h",
+     "resumo": "Levantamento documental sobre a LGPD, curadoria de engenharia social aplicada a fraudes e estruturação pedagógica contra Phishing.",
+-    "avatar": "..\\static\\fotos\\alana.jpg"
++    "avatar": "alana.jpg"
+   },
+   {
+     "nome": "Yasmim",
+     "funcao": "Pesquisadora de Modelagem Matemática",
+     "horas": "35 h",
+     "resumo": "Transposição didática da Aritmética Modular, abstração da criptografia RSA e design de avaliações modulares (quizzes).",
+-    "avatar": "https://ui-avatars.com/api/?name=Yasmim&background=8E24AA&color=fff&size=128"
++    "avatar": ""
+   }
+-]
+\ No newline at end of file
++]
+diff --git a/projectAppUFBA/modules/database.py b/projectAppUFBA/modules/database.py
+index 8c6fd54..e84ff9f 100644
+--- a/projectAppUFBA/modules/database.py
++++ b/projectAppUFBA/modules/database.py
+@@ -12,6 +12,7 @@ import logging
+ import threading
+ from streamlit.errors import StreamlitSecretNotFoundError
+ from dotenv import load_dotenv
++from modules.senhas import senha_cabe_no_bcrypt
+ 
+ # Carrega o .env ao lado da aplicação, independente do diretório de execução.
+ APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+@@ -1186,6 +1187,12 @@ def verificar_login(username_digitado, senha_digitada):
+     nome: o perfil nunca era lido do banco, então login.py nunca gravava
+     tipo_usuario na sessão e todo mundo caía no menu do Aluno.
+     """
++    # Senha acima de 72 bytes nunca pode ter sido cadastrada (o cadastro barra),
++    # então é só "senha incorreta". Testar antes evita o ValueError do bcrypt
++    # 5.0.0, que derrubava a tela, e poupa uma ida ao banco.
++    if not senha_cabe_no_bcrypt(senha_digitada):
++        return None
++
+     for tentativa in range(2):
+         try:
+             with conectar() as conn:
+@@ -1240,7 +1247,10 @@ def cadastrar_usuario(username, nome, email, tipo, senha_pura):
+             if c.fetchone():
+                 return "email_duplicado"
+ 
+-            # 2. Gravação
++            # 2. Gravação. Última barreira: a tela já valida, mas quem chama
++            #    esta função direto não passa pela tela.
++            if not senha_cabe_no_bcrypt(senha_pura):
++                raise ValueError("Senha acima de 72 bytes: o bcrypt não a aceita.")
+             senha_bytes = senha_pura.encode('utf-8')
+             salt = bcrypt.gensalt()
+             hash_bytes = bcrypt.hashpw(senha_bytes, salt)
+@@ -1278,6 +1288,10 @@ def atualizar_perfil(username, nova_senha, senha_atual, novo_nome): # Função p
+         c = conn.cursor() # Instancia o ponteiro de navegação no banco
+        # Se o usuário preencheu campos para trocar a senha
+         if nova_senha and senha_atual:
++            # Senha atual acima de 72 bytes não pode estar certa, e passá-la ao
++            # bcrypt levantaria ValueError. A nova é barrada pela tela.
++            if not senha_cabe_no_bcrypt(senha_atual):
++                return "senha_atual_incorreta"
+             # Puxa o hash da senha antiga salva no banco[cite: 1, 5]
+             c.execute("SELECT password FROM usuarios WHERE username = %s", (username,))
+             hash_do_banco = c.fetchone()[0].encode('utf-8')
+diff --git a/projectAppUFBA/modules/leitura.py b/projectAppUFBA/modules/leitura.py
+index 07d5b4f..af1fad3 100644
+--- a/projectAppUFBA/modules/leitura.py
++++ b/projectAppUFBA/modules/leitura.py
+@@ -121,7 +121,14 @@ def _render_conteudo_leitura(modulo, slug, titulo, icone, resumo, cor):
+         # Sem botao de baixar. O botao entregava o arquivo do professor
+         # na mao do aluno, e quem tem o arquivo pode edita-lo e
+         # redistribuir -- o material do professor saia da pagina dele.
+-        pdf_viewer(caminho_absoluto, width=700, height=800)
++        # Sem width fixo: o padrão do componente é "100%" da coluna. Com
++        # width=700 a página transbordava em telas menores que isso
++        # (celular), e o aluno precisava rolar para os lados para ler.
++        #
++        # Sem cache dos bytes, de propósito: ler 150 KB do disco é barato; o
++        # custo real é o componente mandar o PDF ao navegador, e isso o
++        # st.cache_data não evita.
++        pdf_viewer(caminho_absoluto, height=800)
+     else:
+         st.info(
+             "Este módulo ainda não tem material em PDF na pasta "
+diff --git a/projectAppUFBA/modules/login.py b/projectAppUFBA/modules/login.py
+index 3f93ffd..7bdb688 100644
+--- a/projectAppUFBA/modules/login.py
++++ b/projectAppUFBA/modules/login.py
+@@ -15,6 +15,9 @@ from modules.database import verificar_login, cadastrar_usuario
+ from modules.leitura import CHAVE_LEITURA
+ from modules import ratelimit
+ from modules.estilo import aplicar_css
++# As regras de senha moram em modules/senhas.py (uma cópia só para cadastro e
++# troca de senha). Reexportadas aqui para quem já importava de login.py.
++from modules.senhas import requisitos_senha, validar_forca_senha  # noqa: F401
+ 
+ # Alfabeto da chave do Professor: 36 símbolos, 10 dígitos e 26 letras.
+ #
+@@ -146,21 +149,6 @@ def validar_email_formato(email):
+     padrao = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+     return bool(re.fullmatch(padrao, email))
+ 
+-def requisitos_senha(senha):
+-    """Devolve o estado de cada requisito da senha, para o checklist em tempo real."""
+-    return {
+-        "maiuscula": any(c.isupper() for c in senha),
+-        "minuscula": any(c.islower() for c in senha),
+-        "numero": any(c.isdigit() for c in senha),
+-        "tamanho": len(senha) >= 6,
+-    }
+-
+-
+-def validar_forca_senha(senha):
+-    """Garante maiúscula, minúscula, número e no mínimo 6 caracteres."""
+-    return all(requisitos_senha(senha).values())
+-
+-
+ def segredo_da_chave_padrao():
+     return "chaveDev2026"
+ 
+@@ -249,14 +237,13 @@ def chave_equivale(digitada, valida):
+ # do fragmento. Ver _formulario_cadastro para o porquê.
+ _CHAVE_DO_RESULTADO = "_cadastro_resultado"
+ _CHAVE_DO_PERFIL = "_cadastro_resultado_perfil"
+-_CHAVE_LIMPAR_CAMPOS = "_cadastro_limpar_campos"
+-_CHAVE_IR_PARA_LOGIN = "_cadastro_ir_para_login"
+ _CHAVE_MENSAGEM_LOGIN = "_cadastro_mensagem_login"
+ _ABAS_LOGIN = "abas_login"
++_ABA_ENTRAR = "Entrar"
++_ABA_CRIAR = "Criar Conta"
+ 
+-# Campos do cadastro. Fora do st.form, cada um precisa de key própria: é a key
+-# que permite limpar depois do envio e que faz o navegador devolver o valor a
+-# cada digitação (dentro de form nada volta até o submit).
++# Campos do cadastro. Fora do st.form, cada um precisa de key própria: é pela
++# key que o callback de envio lê os valores e limpa tudo depois do sucesso.
+ _CAMPOS_CADASTRO = (
+     "cadastro_chave",
+     "cadastro_nome",
+@@ -267,15 +254,11 @@ _CAMPOS_CADASTRO = (
+     "cadastro_senha_confirm",
+ )
+ 
+-# Só e-mail e senha proibem espaço. Nome e usuário podem ter espaço, e a chave
+-# do Professor já é tolerante a espaço nas pontas — limpar todos os campos
+-# apagaria "Maria Silva" do nome, o que não foi pedido.
+-_CAMPOS_SEM_ESPACOS = (
+-    "cadastro_email",
+-    "cadastro_email_confirm",
+-    "cadastro_senha",
+-    "cadastro_senha_confirm",
+-)
++# Regex do e-mail no navegador (parâmetro validate do st.text_input). Aceita
++# espaço só nas pontas porque o callback _tirar_espacos remove esses espaços
++# logo depois: sem essa folga, um espaço deixado pelo preenchimento automático
++# barraria o e-mail com "inválido" em vez de ser simplesmente corrigido.
++_REGEX_EMAIL_NAVEGADOR = r"^\s*[^@\s]+@[^@\s]+\.[^@\s]+\s*$"
+ 
+ 
+ def _guardar_resultado(nivel, texto):
+@@ -558,50 +541,159 @@ def _formulario_login():
+ # Mesmo esquema do login: sem timer permanente.
+ #
+ # Dois cuidados, os mesmos que o timer de 5 s resolvia antes:
+-# - na 5ª chave errada, o `disabled` já foi avaliado quando o formulário foi
+-#   desenhado, então o campo e o botão ficariam liberados até o clique seguinte.
+-#   Por isso a falha que esgota as tentativas pede um rerun na hora;
++# - na 5ª chave errada o campo e o botão precisam aparecer desabilitados já no
++#   redesenho seguinte. Com a validação num callback (_cadastrar) isso é de
++#   graça: o callback roda ANTES do fragmento ser desenhado, então o `disabled`
++#   já é avaliado com o bloqueio registrado;
+ # - o botão precisa voltar sozinho quando a janela vence. Isso é feito por
+ #   _aguardar_desbloqueio, chamado só enquanto a chave está bloqueada.
++
++
++def _tirar_espacos(campo):
++    """Callback dos campos de e-mail: remove espaços e quebras de linha.
++
++    Roda como on_change, ou seja, ANTES do redesenho, que é o único momento em
++    que o Streamlit permite gravar na key de um widget sem erro. Só e-mail passa
++    por aqui: senha nunca é alterada (ver modules/senhas.py).
++    """
++    valor = st.session_state.get(campo)
++    if isinstance(valor, str):
++        st.session_state[campo] = re.sub(r"\s+", "", valor)
++
++
++def _cadastrar():
++    """Callback do botão "Finalizar Cadastro": valida, grava e encaminha.
++
++    Por que callback e não `if st.button(...)`:
++    - o guia do projeto (07/11) proíbe mexer em st.session_state no corpo da
++      renderização; aqui toda escrita acontece antes do desenho;
++    - limpar os campos e trocar a aba exige gravar nas keys de widgets, o que
++      só é permitido antes de eles existirem na passada. Antes isso era feito
++      com flags + st.rerun(), custando duas execuções por cadastro; agora é uma.
++    """
++    estado = st.session_state
++    tipo_usuario = estado.get("perfil_cadastro", "Aluno")
++    chave_prof = estado.get("cadastro_chave", "") if tipo_usuario == "Professor" else ""
++    nome = estado.get("cadastro_nome", "")
++    novo_usuario = estado.get("cadastro_usuario", "")
++    email = estado.get("cadastro_email", "")
++    email_confirm = estado.get("cadastro_email_confirm", "")
++    senha = estado.get("cadastro_senha", "")
++    senha_confirm = estado.get("cadastro_senha_confirm", "")
++
++    # Nenhum envio começa com o aviso antigo na tela. O perfil vai junto para o
++    # aviso ser descartado se a pessoa trocar de cadastro depois.
++    estado[_CHAVE_DO_RESULTADO] = None
++    estado[_CHAVE_DO_PERFIL] = tipo_usuario
++
++    # 1. Bloqueio da chave do Professor: topo da cadeia, quem está bloqueado
++    #    não gasta validação nem recebe dica sobre os outros campos.
++    if tipo_usuario == "Professor" and ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR):
++        _guardar_resultado(
++            "error",
++            "Muitas tentativas de chave incorretas. "
++            f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
++        )
++        return
++
++    # 2. Preenchimento dos campos básicos
++    if not (nome and novo_usuario and email and email_confirm and senha and senha_confirm):
++        _guardar_resultado("error", "Por favor, preencha todos os campos do formulário.")
++        return
++
++    # 3. Chave dinâmica do Professor
++    if tipo_usuario == "Professor" and not chave_equivale(
++        chave_prof, obter_chave_professor_diaria()
++    ):
++        ratelimit.registrar_falha(ratelimit.CHAVE_PROFESSOR)
++        restantes = ratelimit.restantes(ratelimit.CHAVE_PROFESSOR)
++        _guardar_resultado(
++            "error",
++            "Chave de verificação do Professor inválida ou expirada. "
++            + (
++                f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
++                if restantes == 0
++                else f"Restam {restantes} tentativa(s) em "
++                     f"{ratelimit.JANELA_SEGUNDOS // 60} minutos."
++            )
++        )
++        return
++
++    # 4. E-mail. A validação do navegador (validate=) é conforto para quem
++    #    digita; esta é a que vale, porque o navegador pode ser contornado.
++    if email != email_confirm:
++        _guardar_resultado("error", "Os e-mails digitados não coincidem.")
++        return
++    if not validar_email_formato(email):
++        _guardar_resultado("error", "Por favor, informe um e-mail válido.")
++        return
++
++    # 5. Confirmação antes da força: se as duas não batem, dizer "falta uma
++    #    maiúscula" não resolve nada.
++    if senha != senha_confirm:
++        _guardar_resultado("error", "As senhas digitadas não coincidem.")
++        return
++
++    # 6. Força da senha, incluindo o teto de 72 bytes do bcrypt.
++    if not validar_forca_senha(senha):
++        _guardar_resultado(
++            "error",
++            "A senha deve ter no mínimo 6 caracteres, com pelo menos uma letra "
++            "maiúscula, uma minúscula e um número, sem espaços e com no máximo 72 bytes."
++        )
++        return
++
++    # 7. Gravação
++    motivo = cadastrar_usuario(
++        username=novo_usuario,
++        nome=nome,
++        email=email,
++        tipo=tipo_usuario,
++        senha_pura=senha,
++    )
++    if motivo == "email_duplicado":
++        _guardar_resultado("warning", "Este e-mail já está cadastrado nesta plataforma.")
++        return
++    if motivo != "ok":
++        _guardar_resultado("warning", "Este nome de usuário já está em uso.")
++        return
++
++    # Sucesso. Só zera a chave para Professor: Aluno não tem chave para limpar.
++    if tipo_usuario == "Professor":
++        ratelimit.zerar(ratelimit.CHAVE_PROFESSOR)
++    for campo in _CAMPOS_CADASTRO:
++        estado.pop(campo, None)
++    estado[_CHAVE_MENSAGEM_LOGIN] = (
++        "Conta criada com sucesso! Agora entre com seu usuário e senha na aba Entrar."
++    )
++    estado[_ABAS_LOGIN] = _ABA_ENTRAR
++    # O botão está dentro de um fragmento, e por padrão só o fragmento
++    # redesenharia. As abas ficam FORA dele, então é preciso o app inteiro:
++    # st.rerun() dentro de callback (Streamlit 1.64) pede exatamente isso, sem
++    # interromper nada, e substitui a passada que o fragmento faria.
++    st.rerun()
++
++
+ @st.fragment
+ def _formulario_cadastro():
+-    # A chave válida para o dia. Determinística: mesma data e mesmo segredo
+-    # devolvem a mesma chave para a coordenação e para o formulário.
+-    chave_valida_hoje = obter_chave_professor_diaria()
+-
+-    # Limpeza pedida por um cadastro bem-sucedido. Precisa acontecer antes de
+-    # qualquer widget ser desenhado: mexer na key de um widget depois de
+-    # instanciado levanta StreamlitAPIException.
+-    if st.session_state.pop(_CHAVE_LIMPAR_CAMPOS, False):
+-        for campo in _CAMPOS_CADASTRO:
+-            st.session_state.pop(campo, None)
+-
+-    # Espaço em e-mail e senha é erro de digitação, não dado. Como os campos
+-    # ficaram fora do form, o script roda a cada tecla: limpar no início impede
+-    # que o espaço chegue ao widget, ao checklist e ao banco. Também cobre
+-    # colagem com quebra de linha e o preenchimento automático do navegador.
+-    for campo in _CAMPOS_SEM_ESPACOS:
+-        valor = st.session_state.get(campo)
+-        if isinstance(valor, str):
+-            sem_espacos = re.sub(r"\s+", "", valor)
+-            if sem_espacos != valor:
+-                st.session_state[campo] = sem_espacos
+-
+     # st.radio, e não st.selectbox: nesta versão do Streamlit o selectbox virou
+     # um campo de busca, que aceita digitação livre e filtra a lista enquanto a
+     # pessoa escreve. Com duas opções, o radio mostra as duas e resolve em um
+     # clique, sem digitação nenhuma.
++    #
++    # persist_state="session": as abas agora só desenham a aba aberta (ver
++    # _render_login), e um widget que não é desenhado perde o valor. Com isto,
++    # ir até "Entrar" e voltar não apaga o que já foi preenchido. (O escopo
++    # "page" seria o natural, mas no teste com AppTest ele descartou o valor ao
++    # reaparecer; "session" foi o que se comportou como esperado.)
+     tipo_usuario_input = st.radio(
+         "Perfil de Acesso",
+         ["Aluno", "Professor"],
+         key="perfil_cadastro",
+         horizontal=True,
++        persist_state="session",
+     )
+ 
+-    # Só existe quando o perfil é Professor. Precisa do default antes do if
+-    # porque a cadeia de validação mais abaixo lê esta variável em todos os
+-    # caminhos, e sem o default o perfil Aluno levanta NameError.
+-    chave_prof_input = ""
+     chave_bloqueada = False
+ 
+     if tipo_usuario_input == "Professor":
+@@ -619,16 +711,17 @@ def _formulario_cadastro():
+             _aguardar_desbloqueio(ratelimit.CHAVE_PROFESSOR, [None])
+ 
+     # Sem st.form: dentro dele o Streamlit só devolve os valores no submit, e
+-    # por isso nada do que depende de digitação (borda do e-mail, checklist da
+-    # senha) poderia atualizar em tempo real. A key nos widgets substitui o
+-    # clear_on_submit — a limpeza acontece no começo desta função, só no sucesso.
++    # nada do que depende de digitação (borda do e-mail, checklist da senha)
++    # poderia atualizar antes do envio.
+     with st.container(key="form_cadastro"):
+         if tipo_usuario_input == "Professor":
+             # Sem max_chars de propósito: o Streamlit corta o valor no limite e
+             # o corte acontece antes do strip() da comparação, o que rejeitava a
+             # chave correta colada com espaço. A tolerância a caixa e a espaço
+             # nas pontas fica em chave_equivale.
+-            chave_prof_input = st.text_input(
++            #
++            # Sem persist_state: segredo não fica guardado enquanto escondido.
++            st.text_input(
+                 f"Chave de Verificação ({TAMANHO_CHAVE} caracteres)",
+                 type="password",
+                 key="cadastro_chave",
+@@ -641,18 +734,32 @@ def _formulario_cadastro():
+                 disabled=chave_bloqueada,
+             )
+ 
+-        nome_input = st.text_input("Nome Completo", key="cadastro_nome")
+-        novo_usuario_input = st.text_input("Nome de Usuário", key="cadastro_usuario")
+-
+-        st.text_input("E-mail", key="cadastro_email")
+-        st.text_input("Confirme o E-mail", key="cadastro_email_confirm")
++        st.text_input("Nome Completo", key="cadastro_nome", persist_state="session")
++        st.text_input("Nome de Usuário", key="cadastro_usuario", persist_state="session")
++
++        # type="email": teclado de e-mail no celular, preenchimento automático
++        # do navegador e validação de formato antes de o valor sair da página.
++        for rotulo, campo in (
++            ("E-mail", "cadastro_email"),
++            ("Confirme o E-mail", "cadastro_email_confirm"),
++        ):
++            st.text_input(
++                rotulo,
++                key=campo,
++                type="email",
++                placeholder="voce@exemplo.com",
++                validate=(_REGEX_EMAIL_NAVEGADOR, "Digite um e-mail válido, como nome@exemplo.com."),
++                on_change=_tirar_espacos,
++                args=(campo,),
++                persist_state="session",
++            )
+ 
+         email_input = st.session_state.get("cadastro_email", "")
+         email_confirm_input = st.session_state.get("cadastro_email_confirm", "")
+ 
+         # Aviso ANTES de enviar: assim que os dois campos estão preenchidos e
+         # divergem, os dois ficam com borda vermelha e a mensagem aparece. O
+-        # botão também desabilita, para ninguém enviar um cadastro inválido.
++        # botão também desabilita. Isto só DESENHA; não grava estado nenhum.
+         emails_divergem = bool(
+             email_input and email_confirm_input and email_input != email_confirm_input
+         )
+@@ -674,153 +781,68 @@ def _formulario_cadastro():
+                 unsafe_allow_html=True,
+             )
+ 
++        # Por que o espaço é barrado pelo checklist e não por validate= (como
++        # no e-mail): no navegador, valor reprovado no validate NÃO é enviado.
++        # O servidor ficaria com a última versão sem espaço, e o checklist
++        # mostraria tudo verde enquanto o campo tem um espaço. Validando aqui,
++        # o servidor vê exatamente o que foi digitado e o ✗ aparece na hora.
++        #
++        # live="300ms": o valor chega ao servidor 300 ms depois de a pessoa
++        # parar de digitar, e não só no Enter/saída do campo. É isso que faz o
++        # checklist ser de fato em tempo real. O custo é uma passada deste
++        # fragmento por pausa, que é barata (nada de banco aqui).
+         st.text_input(
+             "Nova Senha",
+             type="password",
+             key="cadastro_senha",
+-            help="Mínimo de 6 caracteres, com maiúscula, minúscula e número.",
++            live="300ms",
++            help="Mínimo de 6 caracteres, com maiúscula, minúscula e número. Sem espaços.",
+         )
+ 
+-        # Checklist em tempo real: o valor da key é devolvido a cada tecla, então
+-        # cada item troca de cor sem precisar enviar o formulário.
+-        nova_senha_input = st.session_state.get("cadastro_senha", "")
+-        requisitos = requisitos_senha(nova_senha_input)
++        requisitos = requisitos_senha(st.session_state.get("cadastro_senha", ""))
+ 
+         def _item_checklist(texto, ok):
+             classe = "ok" if ok else "falta"
+             marca = "✓" if ok else "✗"
+             return f'<span class="senha-item {classe}">{marca} {texto}</span>'
+ 
+-        st.markdown(
+-            '<div class="senha-requisitos">'
+-            + _item_checklist("Letra maiúscula", requisitos["maiuscula"])
++        itens = (
++            _item_checklist("Letra maiúscula", requisitos["maiuscula"])
+             + _item_checklist("Letra minúscula", requisitos["minuscula"])
+             + _item_checklist("Número", requisitos["numero"])
+             + _item_checklist("Mínimo de 6 caracteres", requisitos["tamanho"])
+-            + '</div>',
+-            unsafe_allow_html=True,
++            # Sempre visível, ao contrário do teto de bytes: espaço é uma regra
++            # que a pessoa pode quebrar sem saber, então ela precisa vê-la antes.
++            + _item_checklist("Sem espaços", requisitos["sem_espaco"])
+         )
++        # O teto do bcrypt só aparece quando é ultrapassado: ninguém precisa
++        # ler "no máximo 72 bytes" enquanto digita uma senha normal.
++        if not requisitos["limite"]:
++            itens += _item_checklist(
++                "Longa demais: máximo de 72 bytes (acentos e emojis ocupam mais de 1)",
++                False,
++            )
++        st.markdown(f'<div class="senha-requisitos">{itens}</div>', unsafe_allow_html=True)
+ 
+         # A senha é digitada duas vezes de propósito. Num campo mascarado não
+-        # dá para reler o que foi escrito, então um erro de digitação viraria
+-        # uma conta com uma senha que ninguém sabe qual é — e não há
+-        # "esqueci minha senha" nesta plataforma para consertar isso depois.
++        # dá para reler o que foi escrito, e não há "esqueci minha senha" nesta
++        # plataforma para consertar um erro de digitação depois.
+         st.text_input(
+             "Confirme a Nova Senha",
+             type="password",
+             key="cadastro_senha_confirm",
+         )
+-        nova_senha_confirm_input = st.session_state.get("cadastro_senha_confirm", "")
+ 
+-        btn_cadastrar = st.button(
++        st.button(
+             "Finalizar Cadastro",
+             key="btn_cadastrar",
+             disabled=chave_bloqueada or emails_divergem,
+             width="stretch",
++            on_click=_cadastrar,
+         )
+ 
+-        if btn_cadastrar:
+-            # Nenhum envio começa com o aviso antigo na tela. O perfil vai junto
+-            # para o aviso poder ser descartado se a pessoa trocar de cadastro
+-            # depois: senão o "Conta criada com sucesso!" do Aluno ficava na tela
+-            # ao lado do "Chave bloqueada" do Professor, que são coisas de
+-            # contextos diferentes.
+-            st.session_state[_CHAVE_DO_RESULTADO] = None
+-            st.session_state[_CHAVE_DO_PERFIL] = tipo_usuario_input
+-
+-            # 1. Bloqueio por excesso de tentativas na chave do Professor. Fica no
+-            #    topo da cadeia de propósito: quem está bloqueado não gasta
+-            #    validação nem recebe dica sobre os outros campos.
+-            if tipo_usuario_input == "Professor" and ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR):
+-                _guardar_resultado(
+-                    "error",
+-                    "Muitas tentativas de chave incorretas. "
+-                    f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+-                )
+-
+-            # 2. Preenchimento dos campos básicos
+-            elif not (nome_input and novo_usuario_input and email_input and email_confirm_input and nova_senha_input and nova_senha_confirm_input):
+-                _guardar_resultado("error", "Por favor, preencha todos os campos do formulário.")
+-
+-            # 3. Validação da Chave Dinâmica do Professor
+-            elif tipo_usuario_input == "Professor" and not chave_equivale(
+-                chave_prof_input, chave_valida_hoje
+-            ):
+-                ratelimit.registrar_falha(ratelimit.CHAVE_PROFESSOR)
+-                restantes = ratelimit.restantes(ratelimit.CHAVE_PROFESSOR)
+-                _guardar_resultado(
+-                    "error",
+-                    "Chave de verificação do Professor inválida ou expirada. "
+-                    + (
+-                        f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+-                        if restantes == 0
+-                        else f"Restam {restantes} tentativa(s) em "
+-                             f"{ratelimit.JANELA_SEGUNDOS // 60} minutos."
+-                    )
+-                )
+-                if restantes == 0:
+-                    # Bloqueou agora: redesenha para o campo e o botão já
+-                    # aparecerem desabilitados. A mensagem acima está no
+-                    # session_state e é mostrada de novo depois do rerun.
+-                    st.rerun()
+-
+-            # 4. Validação de e-mail. O caso de divergência já é avisado antes
+-            #    do envio (e bloqueia o botão); este ramo é a rede de segurança.
+-            elif email_input != email_confirm_input:
+-                _guardar_resultado("error", "Os e-mails digitados não coincidem.")
+-            elif not validar_email_formato(email_input):
+-                _guardar_resultado("error", "Por favor, informe um e-mail válido.")
+-
+-            # 5. Confirmação da senha: as duas digitações têm que ser iguais.
+-            #    Vem antes da força de propósito: se as duas não batem, dizer
+-            #    "falta uma maiúscula" não resolve nada.
+-            elif nova_senha_input != nova_senha_confirm_input:
+-                _guardar_resultado("error", "As senhas digitadas não coincidem.")
+-
+-            # 6. Validação da força da senha
+-            elif not validar_forca_senha(nova_senha_input):
+-                _guardar_resultado(
+-                    "error",
+-                    "A senha deve ter no mínimo 6 caracteres, com pelo menos "
+-                    "uma letra maiúscula, uma minúscula e um número."
+-                )
+-
+-            # 7. Salvar no banco
+-            else:
+-                motivo = cadastrar_usuario(
+-                    username=novo_usuario_input,
+-                    nome=nome_input,
+-                    email=email_input,
+-                    tipo=tipo_usuario_input,
+-                    senha_pura=nova_senha_input
+-                )
+-                if motivo == "ok":
+-                    # Só zera no sucesso, e só para Professor: quem cadastra
+-                    # Aluno não tem chave para limpar.
+-                    if tipo_usuario_input == "Professor":
+-                        ratelimit.zerar(ratelimit.CHAVE_PROFESSOR)
+-                    # Sucesso não fica como aviso embaixo do cadastro: a pessoa
+-                    # vai para a aba Entrar e recebe a instrução lá. Em erro,
+-                    # nada disto acontece — o formulário permanece preenchido.
+-                    st.session_state[_CHAVE_MENSAGEM_LOGIN] = (
+-                        "Conta criada com sucesso! Agora entre com seu usuário "
+-                        "e senha na aba Entrar."
+-                    )
+-                    st.session_state[_CHAVE_LIMPAR_CAMPOS] = True
+-                    st.session_state[_CHAVE_IR_PARA_LOGIN] = True
+-                    # Pedir o rerun aqui permite limpar as keys no topo da
+-                    # função, antes de os widgets existirem — o clear_on_submit
+-                    # do antigo st.form fazia exatamente isso.
+-                    st.rerun()
+-                elif motivo == "email_duplicado":
+-                    _guardar_resultado(
+-                        "warning", "Este e-mail já está cadastrado nesta plataforma."
+-                    )
+-                else:
+-                    _guardar_resultado("warning", "Este nome de usuário já está em uso.")
+-
+-    # O aviso do último envio continua fora do cartão, como antes: sobrevive a
+-    # redesenho do fragmento e some se o perfil mudou desde o envio.
++    # O aviso do último envio fica fora do cartão: sobrevive a redesenho do
++    # fragmento e some se o perfil mudou desde o envio.
+     _resultado = st.session_state.get(_CHAVE_DO_RESULTADO)
+     if _resultado and st.session_state.get(_CHAVE_DO_PERFIL) == tipo_usuario_input:
+         _nivel, _texto = _resultado
+@@ -828,9 +850,6 @@ def _formulario_cadastro():
+ 
+     # NÃO há código de teste da chave aqui. A chave do dia é distribuída apenas
+     # pelo Painel da Coordenação (app.py), que exige login de Administrador.
+-    # Enquanto este st.info existiu, a chave estava impressa na aba pública de
+-    # cadastro, para qualquer visitante, antes de digitar qualquer coisa — o que
+-    # anulava o rate limit da chave, já que não havia o que adivinhar.
+ 
+ 
+ def render_login():
+@@ -842,33 +861,32 @@ def _render_login():
+     # O CSS da tela de login fica em static/css/login.css.
+     aplicar_css("login.css")
+ 
+-    # Um cadastro bem-sucedido pediu a ida para Entrar. A key do radio de abas
+-    # precisa ser gravada ANTES de st.tabs existir: mexer nela depois daria
+-    # StreamlitAPIException (a key já teria sido consumida neste run).
+-    if st.session_state.pop(_CHAVE_IR_PARA_LOGIN, False):
+-        st.session_state[_ABAS_LOGIN] = "Entrar"
+-
+     st.markdown(
+         '<p class="login-title">Acesso ao CriptoEduca</p>'
+         '<p class="login-subtitle">Entre com suas credenciais ou crie sua conta para continuar</p>',
+         unsafe_allow_html=True,
+     )
+-    # on_change="rerun" é o que faz a key valer: com o padrão "ignore" as abas
+-    # não guardam estado e não poderiam ser trocadas por código.
++    # on_change="rerun" faz as abas guardarem estado na key, que é o que deixa
++    # o callback _cadastrar trocar para "Entrar" por código. O preço é que cada
++    # troca de aba roda o script. Para esse preço virar ganho, só a aba ABERTA
++    # é desenhada (.open): antes as duas rodavam em toda passada, inclusive o
++    # cálculo da chave do dia e os timers de bloqueio da aba escondida.
+     aba_login, aba_cadastro = st.tabs(
+-        ["Entrar", "Criar Conta"],
++        [_ABA_ENTRAR, _ABA_CRIAR],
+         key=_ABAS_LOGIN,
+         on_change="rerun",
+     )
+-    with aba_login:
+-        # A instrução do cadastro aparece aqui, na tela de login, e some
+-        # quando a pessoa tenta entrar (ver _formulario_login).
+-        mensagem_login = st.session_state.get(_CHAVE_MENSAGEM_LOGIN)
+-        if mensagem_login:
+-            st.success(mensagem_login)
+-        with st.container(key="aba_login"):
+-            _formulario_login()
+-
+-    with aba_cadastro:
+-        with st.container(key="aba_cadastro"):
+-            _formulario_cadastro()
+\ No newline at end of file
++    if aba_login.open:
++        with aba_login:
++            # A instrução do cadastro aparece aqui, na tela de login, e some
++            # quando a pessoa tenta entrar (ver _formulario_login).
++            mensagem_login = st.session_state.get(_CHAVE_MENSAGEM_LOGIN)
++            if mensagem_login:
++                st.success(mensagem_login)
++            with st.container(key="aba_login"):
++                _formulario_login()
++
++    if aba_cadastro.open:
++        with aba_cadastro:
++            with st.container(key="aba_cadastro"):
++                _formulario_cadastro()
+diff --git a/projectAppUFBA/modules/perfilWidget.py b/projectAppUFBA/modules/perfilWidget.py
+index 70d291d..7679c6c 100644
+--- a/projectAppUFBA/modules/perfilWidget.py
++++ b/projectAppUFBA/modules/perfilWidget.py
+@@ -5,6 +5,7 @@ import math
+ from PIL import Image
+ 
+ from modules.estilo import aplicar_css
++from modules.senhas import validar_forca_senha
+ # Importa módulos de renderização da UI
+ # Puxa do gerenciador de banco de dados otimizado as tarefas de atualização e leitura
+ from modules.database import (
+@@ -61,11 +62,6 @@ def alternar_avatar(rel_path):
+ def cancelar_selecao():
+     st.session_state.pop("avatar_selecionado", None)
+ 
+-def validar_forca_senha(senha):
+-    tem_maiuscula = any(c.isupper() for c in senha)
+-    tem_minuscula = any(c.islower() for c in senha)
+-    tem_numero = any(c.isdigit() for c in senha)
+-    return tem_maiuscula and tem_minuscula and tem_numero
+ 
+ # Sem st.toast aqui, de proposito. Verificado no navegador: um toast chamado
+ # no callback de um botao DENTRO de um dialogo nao aparece (o Streamlit avisa
+@@ -212,7 +208,10 @@ def _render_aba_perfil(username_atual):
+                             st.error("As novas senhas não coincidem.")
+                             st.stop()
+                         if not validar_forca_senha(nova_senha):
+-                            st.error("A nova senha precisa de maiúscula, minúscula e número.")
++                            st.error(
++                                "A nova senha precisa ter no mínimo 6 caracteres, com "
++                                "maiúscula, minúscula e número, sem espaços e com no máximo 72 bytes."
++                            )
+                             st.stop()
+ 
+                     resultado = atualizar_perfil(
+diff --git a/projectAppUFBA/modules/senhas.py b/projectAppUFBA/modules/senhas.py
+new file mode 100644
+index 0000000..dc38d67
+--- /dev/null
++++ b/projectAppUFBA/modules/senhas.py
+@@ -0,0 +1,59 @@
++"""Regras de senha num lugar só.
++
++Antes existiam duas cópias de validar_forca_senha: uma em login.py (cadastro)
++e outra em perfilWidget.py (troca de senha). Quando o cadastro passou a exigir
++6 caracteres, a troca de senha continuou aceitando "Ab1". Regra de segurança
++duplicada diverge; por isso as duas telas importam daqui.
++
++Este módulo não importa Streamlit nem banco: são funções puras, testáveis sem
++subir o app.
++"""
++
++# O bcrypt só usa os primeiros 72 BYTES da senha. A versão 5.0.0 da biblioteca
++# deixou de cortar em silêncio e passou a levantar ValueError, o que derrubava
++# a tela com um erro vermelho. São bytes, não caracteres: "é" ocupa 2 bytes em
++# UTF-8 e um emoji ocupa 4.
++LIMITE_BYTES_BCRYPT = 72
++
++TAMANHO_MINIMO = 6
++
++
++def senha_cabe_no_bcrypt(senha):
++    """True se a senha cabe no limite do bcrypt (72 bytes em UTF-8)."""
++    return len((senha or "").encode("utf-8")) <= LIMITE_BYTES_BCRYPT
++
++
++def tem_espaco(senha):
++    """True se houver qualquer caractere de espaço na senha.
++
++    isspace() pega mais que a barra de espaço: tab, quebra de linha e o espaço
++    "inquebrável" que costuma vir junto quando se copia texto de site ou PDF.
++    """
++    return any(c.isspace() for c in (senha or ""))
++
++
++def requisitos_senha(senha):
++    """Estado de cada requisito, para o checklist do cadastro.
++
++    Senha com espaço é RECUSADA, nunca corrigida: a senha é avaliada exatamente
++    como foi digitada. Tirar o espaço em silêncio no cadastro faria a pessoa
++    digitar "Abc 123" no login e não entrar nunca mais.
++    """
++    senha = senha or ""
++    return {
++        "maiuscula": any(c.isupper() for c in senha),
++        "minuscula": any(c.islower() for c in senha),
++        "numero": any(c.isdigit() for c in senha),
++        "tamanho": len(senha) >= TAMANHO_MINIMO,
++        "sem_espaco": not tem_espaco(senha),
++        "limite": senha_cabe_no_bcrypt(senha),
++    }
++
++
++def validar_forca_senha(senha):
++    """Todos os requisitos atendidos, inclusive sem espaço e até 72 bytes.
++
++    Vale para senha NOVA (cadastro e troca). Não use no login: contas criadas
++    antes desta regra podem ter espaço na senha e precisam continuar entrando.
++    """
++    return all(requisitos_senha(senha).values())
+diff --git a/projectAppUFBA/modules/sobre_equipe.py b/projectAppUFBA/modules/sobre_equipe.py
+index dd47d0e..994ba0a 100644
+--- a/projectAppUFBA/modules/sobre_equipe.py
++++ b/projectAppUFBA/modules/sobre_equipe.py
+@@ -1,8 +1,8 @@
+ import base64
++import hashlib
+ import html
+ import json
+ import logging
+-import mimetypes
+ from pathlib import Path
+ 
+ import streamlit as st
+@@ -10,7 +10,28 @@ import streamlit as st
+ from modules.estilo import aplicar_css, aplicar_estilo, html_bruto
+ 
+ logger = logging.getLogger(__name__)
+-ARQUIVO_EQUIPE = Path(__file__).resolve().parent.parent / "dados" / "equipe.json"
++
++_RAIZ = Path(__file__).resolve().parent.parent
++ARQUIVO_EQUIPE = _RAIZ / "dados" / "equipe.json"
++
++# Única pasta de onde uma foto pode ser lida. O campo "avatar" do equipe.json
++# traz só o NOME do arquivo ("roberto.jpg"), e o caminho final precisa cair
++# aqui dentro: sem esta trava, "../.streamlit/secrets.toml" viraria base64 na
++# página e qualquer aluno logado leria os segredos no código-fonte do HTML.
++# É o mesmo cuidado que leitura.py tem com os PDFs (_caminho_pdf_seguro).
++PASTA_FOTOS = (_RAIZ / "static" / "fotos").resolve()
++
++# Lista de permissão, não de proibição: só formatos de imagem conhecidos.
++_TIPOS_IMAGEM = {
++    ".jpg": "image/jpeg",
++    ".jpeg": "image/jpeg",
++    ".png": "image/png",
++    ".webp": "image/webp",
++}
++
++# Cores dos avatares de iniciais. A escolha é estável por nome (hash), então
++# a mesma pessoa tem sempre a mesma cor.
++_CORES_INICIAIS = ("#1E88E5", "#8E24AA", "#00897B", "#F4511E", "#3949AB", "#6D4C41")
+ 
+ 
+ def _formatar_horas(valor):
+@@ -20,36 +41,97 @@ def _formatar_horas(valor):
+     return horas if horas.lower().endswith("h") else f"{horas} h"
+ 
+ 
+-def _avatar_src(valor):
+-    """Devolve algo que o navegador consiga usar no atributo src da imagem.
++def _mtime(caminho):
++    """Data de modificação do arquivo, ou 0 se ele não existir.
+ 
+-    O avatar do Roberto está no projeto, mas o Streamlit não serve arquivos
+-    arbitrários do repositório como URL: um src relativo com barras de Windows
+-    vira uma URL inválida. Aqui o arquivo é lido no servidor e vira data URI;
+-    URLs http(s) seguem sendo usadas direto, como antes.
++    Entra como ARGUMENTO das funções em cache. O st.cache_data não observa
++    arquivos: a chave do cache é o código da função mais os argumentos. Passar
++    o mtime faz o cache se renovar sozinho quando alguém troca a foto ou edita
++    o JSON, sem precisar reiniciar o app.
+     """
+-    texto = str(valor or "").strip()
+-    if not texto or texto.startswith(("http://", "https://", "data:")):
+-        return texto
+-
+-    relativo = texto.replace("\\", "/")
+-    caminho = (ARQUIVO_EQUIPE.parent / relativo).resolve()
++    try:
++        return caminho.stat().st_mtime_ns
++    except OSError:
++        return 0
++
++
++def _caminho_foto_seguro(nome_arquivo):
++    """Resolve o nome do arquivo dentro de PASTA_FOTOS, ou devolve None."""
++    nome = str(nome_arquivo or "").strip().replace("\\", "/")
++    if not nome:
++        return None
++    caminho = (PASTA_FOTOS / nome).resolve()
++    # resolve() desfaz "..", e is_relative_to confere que o resultado ainda
++    # está dentro da pasta. Os dois juntos fecham a fuga por caminho relativo.
++    if not caminho.is_relative_to(PASTA_FOTOS):
++        logger.warning("Avatar fora da pasta de fotos recusado: %s", nome)
++        return None
++    if caminho.suffix.lower() not in _TIPOS_IMAGEM:
++        logger.warning("Avatar com extensão não permitida recusado: %s", nome)
++        return None
+     if not caminho.is_file():
+         logger.warning("Avatar local não encontrado: %s", caminho)
+-        return ""
++        return None
++    return caminho
++
+ 
+-    tipo, _ = mimetypes.guess_type(caminho.name)
+-    tipo = tipo or "image/jpeg"
++@st.cache_data(show_spinner=False, max_entries=32)
++def _foto_em_data_uri(caminho_str, mtime_ns):
++    """Lê a foto e devolve um data URI. Em cache: roda uma vez por arquivo.
++
++    mtime_ns só existe para compor a chave do cache (ver _mtime). Atenção: ele
++    NÃO pode começar com "_". No st.cache_data, parâmetro com "_" na frente é
++    deixado de fora da chave, e o cache nunca perceberia a foto nova.
++    """
++    caminho = Path(caminho_str)
++    tipo = _TIPOS_IMAGEM[caminho.suffix.lower()]
+     codificado = base64.b64encode(caminho.read_bytes()).decode("ascii")
+     return f"data:{tipo};base64,{codificado}"
+ 
+ 
++def _avatar_iniciais(nome):
++    """Avatar com as iniciais, gerado aqui mesmo como SVG.
++
++    Substitui o ui-avatars.com: cada visita à página fazia o navegador do aluno
++    pedir a imagem a um serviço de fora, levando o IP do aluno e o nome do
++    membro. Num app que ensina LGPD (necessidade, segurança), dado que não
++    precisa sair não sai.
++    """
++    partes = [p for p in str(nome or "").split() if p]
++    iniciais = "".join(p[0] for p in partes[:2]).upper() or "?"
++    indice = int(hashlib.sha256(str(nome).encode("utf-8")).hexdigest(), 16)
++    cor = _CORES_INICIAIS[indice % len(_CORES_INICIAIS)]
++    svg = (
++        '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">'
++        f'<rect width="128" height="128" fill="{cor}"/>'
++        '<text x="50%" y="50%" dy=".35em" text-anchor="middle" '
++        'font-family="sans-serif" font-size="52" fill="#fff">'
++        f"{html.escape(iniciais)}</text></svg>"
++    )
++    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
++
++
++def _avatar_src(membro):
++    """Foto local validada; sem foto, as iniciais. Nunca uma URL externa."""
++    caminho = _caminho_foto_seguro(membro.get("avatar"))
++    if caminho is None:
++        return _avatar_iniciais(membro.get("nome"))
++    return _foto_em_data_uri(str(caminho), _mtime(caminho))
++
++
++@st.cache_data(show_spinner=False, max_entries=4)
++def _carregar_equipe(mtime_ns):
++    """Lê o equipe.json uma vez por versão do arquivo."""
++    with ARQUIVO_EQUIPE.open(encoding="utf-8") as arquivo:
++        return json.load(arquivo)
++
++
+ def _card_equipe(membro):
+     nome = html.escape(str(membro.get("nome", "Membro da equipe")), quote=True)
+     funcao = html.escape(str(membro.get("funcao", "")), quote=True)
+     horas = html.escape(_formatar_horas(membro.get("horas")), quote=True)
+     resumo = html.escape(str(membro.get("resumo", "")), quote=True)
+-    avatar = html.escape(_avatar_src(membro.get("avatar", "")), quote=True)
++    avatar = html.escape(_avatar_src(membro), quote=True)
+ 
+     return html_bruto(f"""
+     <div class="ce-card" style="min-height: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);">
+@@ -62,6 +144,26 @@ def _card_equipe(membro):
+     """)
+ 
+ 
++def _diario_do_membro(membro, indice):
++    """Registros do diário de bordo, se o membro tiver algum no JSON.
++
++    Formato opcional em equipe.json:
++        "diario": [{"data": "17/11/2026", "atividade": "..."}]
++    st.markdown com texto escapado em vez de HTML: o texto vem do JSON, e
++    escapar é o que impede um registro de virar código na página.
++    """
++    registros = membro.get("diario")
++    if not isinstance(registros, list) or not registros:
++        return
++    with st.expander(f"📓 Diário de bordo ({len(registros)})", key=f"diario_membro_{indice}"):
++        for registro in registros:
++            if not isinstance(registro, dict):
++                continue
++            data = html.escape(str(registro.get("data", "")))
++            atividade = html.escape(str(registro.get("atividade", "")))
++            st.markdown(f"**{data}** — {atividade}")
++
++
+ def render_sobre_equipe():
+     """Exibe a equipe do projeto e o diário resumido de atividades."""
+     aplicar_estilo()
+@@ -73,8 +175,7 @@ def render_sobre_equipe():
+         st.write("Conheça as pessoas do projeto e acompanhe suas contribuições.")
+ 
+         try:
+-            with ARQUIVO_EQUIPE.open(encoding="utf-8") as arquivo:
+-                equipe = json.load(arquivo)
++            equipe = _carregar_equipe(_mtime(ARQUIVO_EQUIPE))
+         except (OSError, json.JSONDecodeError):
+             logger.exception("Falha ao carregar os dados da equipe em %s", ARQUIVO_EQUIPE)
+             st.error("Não foi possível carregar os dados da equipe.")
+@@ -87,9 +188,12 @@ def render_sobre_equipe():
+ 
+         for inicio in range(0, len(equipe), 2):
+             colunas = st.columns(2)
+-            for coluna, membro in zip(colunas, equipe[inicio : inicio + 2]):
++            for deslocamento, (coluna, membro) in enumerate(
++                zip(colunas, equipe[inicio : inicio + 2])
++            ):
+                 if not isinstance(membro, dict):
+                     logger.warning("Registro de membro inválido em %s", ARQUIVO_EQUIPE)
+                     continue
+                 with coluna:
+                     st.markdown(_card_equipe(membro), unsafe_allow_html=True)
++                    _diario_do_membro(membro, inicio + deslocamento)

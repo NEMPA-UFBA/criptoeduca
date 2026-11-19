@@ -1,0 +1,127 @@
+/* Tela de carregamento (modules/carregamento.py).
+
+   ATENCAO: este arquivo passa pelo sanitizador do st.html (ver aplicar_css em
+   modules/estilo.py). Nao escreva o sinal de menor seguido de letra ou barra
+   em nenhum comentario, ou o estilo inteiro e descartado. */
+
+/* Moldura: a mesma da foto do perfil (app_logado.css), com o gradiente
+   indigo para azul na borda, o brilho e os dois cantos de mira. */
+.ce-carregando {
+    position: relative;
+    max-width: 520px;
+    margin: 2.5rem auto;
+    padding: 1.2rem 1.3rem 1rem;
+    border-radius: 14px;
+    border: 2px solid transparent;
+    background:
+        linear-gradient(#0f172a, #0f172a) padding-box,
+        linear-gradient(135deg, #4F46E5, #38bdf8) border-box;
+    box-shadow: 0 0 16px rgba(79, 70, 229, 0.45),
+                0 0 4px rgba(56, 189, 248, 0.35);
+}
+.ce-carregando::before,
+.ce-carregando::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #38bdf8;
+}
+.ce-carregando::before { top: -7px; left: -7px; border-right: none; border-bottom: none; }
+.ce-carregando::after { bottom: -7px; right: -7px; border-left: none; border-top: none; }
+
+/* Nome do app com a mesma configuracao do titulo da tela de login
+   (login.css): fonte pixelada, peso 400, sem espacamento extra e sem
+   suavizacao. 20px e nao 24px porque a caixa e menor. */
+.stMarkdown p.ce-carregando-marca {
+    font-family: "PressStart2P", monospace;
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: 0;
+    -webkit-font-smoothing: none;
+    color: #f1f5f9;
+    text-align: center;
+    margin: 0 0 1rem;
+}
+
+/* Trilho dividido em 20 barrinhas verticais iguais.
+   A divisao e feita por mascara: uma faixa que se repete a cada 5% da
+   largura, opaca e com 3px transparentes no fim. Tudo dentro do trilho
+   (o fundo apagado e o preenchimento aceso) aparece so nas faixas opacas,
+   entao as barrinhas apagadas e as acesas ficam alinhadas.
+   O -webkit-mask e para Chrome, Edge e Safari; o mask, para o Firefox. */
+.ce-carregando-trilho {
+    height: 18px;
+    background: rgba(56, 189, 248, 0.12);
+    -webkit-mask: repeating-linear-gradient(90deg, #000 0 calc(5% - 3px), transparent calc(5% - 3px) 5%);
+    mask: repeating-linear-gradient(90deg, #000 0 calc(5% - 3px), transparent calc(5% - 3px) 5%);
+}
+
+/* Preenchimento: gradiente da moldura da foto. A largura sempre cai num
+   numero inteiro de barrinhas (ver _html_da_barra). */
+.ce-carregando-barra {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+    background: linear-gradient(90deg, #4F46E5, #38bdf8);
+    transition: width 0.35s ease;
+}
+
+/* Brilho que corre pelas barrinhas acesas: mostra que o app continua
+   trabalhando quando uma etapa demora (o banco acordando, por exemplo). */
+.ce-carregando-barra::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    transform: translateX(-100%);
+    animation: ce-brilho 1.4s infinite;
+}
+@keyframes ce-brilho {
+    to { transform: translateX(100%); }
+}
+
+/* Quem pediu ao sistema para reduzir movimento ve a barra sem o brilho. */
+@media (prefers-reduced-motion: reduce) {
+    .ce-carregando-barra { transition: none; }
+    .ce-carregando-barra::after { animation: none; }
+}
+
+/* Linha de baixo: a etapa em andamento e a porcentagem. */
+.stMarkdown p.ce-carregando-etapa {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.82rem;
+    color: #cbd5e1;
+    margin: 0.6rem 0 0;
+}
+
+/* Navegacao lateral recolhida durante a tela de transicao login para menu.
+   A regra vale so enquanto existir na pagina a barra com a classe
+   .ce-transicao (:has), que preparar_pagina so poe na transicao. Quando a
+   barra sai, a condicao deixa de valer e a lateral volta sozinha, com a
+   mesma animacao. Nao ha estado para desfazer, e o menu nao recebe clique
+   enquanto recolhido (pointer-events: none).
+   Nao vale para a barra das trocas de pagina: medido no navegador, ali a
+   espera costuma ser curta (cerca de 0,2 s) e a lateral nem chegava a
+   fechar antes de abrir de novo; ficava so um tremor no menu que a pessoa
+   acabou de clicar.
+   Recolhe pela largura, e nao com display: none, para a area principal
+   ocupar o espaco aos poucos em vez de pular. */
+section[data-testid="stSidebar"] {
+    transition: width 0.25s ease, min-width 0.25s ease, max-width 0.25s ease,
+                opacity 0.2s ease;
+}
+body:has(.ce-transicao) section[data-testid="stSidebar"] {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    section[data-testid="stSidebar"] { transition: none; }
+}
