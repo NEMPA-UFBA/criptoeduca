@@ -208,6 +208,9 @@ def _render_aba_perfil(username_atual):
                         if not senha_atual:
                             st.error("Digite sua senha atual.")
                             st.stop()
+                        if not len(nova_senha) >= 6:
+                            st.error("A nova senha precisa ter pelo menos 6 dígitos.")
+                            st.stop()  
                         if nova_senha != confirma_senha:
                             st.error("As novas senhas não coincidem.")
                             st.stop()

@@ -146,6 +146,19 @@ def validar_email_formato(email):
     padrao = r"^[\w\.-]+@[\w\.-]+\.\w+$"
     return bool(re.fullmatch(padrao, email))
 
+
+def validar_username_formato(username):
+    """Nome de usuário: uma palavra só, em minúsculas, sem fechar com símbolo.
+
+    Só passa letra minúscula e número, mais os símbolos "_", "." e "-" — e
+    estes apenas ENTRE trechos com letra ou número. O que a regra barre de uma
+    vez: espaço, acento, maiúscula, símbolo fora da lista, nome vazio e nome
+    terminando (ou começando) em "_", "." ou "-". `[a-z]` não casa acento em
+    Python, então "joao" passa e "joão" não.
+    """
+    padrao = r"^[a-z0-9]+(?:[_.-][a-z0-9]+)*$"
+    return bool(re.fullmatch(padrao, username))
+
 def requisitos_senha(senha):
     """Devolve o estado de cada requisito da senha, para o checklist em tempo real."""
     return {
@@ -267,15 +280,38 @@ _CAMPOS_CADASTRO = (
     "cadastro_senha_confirm",
 )
 
-# Só e-mail e senha proibem espaço. Nome e usuário podem ter espaço, e a chave
-# do Professor já é tolerante a espaço nas pontas — limpar todos os campos
+# Só e-mail e senha proibem espaço. Nome e chave do Professor podem ter espaço
+# — a chave é tolerante a espaço nas pontas — e limpar todos os campos
 # apagaria "Maria Silva" do nome, o que não foi pedido.
+# O nome de usuário também não aceita espaço, mas ele é BARRADO com aviso
+# (validar_username_formato) em vez de apagado em silêncio: apagar transformaria
+# "Maria Silva" em "mariasilva" sem a pessoa ver.
 _CAMPOS_SEM_ESPACOS = (
     "cadastro_email",
     "cadastro_email_confirm",
     "cadastro_senha",
     "cadastro_senha_confirm",
 )
+
+
+def _bordas_de_erro(chaves):
+    """CSS que pinta a borda dos campos indicados de vermelho.
+
+    Mesmo aviso dos e-mails divergentes, agora reutilizado pelo nome de
+    usuário: enquanto o valor for inválido a borda fica vermelha, sem
+    precisar copiar o bloco de CSS para cada campo.
+    """
+    seletores = []
+    for chave in chaves:
+        base = f'.st-key-{chave} [data-testid="stTextInputRootElement"]'
+        seletores.extend((base, f"{base}:focus-within"))
+    return (
+        "<style>"
+        + ",".join(seletores)
+        + " {border-color: #ef4444 !important;"
+        " box-shadow: 0 0 0 2px #ef4444 !important;}"
+        "</style>"
+    )
 
 
 def _guardar_resultado(nivel, texto):
@@ -642,7 +678,15 @@ def _formulario_cadastro():
             )
 
         nome_input = st.text_input("Nome Completo", key="cadastro_nome")
-        novo_usuario_input = st.text_input("Nome de Usuário", key="cadastro_usuario")
+        novo_usuario_input = st.text_input(
+            "Nome de Usuário",
+            key="cadastro_usuario",
+            help=(
+                "Uma palavra só, em minúsculas: letras e números, com os "
+                "símbolos _ . - apenas entre eles. Não termina com esses "
+                "símbolos e não aceita espaço nem acento."
+            ),
+        )
 
         st.text_input("E-mail", key="cadastro_email")
         st.text_input("Confirme o E-mail", key="cadastro_email_confirm")
@@ -658,19 +702,32 @@ def _formulario_cadastro():
         )
         if emails_divergem:
             st.markdown(
-                '<style>'
-                '.st-key-cadastro_email [data-testid="stTextInputRootElement"],'
-                '.st-key-cadastro_email_confirm [data-testid="stTextInputRootElement"],'
-                '.st-key-cadastro_email [data-testid="stTextInputRootElement"]:focus-within,'
-                '.st-key-cadastro_email_confirm [data-testid="stTextInputRootElement"]:focus-within {'
-                'border-color: #ef4444 !important;'
-                'box-shadow: 0 0 0 2px #ef4444 !important;'
-                '}'
-                '</style>',
+                _bordas_de_erro(("cadastro_email", "cadastro_email_confirm")),
                 unsafe_allow_html=True,
             )
             st.markdown(
                 '<p class="erro-email">Os e-mails digitados não coincidem.</p>',
+                unsafe_allow_html=True,
+            )
+
+        # Aviso ANTES de enviar também para o nome de usuário, pelo mesmo
+        # motivo dos e-mails: a borda fica vermelha, a regra aparece na hora e
+        # o botão trava, para um username com espaço, acento ou maiúscula não
+        # chegar ao banco — e a pessoa vê o que corrigir sem tentar enviar.
+        username_invalido = bool(novo_usuario_input) and not validar_username_formato(
+            novo_usuario_input
+        )
+        if username_invalido:
+            st.markdown(
+                _bordas_de_erro(("cadastro_usuario",)),
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<p class="erro-email">'
+                "Nome de usuário: uma palavra só, em minúsculas, com letras e "
+                "números e os símbolos _ . - apenas entre eles. "
+                "Não vale espaço, acento, maiúscula nem terminar em _ . -."
+                "</p>",
                 unsafe_allow_html=True,
             )
 
@@ -715,7 +772,7 @@ def _formulario_cadastro():
         btn_cadastrar = st.button(
             "Finalizar Cadastro",
             key="btn_cadastrar",
-            disabled=chave_bloqueada or emails_divergem,
+            disabled=chave_bloqueada or emails_divergem or username_invalido,
             width="stretch",
         )
 
@@ -742,7 +799,18 @@ def _formulario_cadastro():
             elif not (nome_input and novo_usuario_input and email_input and email_confirm_input and nova_senha_input and nova_senha_confirm_input):
                 _guardar_resultado("error", "Por favor, preencha todos os campos do formulário.")
 
-            # 3. Validação da Chave Dinâmica do Professor
+            # 3. Nome de usuário. O botão já está travado quando este erro
+            #    aparece na tela; aqui é a rede de segurança, como no e-mail.
+            elif not validar_username_formato(novo_usuario_input):
+                _guardar_resultado(
+                    "error",
+                    "Nome de usuário inválido: use uma palavra só, em "
+                    "minúsculas, com letras e números e os símbolos _ . - "
+                    "apenas entre eles. Não pode ter espaço, acento, maiúscula "
+                    "nem terminar em _ . -.",
+                )
+
+            # 4. Validação da Chave Dinâmica do Professor
             elif tipo_usuario_input == "Professor" and not chave_equivale(
                 chave_prof_input, chave_valida_hoje
             ):
@@ -764,20 +832,20 @@ def _formulario_cadastro():
                     # session_state e é mostrada de novo depois do rerun.
                     st.rerun()
 
-            # 4. Validação de e-mail. O caso de divergência já é avisado antes
+            # 5. Validação de e-mail. O caso de divergência já é avisado antes
             #    do envio (e bloqueia o botão); este ramo é a rede de segurança.
             elif email_input != email_confirm_input:
                 _guardar_resultado("error", "Os e-mails digitados não coincidem.")
             elif not validar_email_formato(email_input):
                 _guardar_resultado("error", "Por favor, informe um e-mail válido.")
 
-            # 5. Confirmação da senha: as duas digitações têm que ser iguais.
+            # 6. Confirmação da senha: as duas digitações têm que ser iguais.
             #    Vem antes da força de propósito: se as duas não batem, dizer
             #    "falta uma maiúscula" não resolve nada.
             elif nova_senha_input != nova_senha_confirm_input:
                 _guardar_resultado("error", "As senhas digitadas não coincidem.")
 
-            # 6. Validação da força da senha
+            # 7. Validação da força da senha
             elif not validar_forca_senha(nova_senha_input):
                 _guardar_resultado(
                     "error",
@@ -785,7 +853,7 @@ def _formulario_cadastro():
                     "uma letra maiúscula, uma minúscula e um número."
                 )
 
-            # 7. Salvar no banco
+            # 8. Salvar no banco
             else:
                 motivo = cadastrar_usuario(
                     username=novo_usuario_input,
