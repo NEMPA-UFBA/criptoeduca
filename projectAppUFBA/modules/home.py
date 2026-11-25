@@ -19,6 +19,7 @@ import logging
 from datetime import datetime
 
 import streamlit as st
+from psycopg2 import OperationalError
 
 from modules.database import (
     carregar_estado_modulos,
@@ -29,7 +30,7 @@ from modules.database import (
 )
 from modules.estilo import aplicar_css, aplicar_estilo, html_bruto
 from modules.leitura import CHAVE_LEITURA
-from modules.login import obter_chave_professor_diaria, segredo_da_chave_configurado
+from modules.login import obter_chave_professor_diaria
 from modules.modulos import carregar_modulos
 
 logger = logging.getLogger(__name__)
@@ -561,20 +562,24 @@ def _secao_chave_professor():
     st.divider()
     st.subheader("🔑 Chave de acesso para novos professores")
     st.info("Passe este código para os professores que forem se cadastrar hoje:")
-    st.code(obter_chave_professor_diaria(), language="text")
-    st.caption("Esta chave expira automaticamente às 23:59:59 de hoje.")
 
-    if not segredo_da_chave_configurado():
-        st.warning(
-            "Esta chave está sendo derivada do segredo padrão que vem no "
-            "código-fonte. Ela tem 12 caracteres e é muito difícil de adivinhar, "
-            "mas qualquer pessoa com uma cópia do repositório consegue calcular "
-            "a chave do dia. Para fechar isso, crie "
-            "`.streamlit/secrets.toml` com `CHAVE_SEGREDO = \"...\"` "
-            "(esse caminho já está no .gitignore) e reinicie o app. "
-            "Esta mensagem some sozinha quando o segredo estiver configurado.",
-            icon="⚠️",
+    try:
+        chave = obter_chave_professor_diaria()
+    except (OperationalError, RuntimeError):
+        # A chave mora no banco. Se o banco não responde, não há o que
+        # exibir — e dizer "chave indisponível" é melhor que derrubar a
+        # home inteira por um erro de consulta.
+        st.error(
+            "Não foi possível consultar a chave do dia agora. "
+            "Recarregue a página em alguns instantes."
         )
+        return
+
+    st.code(chave, language="text")
+    st.caption(
+        "Esta chave expira automaticamente às 23:59:59 de hoje. "
+        "Amanhã é outra: ela é sorteada de novo no primeiro acesso do dia."
+    )
 
 
 def _render_home(tipo):

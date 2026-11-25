@@ -30,41 +30,144 @@ from modules.login import (
     restaurar_cookie_login,
     opcoes_cookie_login,
     enviar_cookie_login,
+    ler_cookie_login,
+    apagar_cookie_login,
 )
 from modules.home import render_home
 from modules.anuncio_simulado import render_anuncio_simulado
 from modules.estilo import aplicar_css, aplicar_responsividade
 from modules.sobre_equipe import render_sobre_equipe
+from modules.carregamento import (
+    CHAVE_TRANSICAO,
+    etapas_da_pagina,
+    etapas_do_menu,
+    marcar_transicao_do_login,
+    pagina_inicial,
+    preparar_pagina,
+)
 
 def _chave_da_pagina(nome):
-    """Converte o rótulo do menu em uma key estável para o container."""
+    """Converte o rótulo do menu em uma key estável para o container.
+
+    Prefixo "tela_", e não "pagina_": várias páginas já usam keys internas
+    começando com "pagina_" (pagina_home, pagina_modulo_<slug>...). A regra
+    CSS que esconde a página anterior (ver _css_esconde_tela_anterior) pega
+    tudo com "tela_"; com o mesmo prefixo das keys internas, ela esconderia
+    pedaços da própria página aberta.
+    """
     chave = re.sub(r"[^a-zA-Z0-9]+", "_", nome or "").strip("_").lower()
-    return "pagina_%s" % (chave or "inicio")
+    return "tela_%s" % (chave or "inicio")
+
+
+def _css_esconde_tela_anterior(chave_atual):
+    """CSS que esconde qualquer tela que não seja a aberta agora.
+
+    Por que existe: a cada clique o Streamlit redesenha a página de cima para
+    baixo e mantém o que é antigo na tela, esmaecido, até o script terminar.
+    Numa troca de página, a página anterior ficava visível (às vezes por
+    baixo da nova) durante todo o carregamento: a "sobreposição".
+
+    Esta regra chega ao navegador logo depois do menu, no começo da
+    execução, e some com a tela anterior na hora. Numa interação dentro da
+    mesma página ela não esconde nada, porque só existe a tela atual.
+
+    st.html só com <style> não ocupa posição na página (vai para o contêiner
+    de eventos), então não desloca nenhum elemento.
+    """
+    return (
+        "<style>"
+        f'.stMain [class*="st-key-tela_"]:not(.st-key-{chave_atual}) {{ display: none !important; }}'
+        "</style>"
+    )
 
 
 # Configuração global
 st.set_page_config(page_title="Criptoeduca", page_icon="🎓", layout="wide")
 
-cookie_manager = stx.CookieManager(key="cookie_manager")
+# --- VAGAS FIXAS DO TOPO ---
+#
+# O Streamlit reaproveita os elementos da página pela POSIÇÃO em que aparecem.
+# Se numa execução surge um elemento a mais lá em cima e na seguinte ele some,
+# tudo o que vem depois muda de posição, e o navegador mostra a tela nova por
+# cima da antiga (esmaecida) até o fim da execução: a sobreposição do login
+# com o menu.
+#
+# Os elementos do cookie apareciam só em algumas execuções: o componente de
+# gravar o cookie (logo depois do login e no logout), o de apagar (cookie
+# inválido) e um st.markdown de estilo que a biblioteca emite a cada get/set.
+# Os avisos ("Concluindo o início da sessão…", "Encerrando…", aviso de
+# COOKIE_SECRET) também. Agora todos moram em dois contêineres que existem em
+# TODA execução, sempre nas duas primeiras posições:
+#   vaga_cookie: os iframes do componente de cookie (invisíveis);
+#   vaga_topo:   os avisos de texto.
+# O que muda dentro de um contêiner não mexe na posição do resto da página.
+#   tela_login:  o formulário de login. Existe também com a pessoa logada,
+#                vazio e escondido (ver o começo do "else" lá embaixo).
+#
+# Por que o login precisa de uma vaga fixa: na troca login -> menu, quem
+# ocupava a posição do formulário passava a ser outro contêiner (o dos
+# avisos), e o Streamlit deixava os campos antigos do formulário, esmaecidos,
+# dentro dele até a execução acabar. Com a vaga fixa, os restos ficam
+# dentro da própria tela_login, que o CSS esconde logo na primeira linha da
+# execução logada.
+vaga_cookie = st.container(key="vaga_cookie")
+vaga_topo = st.container(key="vaga_topo")
+vaga_login = st.container(key="tela_login")
+# Os contêineres vazios têm altura 0, mas o Streamlit põe 1rem de espaço
+# entre um bloco e outro, e cada vaga vazia empurrava a página 16 px para
+# baixo. Por isso o CSS esconde a "embalagem" (stLayoutWrapper) de cada vaga:
+#   vaga_cookie: sempre (os iframes têm altura 0 e não mostram nada).
+#     Esconder não impede o componente de funcionar: a própria biblioteca já
+#     escondia o iframe com display: none, e o teste no navegador confirmou
+#     o cookie gravado e lido de volta.
+#   vaga_topo: só quando não tem aviso nem barra de carregamento.
+# st.html só com <style> não ocupa posição (ver modules/estilo.py).
+st.html(
+    "<style>"
+    '.stMain [data-testid="stLayoutWrapper"]:has(> .st-key-vaga_cookie)'
+    " { display: none !important; }"
+    '.stMain [data-testid="stLayoutWrapper"]:has(> .st-key-vaga_topo)'
+    ':not(:has([data-testid="stAlert"], .ce-carregando))'
+    " { display: none !important; }"
+    "</style>"
+)
+
+with vaga_cookie:
+    cookie_manager = stx.CookieManager(key="cookie_manager")
 
 aviso_cookie = st.session_state.pop("_cookie_login_aviso", None)
 if aviso_cookie:
-    st.warning(aviso_cookie)
+    with vaga_topo:
+        st.warning(aviso_cookie)
 
+# Gravação do cookie de "manter conectado", pedida pelo login.
+#
+# Antes, enquanto o navegador não confirmava a gravação, o app mostrava
+# "Concluindo o início da sessão…" e parava (st.stop). A pessoa já estava
+# autenticada, mas esperava uma ida e volta inteira do componente para ver o
+# menu, e essa tela intermediária era mais uma troca de tela (e mais uma
+# sobreposição).
+#
+# Agora o menu é desenhado na mesma execução. O componente de gravar fica na
+# vaga_cookie até confirmar; quando confirma, o Streamlit roda o app de novo
+# (é assim que componentes devolvem valor) e a pendência é apagada. Como as
+# posições são fixas, essa execução extra não troca nada na tela.
+#
+# Segurança: nada muda. A sessão já foi autenticada pela senha; o cookie só
+# serve para lembrar o login na próxima visita. Se a gravação falhar, a
+# pendência continua e é tentada de novo na próxima execução, como antes.
 cookie_login_pendente = st.session_state.get("_cookie_login_pendente")
 if cookie_login_pendente:
-    cookie_gravado = enviar_cookie_login(
-        cookie_manager,
-        cookie_login_pendente["valor"],
-        cookie_login_pendente["expira_em"],
-        f"set_login_{cookie_login_pendente['key']}",
-        cookie_login_pendente["opcoes"],
-    )
+    with vaga_cookie:
+        cookie_gravado = enviar_cookie_login(
+            cookie_manager,
+            cookie_login_pendente["valor"],
+            cookie_login_pendente["expira_em"],
+            f"set_login_{cookie_login_pendente['key']}",
+            cookie_login_pendente["opcoes"],
+        )
     if cookie_gravado:
         st.session_state.pop("_cookie_login_pendente", None)
-    else:
-        st.info("Concluindo o início da sessão…")
-        st.stop()
 
 # Confirmação de saída.
 #
@@ -114,20 +217,26 @@ def _confirmar_saida():
 if st.session_state.get("pediu_logout", False):
     opcoes_cookie = opcoes_cookie_login(st.context.url)
     if opcoes_cookie is None:
-        st.warning(
+        vaga_topo.warning(
             "Não foi possível expirar o cookie de login por esta conexão. "
             "Acesse o app por HTTPS ou por http://localhost:8501."
         )
     else:
-        cookie_expirado = enviar_cookie_login(
-            cookie_manager,
-            "",
-            datetime(1970, 1, 1, tzinfo=timezone.utc),
-            f"expire_logout_{st.session_state['_logout_cookie_key']}",
-            opcoes_cookie,
-        )
+        # O logout continua esperando a confirmação (st.stop): aqui sim é
+        # preciso, porque se a pessoa fechar a aba antes do cookie expirar,
+        # a próxima visita entraria logada de novo. Componente e aviso ficam
+        # nas vagas fixas do topo, para não deslocar a página.
+        with vaga_cookie:
+            cookie_expirado = enviar_cookie_login(
+                cookie_manager,
+                "",
+                datetime(1970, 1, 1, tzinfo=timezone.utc),
+                f"expire_logout_{st.session_state['_logout_cookie_key']}",
+                opcoes_cookie,
+            )
         if not cookie_expirado:
-            st.info("Encerrando a sessão…")
+            with vaga_topo:
+                st.info("Encerrando a sessão…")
             st.stop()
     st.session_state.pop("pediu_logout", None)
     st.session_state.pop("_logout_cookie_key", None)
@@ -136,15 +245,22 @@ if st.session_state.get("pediu_logout", False):
 elif not st.session_state.get(
     "_ignorar_cookie_login", False
 ) and not st.session_state.get("usuario_logado", False):
-    valor_cookie = cookie_manager.get("usuario_logado")
+    # ler_cookie_login usa st.context.cookies: o cookie já está disponível
+    # na primeira execução, e o menu abre direto, sem o login piscar antes
+    # (ver modules/login.py).
+    valor_cookie = ler_cookie_login(cookie_manager)
     dados_cookie = restaurar_cookie_login(valor_cookie)
     if dados_cookie:
         st.session_state["usuario_logado"] = True
         st.session_state["username"] = dados_cookie["username"]
         st.session_state["nome_usuario"] = dados_cookie["nome_usuario"]
         st.session_state["tipo_usuario"] = dados_cookie["tipo_usuario"]
+        # Login lembrado também passa pela tela de transição: é a mesma
+        # passagem do login para o menu, só que sem digitar a senha.
+        st.session_state[CHAVE_TRANSICAO] = True
     elif valor_cookie:
-        cookie_manager.delete("usuario_logado", key="delete_invalido")
+        with vaga_cookie:
+            apagar_cookie_login(cookie_manager, "delete_invalido")
 
 if "usuario_logado" not in st.session_state:
     st.session_state["usuario_logado"] = False
@@ -154,8 +270,51 @@ if "tipo_usuario" not in st.session_state:
     st.session_state["tipo_usuario"] = ""
 
 if not st.session_state["usuario_logado"]:
-    render_login()
+    # Mesma regra das telas do menu: esconde qualquer "tela_" que não seja a
+    # do login. Cobre a volta do logout, quando a página logada ainda estaria
+    # esmaecida por baixo do formulário.
+    st.html(_css_esconde_tela_anterior("tela_login"))
+    with vaga_login:
+        render_login()
 else:
+    # Primeira coisa da tela logada: some com o login. Vem antes de qualquer
+    # consulta ao banco, então o formulário esmaecido não fica na tela
+    # enquanto o menu é montado. (A regra geral, _css_esconde_tela_anterior,
+    # só chega depois do menu lateral.)
+    st.html("<style>.stMain .st-key-tela_login { display: none !important; }</style>")
+
+    # Barra de carregamento já na espera do menu. Antes do menu lateral o app
+    # consulta o perfil (nome e foto) e, para aluno, o primeiro acesso. Logo
+    # depois do login, essa espera deixava a área principal vazia. Aqui as
+    # consultas correm juntas e, se passarem de 0,15 s, a barra aparece na
+    # vaga_topo (posição fixa). Com os dados no cache, nada é desenhado.
+    #
+    # TELA DE TRANSIÇÃO LOGIN -> MENU. Logo depois do login (senha ou cookie)
+    # a barra aparece SEMPRE, por pelo menos TRANSICAO_MINIMA_SEGUNDOS, e
+    # busca também os dados da página que vai abrir. Assim tudo chega numa
+    # barra só, antes do menu lateral ser desenhado, e a barra da tela (mais
+    # abaixo) não precisa aparecer de novo. Enquanto ela está na tela, o CSS
+    # mantém a navegação lateral recolhida (ver carregamento.css).
+    transicao = marcar_transicao_do_login()
+    username_logado = st.session_state.get("username")
+    tipo_logado = st.session_state["tipo_usuario"]
+    etapas_do_topo = etapas_do_menu(
+        username_logado,
+        tipo_logado,
+        precisa_primeiro_acesso="primeiro_acesso" not in st.session_state,
+    )
+    if transicao:
+        etapas_do_topo += etapas_da_pagina(
+            st.session_state.get("menu") or pagina_inicial(tipo_logado),
+            tipo_logado,
+            username_logado,
+        )
+    with vaga_topo:
+        preparar_pagina(etapas_do_topo, transicao=transicao)
+    # Só depois da barra terminar: se a execução for interrompida no meio
+    # (a confirmação do cookie faz isso), a seguinte continua a mesma barra.
+    st.session_state.pop(CHAVE_TRANSICAO, None)
+
     # ---------- CSS da tela logada ----------
     # Este bloco mora aqui, e não em modules/login.py, porque o <style> de lá
     # está dentro de render_login() e o app só chama render_login() quando
@@ -224,17 +383,11 @@ else:
     if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
         if st.session_state.get("menu") != "Mural de Criptografia":
             st.session_state["menu"] = "Mural de Criptografia"
-        st.markdown(
-            """
-            <style>
-            .st-key-menu [data-testid="stRadioOption"]:not([data-selected="true"]) {
-                opacity: 0.4;
-                pointer-events: none;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        # Antes era um st.markdown com <style>, que OCUPA uma posição na
+        # página. Quando o aluno terminava o mural, esse elemento sumia, tudo
+        # subia uma posição e a página nova aparecia por cima da antiga. O
+        # aplicar_css usa st.html, que não ocupa posição (ver modules/estilo.py).
+        aplicar_css("menu_primeiro_acesso.css")
 
     # Barra lateral. Este bloco ja esta dentro do "else" de usuario logado,
     # entao a consulta e direta: antes ela ficava dentro de um segundo if, e
@@ -272,8 +425,10 @@ else:
                 st.session_state["abas_widget_perfil"] = "👤 Meu perfil"
                 render_widget_perfil()
 
-        # Atalho "Seguir pessoas" do mural. O clique acontece depois da barra
-        # lateral, então o pedido chega na passada seguinte por esta chave.
+        # Atalho "Seguir pessoas" do mural. O mural é desenhado depois da
+        # barra lateral, por isso o botão de lá não abre o diálogo direto: o
+        # callback dele só grava esta chave. Callbacks rodam ANTES do script,
+        # então o pedido é lido aqui mesmo, na passada disparada pelo clique.
         if st.session_state.pop("abrir_seguir_usuarios", False):
             cancelar_selecao()
             st.session_state["abas_widget_perfil"] = "🤝 Seguir usuários"
@@ -294,11 +449,15 @@ else:
     # tem a página dos golpes, e o que a coordenação escreveu aparece lá
     # dentro.
     if tipo == "Administrador":
-        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
+        opcoes = ["Painel da Coordenação", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     elif tipo == "Professor":
-        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
+        opcoes = ["Painel Geral", "Turma", "Gerenciar Conteúdos", "Notas dos Alunos", "Mural de Criptografia", "Módulos de Aprendizado"]
     else:
-        opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado", "Equipe e Diário de Bordo"]
+        opcoes = ["Painel Principal", "Exemplos de Crimes Digitais", "Mural de Criptografia", "Meu Progresso", "Módulos de Aprendizado"]
+    # Páginas comuns a todos os perfis entram uma vez só, aqui. Repetir o
+    # rótulo nas três listas é como ele acaba escrito diferente em uma delas,
+    # e o elif lá embaixo deixa de casar para aquele perfil.
+    opcoes.append("Equipe e Diário de Bordo")
 
     # O botão "Voltar para o Menu Principal" mora na página do mural, que é
     # desenhada depois do radio. Gravar st.session_state["menu"] de lá levanta
@@ -320,6 +479,8 @@ else:
         st.session_state["menu"] = pedido_de_pagina
 
     pagina = st.sidebar.radio("Navegação", opcoes, key="menu")
+    chave_da_tela = _chave_da_pagina(pagina)
+    st.html(_css_esconde_tela_anterior(chave_da_tela))
 
     # A hierarquia dos modulos aparece na propria lateralidade: recolhida,
     # logo abaixo do menu, com as categorias e os modulos de cada uma. So
@@ -339,21 +500,68 @@ else:
         key="botao_testar_anuncio",
         help="Abre imediatamente a notificação da simulação educativa.",
     )
-    render_anuncio_simulado(forcar=forcar_anuncio)
+    # O pop-up roda um fragmento com timer, e um fragmento OCUPA uma posição
+    # na página mesmo sem desenhar nada (testado no Streamlit 1.64). Depois que
+    # o pop-up aparece, o fragmento deixa de ser chamado; sem este contêiner
+    # fixo, a página inteira subia uma posição e era desenhada por cima da
+    # anterior (a sobreposição que aparecia ~2 min depois do login).
+    # O contêiner existe sempre, com ou sem pop-up: a posição nunca muda.
+    with st.container(key="vaga_avisos"):
+        render_anuncio_simulado(forcar=forcar_anuncio)
+
+    # --- UMA VAGA FIXA PARA CADA TELA ---
+    #
+    # Medido no navegador: quando um contêiner novo chega na posição onde
+    # estava outro, o Streamlit põe os elementos antigos (esmaecidos) DENTRO
+    # do novo até a execução terminar. Com uma vaga só para todas as páginas,
+    # a tela do Mural recebia a Home inteira esmaecida por dentro, e a regra
+    # de CSS não tinha como esconder (o contêiner era o da tela atual). Era a
+    # sobreposição que ainda aparecia junto com a barra de carregamento.
+    #
+    # Agora toda tela do menu tem a sua vaga, criada em TODA execução, sempre
+    # na mesma ordem (a do menu). Só a vaga da página aberta recebe conteúdo;
+    # as outras ficam vazias, e um contêiner vazio não aparece nem ocupa
+    # espaço. Na troca de página, os restos da página anterior ficam na vaga
+    # DELA, que a regra _css_esconde_tela_anterior esconde.
+    vagas_das_telas = {
+        opcao: st.container(key=_chave_da_pagina(opcao)) for opcao in opcoes
+    }
+    vaga_da_tela = vagas_das_telas[pagina]
 
     # --- FLUXO OBRIGATÓRIO DO PRIMEIRO LOGIN (APENAS PARA ALUNOS) ---
     # Fica depois da barra lateral de proposito: assim o botao de Sair continua
     # acessivel. O st.stop() e o que faltava -- sem ele o mural era desenhado e
     # a pagina normal aparecia logo abaixo, na mesma tela, e o aluno pulava a
     # etapa obrigatoria sem publicar nada.
+    #
+    # O mural obrigatório também fica dentro do contêiner da tela (aqui a
+    # chave é a do mural, porque o menu está travado nele). Antes ele era
+    # desenhado solto, fora de qualquer "tela_": quando o aluno publicava e
+    # ia para a Home, a regra de CSS não tinha como esconder o mural antigo.
     if tipo == "Aluno" and st.session_state.get("primeiro_acesso") == 1:
-        render_sessao_interativa(modo_voluntario=False)
+        with vaga_da_tela:
+            preparar_pagina(
+                etapas_da_pagina(pagina, tipo, st.session_state.get("username"))
+            )
+            render_sessao_interativa(modo_voluntario=False)
         st.stop()
 
-    # Cada pagina tem seu proprio container com key. A key e o que permite
-    # ao Streamlit identificar o DOM daquela tela na transicao e descartar
-    # o anterior, em vez de deixar restos esmaecidos da pagina de origem.
-    with st.container(key=_chave_da_pagina(pagina)):
+    # Cada pagina tem sua propria vaga (ver "UMA VAGA FIXA PARA CADA TELA"
+    # acima). A key da vaga e o que permite ao CSS identificar o DOM daquela
+    # tela na transicao e esconder o da pagina de origem.
+    with vaga_da_tela:
+        # Tela de carregamento (modules/carregamento.py): busca antes os dados
+        # que a página vai usar e, se a espera passar de 0,15 s, mostra a
+        # barra com as etapas. Sempre o primeiro elemento da tela, sempre
+        # presente (mesmo quando a barra não aparece), para nada mudar de
+        # posição entre uma execução e outra.
+        preparar_pagina(
+            etapas_da_pagina(
+                pagina,
+                tipo,
+                st.session_state.get("username"),
+            )
+        )
         # Conteudo condicional.
         # Precisa cobrir os seis itens de menu: o bloco anterior so tratava os
         # tres do Aluno, entao Professor e Administrador escolhiam uma pagina e

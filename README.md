@@ -7,7 +7,7 @@ Projeto de Pesquisa (FENIC) — NEMPA/UFBA e Colégio Estadual Álpio Franca.
 > "via Aritmética Modular". O código do repositório não usa Aritmética Modular
 > em lugar nenhum — nenhuma biblioteca de criptografia assimétrica, nenhum
 > cálculo modular. O que existe é bcrypt para senhas, uma chave diária
-> derivada por HMAC-SHA256 e AES-128-GCM no laboratório de criptografia. A
+> sorteada e guardada no banco e AES-128-GCM no laboratório de criptografia. A
 > descrição foi corrigida
 > para não prometer uma técnica que o app não implementa.
 
@@ -42,7 +42,6 @@ python -m pip install -r requirements.txt
 # 2. Segredos (só é obrigatório se o banco ainda não tiver o usuário admin)
 cp .streamlit/secrets_example.toml .streamlit/secrets.toml
 # edite o ADMIN_SENHA no arquivo criado
-# o CHAVE_SEGREDO é opcional, mas veja a seção "A chave do dia" abaixo
 
 # 3. Preparar o banco (banco novo ou após mudanças de schema)
 python -m modules.init_db
@@ -81,11 +80,10 @@ Não existe senha padrão no código. Se o banco estiver vazio e o segredo
 faltar, o app levanta `RuntimeError` explicando o que fazer, em vez de criar
 um administrador com senha conhecida.
 
-O `CHAVE_SEGREDO` é lido a **cada** execução, e é opcional: sem ele o app usa um
-segredo padrão que está no código-fonte. A diferença é de segurança, não de
-funcionamento — o app sobe dos dois jeitos. Enquanto o Painel da Coordenação
-estiver exibindo o aviso de "chave derivada do segredo padrão", a chave do dia
-é adivinhável por quem tiver uma cópia do repositório.
+A chave diária do Professor **não vem de `CHAVE_SEGREDO`**: ela é sorteada no
+primeiro acesso de cada dia e fica gravada na tabela `chaves_professor` do
+banco. Nenhum segredo de arquivo participa do cálculo — ver "A chave do dia"
+abaixo.
 
 ---
 
@@ -366,13 +364,24 @@ mesmo esforço de código e não ensina a lição errada.
 
 ### `modules/ratelimit.py`
 
-Limitador em **memória de processo**, com janela deslizante:
+Limitador em **memória de processo**, com **escada de esperas** (não mais
+janela deslizante):
 
 | Parâmetro | Valor |
 |---|---|
-| `MAX_TENTATIVAS` | 5 |
-| `JANELA_SEGUNDOS` | 300 (5 minutos) |
+| `MAX_TENTATIVAS` | 5 tentativas antes de cada bloqueio |
+| `ESPERAS_SEGUNDOS` | (30, 60, 120, 180, 240, 300) — 1º ao 6º bloqueio |
 | `MAX_CLIENTES` | 5000 |
+
+Como funciona: 5 erros seguidos → espera de **30 s**; venceu, a pessoa ganha
+5 tentativas de novo, e as 5 seguintes → **1 min**; depois **2, 3, 4 e 5
+minutos**. Do sexto bloqueio em diante o tempo fica **parado em 5 minutos**.
+O nível **só volta ao inicial no acerto** (`zerar`) — é isso que faz quem
+insiste escalar e quem erra de boa-fede passar por um bloqueio de 30 s.
+Erros cometidos *durante* o bloqueio são ignorados: não estendem a espera.
+
+O tempo que falta é exibido na tela em **contagem regressiva**, tique a
+tique (`_aguardar_desbloqueio` em `modules/login.py`).
 
 Identificação do cliente, em ordem de preferência: IP do contexto do Streamlit,
 cabeçalho `X-Forwarded-For` (proxy), cookie `_streamlit_xsrf`. Sem nenhum
@@ -393,45 +402,62 @@ Duas ações distintas, com contadores independentes:
 - `CHAVE_PROFESSOR` — protege a chave de cadastro do Professor.
 - `LOGIN` — protege o login, e conta em **dois alvos**: a conta atacada e o
   cliente atacante. Só a conta não segura contra ataque de varredura; só o
-  cliente não sobrevive a F5. Ver "Limitações" abaixo.
+  cliente não sobrevive a F5. Ver "Não é proteção de verdade" abaixo.
 
-O contador zera **só no acerto**. Quem entra legitimamente nunca herda
-bloqueio de outra pessoa.
+O nível e o contador zera **só no acerto**. Quem entra legitimamente nunca
+herda bloqueio de outra pessoa.
 
 ### `modules/login.py`
 
 - `render_login()` — as duas abas, com `clear_on_submit=True` nas duas.
 - `obter_chave_professor_diaria()` — 12 caracteres, válidos até 23:59:59 do dia.
-  Derivada por HMAC-SHA256 do `CHAVE_SEGREDO` com a data como mensagem, então
-  é a mesma para toda a escola no mesmo dia e muda sozinho à meia-noite.
+  Sorteada com `secrets` e gravada na tabela `chaves_professor` no primeiro uso
+  de cada dia: é a mesma para toda a escola (todos usam o mesmo banco) e muda
+  sozinha à meia-noite.
   Aceita em maiúsculas ou minúsculas, e tolera espaço nas pontas.
 - `chave_equivale(digitada, valida)` — a comparação tolerante acima, isolada
   para poder ser testada sem tela.
 
 ### A chave do dia
 
-12 caracteres do alfabeto `0-9A-Z` (10 dígitos e 26 letras), derivadas por
-HMAC-SHA256, com o `CHAVE_SEGREDO` como chave e a data (`YYYY-MM-DD`) como
-mensagem.
+12 caracteres do alfabeto `0-9A-Z` (10 dígitos e 26 letras), **sorteados** na
+primeira utilização de cada dia e gravados na tabela `chaves_professor` do
+banco — uma linha por dia, com `dia` como chave primária. A tabela
+`chaves_professor` é criada sozinha na primeira conexão depois do deploy (ou
+por `python -m modules.init_db`, como qualquer outra mudança de schema).
 
 | | Antes | Agora |
 |---|---|---|
 | Tamanho | 6 dígitos | 12 caracteres |
 | Alfabeto | 10 | 36 |
 | Combinações | 900.000 | 4.738.381.338.321.616.896 |
-| Geração | `random.Random(semente).randint(...)` | HMAC-SHA256 com rejeição |
+| Geração | `random.Random(semente).randint(...)` | `secrets.choice`, gravado no banco |
+| Onde vive | calculada a partir do código | linha no banco desta instalação |
 
-Ganho de cerca de 5 trilhões de vezes no espaço de busca. A troca de `random`
-por HMAC não é "sorteio melhor": `random` é um Mersenne Twister, que não foi
-desenhado para segurança, e semeá-lo com um texto conhecido torna a sequência
-previsível para quem conhece a semente. Na chave HMAC o segredo é a chave da
-própria função, e quem não tem o segredo não consegue nem recomeçar o cálculo.
-A amostragem por rejeição descarta os bytes que dariam viés de módulo, já que
-256 não é múltiplo de 36 — medido: 36 símbolos usados, 3.000 dias de amostra,
-contagens entre 906 e 1.075 para 1.000 esperadas, que é ruído normal.
+Ganho de cerca de 5 trilhões de vezes no espaço de busca, e mais uma coisa que
+o tamanho não mede: **a chave não é derivada de mais nada**. Antes ela saía de
+um HMAC sobre `CHAVE_SEGREDO` + data, com o segredo padrão no código-fonte —
+então quem tivesse uma cópia do repositório *calculava* a chave do dia em vez
+de adivinhar. Agora ela é sorteada com `secrets` (o `SystemRandom`, alimentado
+pelo urandom do sistema operacional: não é semeável nem reproduzível) e só
+existe no banco. Quem clona o código não leva o banco; quem tem o banco não
+precisa do código.
+
+Duas consequências práticas:
+
+- **Toda instalação tem a chave dela.** Duas cópias do mesmo repositório, com
+  bancos diferentes, nunca geram a mesma chave — não há semente em comum.
+- **A troca é sozinha.** À meia-noite a data muda, não há linha para o dia
+  novo, e o primeiro acesso sorteia outra. Não há cronograma, nem reinício do
+  app, nem segredo a renovar.
+
+Duas sessões abrindo o mesmo dia ao mesmo tempo não brigam: o INSERT usa
+`ON CONFLICT (dia) DO NOTHING`, então a segunda não sobrescreve a chave da
+primeira e passa a ler a que vale.
 
 Só **maiúsculas**, porque a chave é digitada por quem copiou de um quadro ou leu
 em voz alta, e maiúscula de minúscula não se distingue no papel nem na fala.
+A comparação (`chave_equivale`) também aceita minúsculas e espaços nas pontas.
 
 ---
 
@@ -446,8 +472,9 @@ Vale ser explícito, porque parte do que parece proteção não é.
   o nonce é aleatório e o GCM autentica o texto. O laboratório não grava no
   banco.
 - **Índice único de e-mail**: o mesmo e-mail não pode abrir duas contas.
-- **Rate limit** no login e na chave do Professor, com janela deslizante real
-  (medida, não só teórica).
+- **Rate limit** no login e na chave do Professor, com escada de esperas
+  (30 s → 1 → 2 → 3 → 4 → 5 min) medida em teste, e contagem regressiva na
+  tela enquanto o bloqueio vale.
 - Senha **não fica na tela** depois do envio — `clear_on_submit` nos dois
   formulários.
 - A chave do dia **só aparece dentro do Painel da Coordenação**, que exige
@@ -457,30 +484,35 @@ Vale ser explícito, porque parte do que parece proteção não é.
 
 ### Não é proteção de verdade
 
-**O rate limit é contornável por F5.** O identificador de cliente disponível é
-o cookie `_streamlit_xsrf`, e ele **rotaciona a cada carregamento de página**.
-Medido: após 5 falhas, um F5 devolve o contador cheio. O limite protege contra
-o aluno distraído e o curioso, não contra alguém determinado.
+**O rate limit é contornável por F5 — mas só no alvo do cliente.** O
+identificador de cliente disponível é o cookie `_streamlit_xsrf`, e ele
+**rotaciona a cada carregamento de página**. Medido: após 5 falhas, um F5
+devolve o contador do cliente cheio. O que F5 **não** apaga é o nível da
+conta atacada — esse estado é do processo, e só o acerto (`zerar`) tira. No
+login, então, F5 devolve as 5 tentativas do cliente e mantém a escada da
+conta onde ela estava.
 
-- **Login**: mitigado. Como a conta atacada não muda com F5, o limite por
-  conta sobrevive ao recarregamento.
+- **Login**: mitigado pela escada. As 5 tentativas novas do cliente são
+  exatamente as 5 que a conta vai contar para subir de nível.
 - **Chave do Professor**: o F5 ainda zera o contador, porque a conta ainda não
   existe e não há "alvo" a contar — no colégio todo mundo sai pelo mesmo IP
   também. **O que mudou foi o custo de adivinhar:** com 12 caracteres são 4,7
   quintilhões de combinações, então recomeçar a contagem não compra nada.
-  Zerar o contador só ajuda se a chave fosse adivinhável, e ela não é mais.
-  Enquanto o `CHAVE_SEGREDO` não for configurado, porém, a chave é *calculada*
-  por quem tiver o repositório — aí o limite continua decorativo, e o Painel
-  da Coordenação avisa isso na tela.
+  Zerar o contador só ajuda se a chave fosse adivinhável, e ela não é mais:
+  a chave é sorteada e fica no banco, então quem tem só o repositório não tem
+  o que comparar nem o que calcular.
 
 **Nenhuma tela atualiza sozinha sem `run_every`.** O Streamlit só redesenha
 quando o script roda, e o script só roda com interação. Deixado isso como
 estava, um usuário bloqueado ficava com o botão cinza para sempre, mesmo
-depois de a janela vencer — e a reação natural a uma tela travada é F5, que
-zerava o contador. Os dois sintomas eram o mesmo defeito. Hoje **os dois
-formulários** estão dentro de `st.fragment(run_every="5s")`, que existe
-nativamente no Streamlit 1.64 e não acrescenta dependência. Medido: 9 redesenhos
-em 21 s parado, sendo dois fragmentos defasados meio ciclo.
+depois de o tempo vencer — e a reação natural a uma tela travada é F5, que
+zerava o contador. Os dois sintomas eram o mesmo defeito. Hoje o redesenho
+automático existe **só enquanto alguém está bloqueado**, num
+`st.fragment(run_every="1s")` por formulário: o tique de 1 em 1 s é o que
+faz a **contagem regressiva** andar na tela (os 10 s antigos deixariam o
+número parado em 0:30, 0:20, 0:10...). Tela de login parada não custa
+nenhum tique — quando o fragmento deixa de ser desenhado, o próprio
+Streamlit cancela o timer no navegador (`stop_auto_rerun`).
 
 O fragmento traz um efeito que precisou de conserto: ele redesenha o formulário
 inteiro a cada ciclo, e o tratamento do envio não roda junto, então **toda
@@ -492,8 +524,9 @@ pessoa trocar de perfil.
 **O travamento visual não é o que barra.** O atributo `disabled` chega um ciclo
 depois do contador estourar. Quem clicar nessa janela é barrado pela lógica, no
 topo da cadeia de validação, antes de a chave ser olhada. Medido com o
-`disabled` forçado no ambiente de teste: 10 cliques seguidos deixaram o contador
-em 5 — nenhum contou, e a chave errada nunca chegou a ser comparada.
+`disabled` forçado no ambiente de teste: 10 cliques seguidos não acrescentaram
+tentativa nenhuma — o quinto já tinha armado o bloqueio, e os demais são
+recusados antes de qualquer comparação.
 
 **O e-mail único passou a confirmar mais informação.** Antes do índice
 único, a tela dizia "este e-mail já está cadastrado" e o nome de usuário
@@ -553,16 +586,15 @@ coisas diferentes, e só uma das duas foi testada.
 Efeito colateral bom do perfil fora do form: `clear_on_submit` só limpa o que
 está dentro do form, o que faz o perfil sobreviver ao envio.
 
-**Por que a senha do admin foi para `st.secrets` e a chave do dia também.**
-A senha é credencial real, de um usuário que existe. A semente da chave já foi
-deixada no código numa rodada anterior, com o argumento de que não é segredo de
-ninguém — o que era verdade para um número de 6 dígitos, mas parou de valer
-quando a chave passou a ter 12 caracteres. O que decide não é o tamanho da
-semente, é o da chave: a 900 mil combinações, derivar era inútil; a 4,7
-quintilhões, derivar é o único jeito de quebrar. Então o `CHAVE_SEGREDO` é lido
-do `secrets.toml` quando existe, com o valor do código como reserva — o app
-continua subindo sem o arquivo, e o Painel da Coordenação avisa na tela quando
-está usando a reserva.
+**Por que a senha do admin ficou em `st.secrets`, e a chave do dia saiu de
+lá.** A senha é credencial real, de um usuário que existe, e continua vindo de
+`st.secrets` — sem valor padrão no código. A chave do dia, por sua vez, já
+derivava de um `CHAVE_SEGREDO` lido do `secrets.toml`, com o valor do código
+como reserva; como a reserva era conhecida de quem tinha o repositório, o
+Painel da Coordenação avisava na tela quando ela estava em uso. A derivação
+foi substituída por um sorteio gravado no banco (ver "A chave do dia"): sem
+segredo no código e sem segredo a configurar, a chave de uma instalação não
+pode ser calculada por quem tem só o repositório, e o aviso some junto.
 
 ---
 
@@ -587,7 +619,7 @@ Não vieram da equipe de validação, apareceram testando no navegador:
 |---|---|
 | O `selectbox` de perfil aceita texto livre | **Corrigido** — virou `st.radio`, que só oferece Aluno ou Professor. |
 | O cadastro de Professor **não funcionava no navegador** | **Corrigido** — o campo da chave estava fora do `st.form`, e no envio o servidor o recebia vazio. Bug anterior, invisível para o `AppTest`. |
-| A chave do dia tinha 6 dígitos | **Corrigido** — 12 caracteres alfanuméricos derivados por HMAC-SHA256. |
+| A chave do dia tinha 6 dígitos | **Corrigido** — 12 caracteres alfanuméricos sorteados com `secrets` e guardados no banco (uma linha por dia). |
 | A tela de travada do cadastro nunca se destravava sozinha | **Corrigido** — o fragmento de 5 s que existia no login foi colocado também no cadastro. |
 | As mensagens de retorno sumiam em menos de 5 s | **Corrigido** — o resultado do envio passou a ser guardado em `session_state`. |
 | O rate limit **falhava aberto** | **Corrigido** — `_identificar_cliente()` aceitava qualquer objeto truthy como IP, e o `str()` dele entrava na chave do limite. Sob `AppTest`, `st.context.ip_address` é um `MagicMock`: a chave mudava a cada requisição, cada tentativa contava como cliente novo e o limite nunca disparava. Agora só passa `str` que parseia como IP (`_ip_aceitavel`). |

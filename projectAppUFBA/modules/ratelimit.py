@@ -5,26 +5,45 @@ Por que nao em st.session_state: o contador vive na sessao do navegador, e
 abrir outra aba comeca do zero. Quem esta tentando adivinhar a chave do
 Professor abre outra aba. O estado precisa ser do processo, nao da sessao.
 
-Por que nao no SQLite: o contador e descartavel por definicao -- so vale
-enquanto a janela esta aberta. Gravar no banco transformaria tentativa de
-acesso em registro permanente, e o arquivo esta versionado no Git.
+Por que nao no SQLite: o estado e descartavel por definicao -- so importa
+para dizer "errou 5 vezes, espera 30 s". Gravar no banco transformaria
+tentativa de acesso em registro permanente, e o arquivo esta versionado no
+Git.
 
-O estado vive na memoria do processo, entao some quando o servidor reinicia e
+O estado vive na memoria do processo, entao some quando o servidor reinicia
 nao e compartilhado entre replicas. Em uma maquina so, que e o caso do
 projeto hoje, isso nao faz diferenca.
+
+ESCALADA (a regra de hoje, menos punitiva que a janela antiga):
+
+    5 erros ->  30 s      5 erros -> 2 min     5 erros -> 4 min
+    5 erros ->  1 min     5 erros -> 3 min     5 erros -> 5 min (teto)
+
+Depois de vencer o bloqueio a pessoa ganha 5 tentativas de novo, mas o nivel
+NAO volta ao inicial: ele so reseta no acerto (zerar). Errar as 5 de novo e o
+que faz o tempo subir, e depois do sexto bloqueio o tempo fica em 5 minutos
+para sempre. Assim quem erra de boa-fede passa por um bloqueio de 30 s, e so
+quem insiste escala.
+
+O tempo que falta e exibido na tela em contagem regressiva (ver
+_aguardar_desbloqueio em modules/login.py). Aqui so importa dizer QUANTO
+falta e QUANDO o nivel sobe.
 """
 import ipaddress
+import math
 import threading
 import time
-from collections import deque
 
 import streamlit as st
 
-# Quantas chaves erradas o mesmo cliente pode mandar dentro da janela antes de
-# ficar bloqueado. Cinco da para digitar e corrigir uma chave de seis digitos
-# sem tomar bloqueio por descuido.
+# Quantas tentativas erradas antes do primeiro bloqueio. Cinco da para digitar
+# e corrigir uma chave de 12 caracteres sem tomar bloqueio por descuido.
 MAX_TENTATIVAS = 5
-JANELA_SEGUNDOS = 300
+
+# Duracao de cada bloqueio, em segundos, por nivel (1o, 2o, 3o...). O ultimo
+# valor tambem e o teto: depois de chegar em 5 minutos, errar de novo fica
+# em 5 minutos -- e la e onde a escada para.
+ESPERAS_SEGUNDOS = (30, 60, 120, 180, 240, 300)
 
 # Teto de clientes guardados ao mesmo tempo. Ver _conter_memoria.
 MAX_CLIENTES = 5000
@@ -40,7 +59,11 @@ CHAVE_PROFESSOR = "chave_professor"
 # _montar_chave.
 LOGIN = "login"
 
-_tentativas = {}
+# Cada chave vale um dicionario:
+#   {"falhas": erros desde o ultimo bloqueio, "nivel": proximo bloqueio,
+#    "bloqueio_ate": momento monotonic em que o bloqueio vence,
+#    "ultimo": momento da ultima falha, so para ordenar a limpeza}
+_estado = {}
 _tranca = threading.Lock()
 
 
@@ -102,38 +125,54 @@ def _identificar_cliente():
     return "anonimo"
 
 
-def _descartar_velhos(registro, agora):
-    """Tira de dentro da janela o que ja passou. Registro fica ordenado."""
-    corte = agora - JANELA_SEGUNDOS
-    while registro and registro[0] <= corte:
-        registro.popleft()
+def _bloqueado(estado, agora):
+    """O estado esta valendo bloqueio neste instante?"""
+    ate = estado.get("bloqueio_ate")
+    return ate is not None and agora < ate
+
+
+def espera_do_nivel(nivel):
+    """Segundos de espera do nivel pedido, com teto no ultimo da escada."""
+    indice = min(max(1, int(nivel)), len(ESPERAS_SEGUNDOS)) - 1
+    return ESPERAS_SEGUNDOS[indice]
 
 
 def _conter_memoria():
     """
     Impede que o dicionario cresca sem fim.
 
-    Com o cookie como identificador, um cliente que vaia o cookie a cada
+    Com o cookie como identificador, um cliente que vaie o cookie a cada
     tentativa cria uma entrada nova por vez. Sem teto, isso vira consumo de
     memoria dirigido por terceiro.
     """
-    if len(_tentativas) <= MAX_CLIENTES:
+    if len(_estado) <= MAX_CLIENTES:
         return
 
     agora = time.monotonic()
-    vencidas = [chave for chave, registro in _tentativas.items()
-                if not registro or registro[-1] <= agora - JANELA_SEGUNDOS]
-    for chave in vencidas:
-        del _tentativas[chave]
 
-    if len(_tentativas) <= MAX_CLIENTES:
+    # 1. Entrada que nao significa nada: sem falhas, sem bloqueio e no nivel
+    #    inicial. As demais guardam o nivel, que so o acerto pode zerar --
+    #    jogar fora uma delas abriria a escada para quem esta esperando.
+    inuteis = [
+        chave for chave, estado in _estado.items()
+        if not estado["falhas"]
+        and not estado.get("nivel", 1) > 1
+        and not _bloqueado(estado, agora)
+    ]
+    for chave in inuteis:
+        del _estado[chave]
+
+    if len(_estado) <= MAX_CLIENTES:
         return
 
-    # Ainda acima do teto: joga fora as entradas mais antigas.
-    por_idade = sorted(_tentativas.items(), key=lambda par: par[1][-1])
-    excesso = len(_tentativas) - MAX_CLIENTES
-    for chave, _ in por_idade[:excesso]:
-        del _tentativas[chave]
+    # 2. Ainda acima do teto: joga fora os mais antigos, comeca pelos que nao
+    #    estao bloqueados -- perder um bloqueio e abrir a porta.
+    por_idade = sorted(_estado, key=lambda chave: _estado[chave]["ultimo"])
+    ordem = sorted(por_idade, key=lambda chave: _bloqueado(_estado[chave], agora))
+    for chave in ordem:
+        if len(_estado) <= MAX_CLIENTES:
+            return
+        del _estado[chave]
 
 
 def _montar_chave(acao, alvo=None):
@@ -150,7 +189,7 @@ def _montar_chave(acao, alvo=None):
       XSRF) rotaciona a cada carregamento de pagina. Medido: F5 devolve o
       contador cheio.
     - so o alvo nao segura contra varredura, que e uma tentativa em cada conta
-      de uma vez. Com 300 contas, o atacante faz 300 palpites por janela.
+      de uma vez. Com 300 contas, o atacante faz 300 palpites por nivel.
 
     Por isso o login conta nos dois e barra se qualquer um dos dois estourar.
     """
@@ -158,48 +197,82 @@ def _montar_chave(acao, alvo=None):
 
 
 def excedeu(acao, alvo=None):
-    """Diz se o alvo ja esgotou as tentativas da acao dentro da janela."""
+    """Diz se o alvo esta bloqueado AGORA, com o tempo ainda correndo."""
     agora = time.monotonic()
-    chave = _montar_chave(acao, alvo)
     with _tranca:
-        registro = _tentativas.get(chave)
-        if registro is None:
+        estado = _estado.get(_montar_chave(acao, alvo))
+        if estado is None:
             return False
-        _descartar_velhos(registro, agora)
-        if not registro:
-            del _tentativas[chave]
-            return False
-        return len(registro) >= MAX_TENTATIVAS
+        return _bloqueado(estado, agora)
 
 
 def registrar_falha(acao, alvo=None):
-    """Conta uma tentativa errada para o alvo desta acao."""
+    """Conta uma tentativa errada e arma o bloqueio quando faltam 5.
+
+    Erro DURANTE o bloqueio e ignorado: na tela o botao esta desabilitado, e
+    contar aqui so estenderia a espera de quem ja esta esperando -- o contrario
+    de menos punitivo.
+    """
     agora = time.monotonic()
     chave = _montar_chave(acao, alvo)
     with _tranca:
-        registro = _tentativas.get(chave)
-        if registro is None:
-            registro = deque()
-            _tentativas[chave] = registro
-        _descartar_velhos(registro, agora)
-        registro.append(agora)
+        estado = _estado.get(chave)
+        if estado is None:
+            estado = {"falhas": 0, "nivel": 1, "bloqueio_ate": None, "ultimo": agora}
+            _estado[chave] = estado
+
+        if _bloqueado(estado, agora):
+            return
+
+        estado["falhas"] += 1
+        estado["ultimo"] = agora
+
+        if estado["falhas"] >= MAX_TENTATIVAS:
+            # O nivel de ANTES do bloqueio e o que decide a espera. Depois
+            # ele sobe, e so o acerto (zerar) devolve ao inicial.
+            estado["bloqueio_ate"] = agora + espera_do_nivel(estado["nivel"])
+            estado["falhas"] = 0
+            estado["nivel"] = min(
+                estado["nivel"] + 1, len(ESPERAS_SEGUNDOS)
+            )
+
         _conter_memoria()
 
 
 def zerar(acao, alvo=None):
-    """Limpa o contador depois de um acerto, para nao penalizar quem acertou."""
+    """Apaga o estado depois do acerto: unico caminho de volta ao nivel 1."""
     chave = _montar_chave(acao, alvo)
     with _tranca:
-        _tentativas.pop(chave, None)
+        _estado.pop(chave, None)
 
 
 def restantes(acao, alvo=None):
-    """Quantas tentativas ainda sobram na janela. Serve para a mensagem."""
+    """Quantas tentativas sobram antes do PROXIMO bloqueio. 0 se bloqueado."""
     agora = time.monotonic()
-    chave = _montar_chave(acao, alvo)
     with _tranca:
-        registro = _tentativas.get(chave)
-        if registro is None:
+        estado = _estado.get(_montar_chave(acao, alvo))
+        if estado is None:
             return MAX_TENTATIVAS
-        _descartar_velhos(registro, agora)
-        return max(0, MAX_TENTATIVAS - len(registro))
+        if _bloqueado(estado, agora):
+            return 0
+        return max(0, MAX_TENTATIVAS - estado["falhas"])
+
+
+def bloqueio_restante(acao, alvo=None):
+    """Segundos inteiros até o bloqueio vencer. 0 quando nao esta bloqueado.
+
+    Arredonda para CIMA: o contador comeca mostrando a espera inteira
+    ("0:30") em vez de pular para "0:29" no primeiro tique.
+    """
+    agora = time.monotonic()
+    with _tranca:
+        estado = _estado.get(_montar_chave(acao, alvo))
+        if estado is None or estado.get("bloqueio_ate") is None:
+            return 0
+        return max(0, math.ceil(estado["bloqueio_ate"] - agora))
+
+
+def formatar_tempo(segundos):
+    """Vira segundos em "0:47" / "1:05", o formato da contagem regressiva."""
+    segundos = max(0, int(segundos))
+    return "%d:%02d" % (segundos // 60, segundos % 60)

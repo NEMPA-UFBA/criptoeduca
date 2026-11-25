@@ -1,0 +1,9 @@
+/* Primeiro acesso do aluno (app.py): enquanto o mural obrigatório não for
+   concluído, os outros itens do menu ficam apagados e não respondem ao
+   clique. Antes este estilo era um st.markdown dentro do app.py, que ocupava
+   uma posição na página; aqui ele entra por aplicar_css (st.html), que não
+   ocupa posição. */
+.st-key-menu [data-testid="stRadioOption"]:not([data-selected="true"]) {
+    opacity: 0.4;
+    pointer-events: none;
+}
