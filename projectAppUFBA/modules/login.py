@@ -6,12 +6,13 @@ import re
 import hmac
 import hashlib
 import os
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 from streamlit.errors import StreamlitSecretNotFoundError
 from psycopg2 import OperationalError
-from modules.database import verificar_login, cadastrar_usuario
+from modules.database import verificar_login, cadastrar_usuario, conectar
 from modules.leitura import CHAVE_LEITURA
 from modules import ratelimit
 from modules.estilo import aplicar_css
@@ -202,77 +203,77 @@ def validar_email_formato(email):
     padrao = r"^[\w\.-]+@[\w\.-]+\.\w+$"
     return bool(re.fullmatch(padrao, email))
 
-def segredo_da_chave_padrao():
-    return "chaveDev2026"
+def _sortear_chave_professor():
+    """Sorteia uma chave nova de 12 caracteres.
 
-
-def _segredo_da_chave():
-    """Lê o segredo que deriva a chave do dia, preferindo o gerenciador.
-
-    Se o .streamlit/secrets.toml existir com CHAVE_SEGREDO, usa ele. Sem o
-    arquivo, cai no padrão do código — e o app continua funcionando, que é o
-    que importa para a escola não ter que configurar nada.
-
-    A diferença é de segurança, não de funcionamento: com o segredo no arquivo
-    a chave deixa de ser derivável de quem tem o repositório. Sem ele, a chave
-    de 12 caracteres continua muito mais difícil de adivinhar que a de 6, mas
-    ainda é calculável por qualquer pessoa que leia o código.
+    secrets.choice usa o SystemRandom, alimentado pelo urandom do sistema
+    operacional: não é semeável nem reproduzível, ao contrário do
+    random.Random. Cada posição sorteia um dos 36 símbolos do alfabeto com
+    igual probabilidade (o randbelow por baixo faz rejeição de amostra,
+    então não há viés de módulo).
     """
-    try:
-        return st.secrets["CHAVE_SEGREDO"]
-    except Exception:
-        return segredo_da_chave_padrao()
+    return "".join(secrets.choice(ALFABETO_CHAVE) for _ in range(TAMANHO_CHAVE))
 
 
-def segredo_da_chave_configurado():
-    """Diz se a chave está sendo derivada de um segredo de verdade."""
-    try:
-        return st.secrets["CHAVE_SEGREDO"] != segredo_da_chave_padrao()
-    except Exception:
-        return False
-
-
-def obter_chave_professor_diaria(segredo_sistema=None, data_referencia=None):
+def obter_chave_professor_diaria(data_referencia=None):
     """Devolve a chave do Professor válida para o dia, com 12 caracteres.
 
-    A chave é determinística: mesma data e mesmo segredo dão a mesma chave
-    para toda a escola, que é o que permite a coordenação distribuí-la pelo
-    Painel e o formulário de cadastro conferi-la.
+    A chave é SORTREADA e guardada no banco: a tabela `chaves_professor`
+    tem uma linha por dia, criada no primeiro uso da data. Ela não é
+    derivada de código nem de segredo nenhum — por isso duas cópias do
+    mesmo repositório nunca têm a mesma chave. Quem clona o código não
+    leva o banco; quem tem o banco não precisa do código para saber a
+    chave.
 
-    A derivação é por HMAC-SHA256 e não por `random.Random(semente)`, que era o
-    que existia antes. A diferença não é sorteio melhor: `random` é um
-    Mersenne Twister, um gerador que não foi desenhado para segurança, e semeá-lo
-    com um texto conhecido torna a sequência totalmente previsível para quem
-    conhece a semente. Aqui o segredo é a chave do HMAC, e quem não tem o
-    segredo não consegue nem recomeçar o cálculo.
+    À meia-noite a data muda, não existe linha para o dia novo e o sorteio
+    roda de novo: a chave de ontem expira sozinha, sem cronograma nem
+    reinício do app.
+
+    O SELECT vem primeiro: a home da coordenação redesenha muitas vezes e a
+    leitura por chave primária é o caso comum — só se faz escrita quando a
+    linha do dia ainda não existe.
+
+    Quando a linha ainda não existe, o INSERT usa `ON CONFLICT (dia) DO
+    NOTHING`: se duas sessões abrirem o mesmo dia ao mesmo tempo, a segunda
+    não sobrescreve a chave da primeira — o RETURNING vem vazio, e o SELECT
+    seguinte lê a que vale.
     """
-    if segredo_sistema is None:
-        segredo_sistema = _segredo_da_chave()
     if data_referencia is None:
         data_referencia = datetime.now()
-
     dia = data_referencia.strftime("%Y-%m-%d")
-    segredo = segredo_sistema.encode("utf-8")
-    marca = dia.encode("utf-8")
 
-    tamanho_alfabeto = len(ALFABETO_CHAVE)
-    # 256 não é múltiplo de 36, e o resto sobraria favorecendo os primeiros
-    # símbolos do alfabeto. O corte em múltiplo de 36 descarta esse resto.
-    teto = (256 // tamanho_alfabeto) * tamanho_alfabeto
+    with conectar() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT chave FROM chaves_professor WHERE dia = %s",
+            (dia,),
+        )
+        linha = c.fetchone()
 
-    caracteres = []
-    rodada = 0
-    while len(caracteres) < TAMANHO_CHAVE:
-        resumo = hmac.new(segredo, marca + (b"|%d" % rodada), hashlib.sha256).digest()
-        for octeto in resumo:
-            if octeto >= teto:
-                continue
-            caracteres.append(ALFABETO_CHAVE[octeto % tamanho_alfabeto])
-            if len(caracteres) == TAMANHO_CHAVE:
-                break
-        rodada += 1
+        if linha is None:
+            sorteada = _sortear_chave_professor()
+            c.execute(
+                "INSERT INTO chaves_professor (dia, chave) VALUES (%s, %s) "
+                "ON CONFLICT (dia) DO NOTHING RETURNING chave",
+                (dia, sorteada),
+            )
+            linha = c.fetchone()
+            if linha is None:
+                # Outra sessão criou a linha entre o SELECT e o INSERT.
+                c.execute(
+                    "SELECT chave FROM chaves_professor WHERE dia = %s",
+                    (dia,),
+                )
+                linha = c.fetchone()
+            conn.commit()
+        else:
+            # Consulta pura: devolve a conexão ao pool sem transação aberta.
+            conn.rollback()
 
-    return "".join(caracteres)
+    # linha is None só se a linha sumir entre o INSERT e o SELECT (alguém
+    # apagou a tabela no meio). Nesse caso a sorteada é a única resposta
+    # possível: devolvê-la mantém a função de nunca retornar None.
+    return linha[0] if linha else sorteada
 
 
 def chave_equivale(digitada, valida):
@@ -299,6 +300,10 @@ def chave_equivale(digitada, valida):
 _CHAVE_DO_RESULTADO = "_cadastro_resultado"
 _CHAVE_DO_PERFIL = "_cadastro_resultado_perfil"
 _CHAVE_MENSAGEM_LOGIN = "_cadastro_mensagem_login"
+# Última conta tentada no login. O campo de usuário é apagado no envio
+# (clear_on_submit), e sem ele o bloqueio da conta sumiria da tela junto
+# com a contagem regressiva. Ver _situacao_login.
+_LOGIN_ALVO = "_login_alvo_tentado"
 _ABAS_LOGIN = "abas_login"
 _ABA_ENTRAR = "Entrar"
 _ABA_CRIAR = "Criar Conta"
@@ -373,12 +378,19 @@ def _situacao_login(usuario_digitado):
     se qualquer um dos dois estourar. Ver _montar_chave no módulo de rate
     limit para por que os dois são necessários.
 
-    Sem alvo (campo de usuário vazio) só vale o limite de cliente, porque não
-    há conta a ser contada ainda.
+    O campo de usuário vem vazio depois do envio (clear_on_submit), e sem a
+    conta a ser contada o bloqueio DELA sumiria da tela — junto com a
+    contagem regressiva, que é justamente o aviso de quem está esperando.
+    Por isso, com o campo vazio, entra a última conta tentada (_LOGIN_ALVO):
+    é ela que decide o bloqueio que continua valendo.
     """
+    usuario = (usuario_digitado or "").strip()
+    if not usuario:
+        usuario = (st.session_state.get(_LOGIN_ALVO) or "").strip()
+
     alvos = [_chave_cliente()]
-    if usuario_digitado and usuario_digitado.strip():
-        alvos.append(_alvo_da_conta(usuario_digitado))
+    if usuario:
+        alvos.append(_alvo_da_conta(usuario))
     barrado = any(ratelimit.excedeu(ratelimit.LOGIN, alvo) for alvo in alvos)
     sobra = min(ratelimit.restantes(ratelimit.LOGIN, alvo) for alvo in alvos)
     return barrado, sobra, alvos
@@ -421,6 +433,7 @@ _CHAVES_DO_USUARIO = (
     "tipo_usuario",
     "primeiro_acesso",
     "modulo_selecionado",
+    _LOGIN_ALVO,
     CHAVE_LEITURA,
     "navegar_para",
     "voltar_para_menu",
@@ -464,26 +477,41 @@ def limpar_sessao_do_usuario(com_widgets=False):
         st.session_state.pop(chave, None)
 
 
-# Redesenho automático SÓ enquanto há bloqueio.
+# Redesenho automático SÓ enquanto há bloqueio — e é ele que faz a contagem
+# regressiva andar na tela.
 #
 # O Streamlit só redesenha quando o script roda, e o script só roda com
 # interação do usuário. Sem um redesenho automático, o botão ficava cinza
-# indefinidamente depois do bloqueio, mesmo com a janela já vencida em memória,
-# e a reação natural a uma tela travada é F5, que rotaciona o cookie XSRF e
-# zera o contador.
+# indefinidamente depois do bloqueio, mesmo com o tempo já vencido em
+# memória, e a reação natural a uma tela travada é F5, que rotaciona o cookie
+# XSRF e zera o contador.
 #
 # Antes, os dois formulários tinham run_every="5s" o tempo todo: todo visitante
-# parado na tela de login rodava os dois fragmentos a cada 5 s, para sempre, e
-# o de cadastro ainda recalculava o HMAC da chave do dia. Agora o timer existe
-# só enquanto alguém está bloqueado. Este fragmento é chamado dentro do
-# formulário apenas nesse caso; quando a janela vence, ele pede um rerun do app
-# e deixa de ser desenhado, e o próprio Streamlit cancela o timer no navegador
-# (stop_auto_rerun). Tela de login parada não custa nada.
-@st.fragment(run_every="10s")
+# parado na tela de login rodava os dois fragmentos a cada 5 s, para sempre.
+# Agora o timer existe só enquanto alguém está bloqueado, e marca de 1 em
+# 1 s — que é o que a contagem regressiva da tela pede: um tique por segundo,
+# no lugar dos 10 s antigos, que deixariam o número parado em 0:30, 0:20,
+# 0:10... Este fragmento é chamado dentro do formulário apenas nesse caso;
+# quando o tempo vence, ele pede um rerun do app e deixa de ser desenhado, e
+# o próprio Streamlit cancela o timer no navegador (stop_auto_rerun). Tela de
+# login parada não custa nada.
+@st.fragment(run_every="1s")
 def _aguardar_desbloqueio(acao, alvos):
-    """Libera o formulário sozinho quando a janela de bloqueio vence."""
-    if not any(ratelimit.excedeu(acao, alvo) for alvo in alvos):
+    """Regressiva do bloqueio; libera o formulário sozinho quando o tempo acaba."""
+    bloqueado = any(ratelimit.excedeu(acao, alvo) for alvo in alvos)
+    if not bloqueado:
+        # O tempo venceu. O rerun redesenha o formulário inteiro com o botão
+        # liberado, e este fragmento passa a não ser mais chamado.
         st.rerun()
+        return
+
+    # max porque o login tem dois alvos (conta e cliente) e o bloqueio vale
+    # enquanto qualquer um deles estiver valendo: o que resta é o maior.
+    resta = max(ratelimit.bloqueio_restante(acao, alvo) for alvo in alvos)
+    st.markdown(
+        "⏳ Liberando em **%s** — depois disso você terá novas tentativas."
+        % ratelimit.formatar_tempo(resta)
+    )
 
 
 @st.fragment
@@ -499,7 +527,7 @@ def _formulario_login():
         if login_bloqueado:
             st.warning(
                 "Login temporariamente bloqueado por excesso de tentativas. "
-                f"A janela se renova sozinha em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+                "O tempo corre em contagem regressiva logo abaixo."
             )
 
         btn_entrar = st.form_submit_button("Entrar", disabled=login_bloqueado)
@@ -509,12 +537,18 @@ def _formulario_login():
             # tenta entrar. Some na mesma hora, inclusive se errar a senha.
             st.session_state.pop(_CHAVE_MENSAGEM_LOGIN, None)
 
+            # Guarda a conta tentada: o campo é apagado no envio e, sem ele,
+            # o bloqueio da conta (e a contagem regressiva dele) sumiriam da
+            # tela no redesenho seguinte. Ver _situacao_login.
+            if usuario_input and usuario_input.strip():
+                st.session_state[_LOGIN_ALVO] = usuario_input
+
             # O bloqueio fica no topo da cadeia: quem está bloqueado não gasta
             # consulta ao banco.
             if login_bloqueado:
                 st.error(
-                    "Muitas tentativas de login. "
-                    f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+                    "Muitas tentativas de login. Aguarde a contagem regressiva "
+                    "liberar o formulário."
                 )
 
             # Senha só de espaços conta como vazia: no login os espaços não
@@ -533,6 +567,16 @@ def _formulario_login():
                     st.error(
                         "Não foi possível acessar o banco de dados agora. "
                         "Tente novamente em alguns instantes."
+                    )
+                    return
+                except RuntimeError:
+                    # Sem credencial nenhuma (DATABASE_URL / [postgres].url).
+                    # Não é "caiu agora", é "não está configurado": dizer
+                    # "tente de novo" só faria a pessoa insistir à toa.
+                    st.error(
+                        "O banco de dados não está configurado nesta máquina. "
+                        "Defina DATABASE_URL (ou [postgres].url nos segredos) "
+                        "e recarregue a página."
                     )
                     return
 
@@ -594,14 +638,16 @@ def _formulario_login():
                     # limitador não deve virar oráculo de quem existe.
                     _registrar_falha_login(usuario_input)
                     _bloqueado, sobra, _ = _situacao_login(usuario_input)
-                    st.error(
-                        "Usuário ou senha incorretos. "
-                        + (
-                            f"Este login está bloqueado por {ratelimit.JANELA_SEGUNDOS // 60} minutos. "
-                            if _bloqueado
-                            else f"Restam {sobra} tentativa(s) em {ratelimit.JANELA_SEGUNDOS // 60} minutos. "
+                    if _bloqueado:
+                        st.error(
+                            "Usuário ou senha incorretos. Login bloqueado: "
+                            "o tempo corre em contagem regressiva logo abaixo."
                         )
-                    )
+                    else:
+                        st.error(
+                            "Usuário ou senha incorretos. "
+                            f"Restam {sobra} tentativa(s) antes do bloqueio."
+                        )
                     if _bloqueado:
                         # O bloqueio começou nesta tentativa. Sem o rerun, o
                         # botão só desabilitaria na próxima interação, porque o
@@ -665,8 +711,8 @@ def _cadastrar():
     if tipo_usuario == "Professor" and ratelimit.excedeu(ratelimit.CHAVE_PROFESSOR):
         _guardar_resultado(
             "error",
-            "Muitas tentativas de chave incorretas. "
-            f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+            "Muitas tentativas de chave incorretas. Aguarde a contagem "
+            "regressiva acima liberar o campo."
         )
         return
 
@@ -676,22 +722,43 @@ def _cadastrar():
         return
 
     # 3. Chave dinâmica do Professor
-    if tipo_usuario == "Professor" and not chave_equivale(
-        chave_prof, obter_chave_professor_diaria()
-    ):
-        ratelimit.registrar_falha(ratelimit.CHAVE_PROFESSOR)
-        restantes = ratelimit.restantes(ratelimit.CHAVE_PROFESSOR)
-        _guardar_resultado(
-            "error",
-            "Chave de verificação do Professor inválida ou expirada. "
-            + (
-                f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
-                if restantes == 0
-                else f"Restam {restantes} tentativa(s) em "
-                     f"{ratelimit.JANELA_SEGUNDOS // 60} minutos."
+    #
+    #    A chave vem do banco (é sorteada e guardada lá, uma por dia). Se o
+    #    banco não responder, a resposta é "não dá para validar agora", e não
+    #    "chave errada": dizer "chave errada" gastaria uma das 5 tentativas
+    #    de quem está com a chave certa na mão.
+    if tipo_usuario == "Professor":
+        try:
+            chave_do_dia = obter_chave_professor_diaria()
+        except OperationalError:
+            _guardar_resultado(
+                "error",
+                "Não foi possível consultar a chave do Professor agora. "
+                "Tente novamente em alguns instantes."
             )
-        )
-        return
+            return
+        except RuntimeError:
+            # Sem credencial de banco: não adianta pedir para tentar de novo.
+            _guardar_resultado(
+                "error",
+                "O banco de dados não está configurado nesta máquina, então "
+                "a chave do dia não pode ser conferida."
+            )
+            return
+
+        if not chave_equivale(chave_prof, chave_do_dia):
+            ratelimit.registrar_falha(ratelimit.CHAVE_PROFESSOR)
+            restantes = ratelimit.restantes(ratelimit.CHAVE_PROFESSOR)
+            _guardar_resultado(
+                "error",
+                "Chave de verificação do Professor inválida ou expirada. "
+                + (
+                    "O tempo corre em contagem regressiva acima."
+                    if restantes == 0
+                    else f"Restam {restantes} tentativa(s) antes do bloqueio."
+                )
+            )
+            return
 
     # 4. E-mail. A validação do navegador (validate=) é conforto para quem
     #    digita; esta é a que vale, porque o navegador pode ser contornado.
@@ -718,13 +785,25 @@ def _cadastrar():
         return
 
     # 7. Gravação
-    motivo = cadastrar_usuario(
-        username=novo_usuario,
-        nome=nome,
-        email=email,
-        tipo=tipo_usuario,
-        senha_pura=senha,
-    )
+    try:
+        motivo = cadastrar_usuario(
+            username=novo_usuario,
+            nome=nome,
+            email=email,
+            tipo=tipo_usuario,
+            senha_pura=senha,
+        )
+    except (OperationalError, RuntimeError):
+        # Banco fora ou não configurado: o cadastro não foi feito, e a
+        # mensagem tem que dizer isso — cair no "usuário já está em uso"
+        # (o motivo padrão) mandaria a pessoa tentar de novo com o mesmo
+        # nome para sempre.
+        _guardar_resultado(
+            "error",
+            "Não foi possível gravar o cadastro agora. "
+            "Tente novamente em alguns instantes."
+        )
+        return
     if motivo == "email_duplicado":
         _guardar_resultado("warning", "Este e-mail já está cadastrado nesta plataforma.")
         return
@@ -780,7 +859,7 @@ def _formulario_cadastro():
             st.warning(
                 "Chave do Professor bloqueada por excesso de tentativas. "
                 "Vale só para o cadastro com chave, não afeta o Aluno. "
-                f"Tente de novo em {ratelimit.JANELA_SEGUNDOS // 60} minutos."
+                "O tempo corre em contagem regressiva logo abaixo."
             )
             _aguardar_desbloqueio(ratelimit.CHAVE_PROFESSOR, [None])
 
@@ -800,7 +879,7 @@ def _formulario_cadastro():
                 type="password",
                 key="cadastro_chave",
                 help=(
-                    "Bloqueada por excesso de tentativas. Aguarde a janela."
+                    "Bloqueada por excesso de tentativas. Aguarde a contagem regressiva."
                     if chave_bloqueada
                     else "Solicite a chave diária à coordenação. "
                          "Pode digitar em maiúsculas ou minúsculas."

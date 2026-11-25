@@ -277,6 +277,26 @@ def _criar_tabelas(conn):
     """)
     c.execute("ALTER TABLE compartilhamentos_cifra ADD COLUMN IF NOT EXISTS remetente TEXT DEFAULT ''")
     c.execute("ALTER TABLE compartilhamentos_cifra ADD COLUMN IF NOT EXISTS destinatario TEXT DEFAULT ''")
+
+    # --- CHAVE DIÁRIA DO PROFESSOR ---
+    #
+    # Uma linha por dia, com a chave sorteada uma única vez (módulo
+    # `secrets`, alimentado pelo urandom do sistema operacional). A chave
+    # não é derivada de nenhum código nem de segredo do repositório: ela
+    # mora neste banco, então duas instalações com o mesmo repositório
+    # nunca têm a mesma chave, e quem só clona o código não consegue
+    # calculá-la.
+    #
+    # `dia` é a chave primária: é o que garante uma chave só por dia e
+    # torna o "primeiro uso do dia" um INSERT idempotente (ver
+    # obter_chave_professor_diaria em modules/login.py).
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS chaves_professor (
+            dia TEXT PRIMARY KEY,
+            chave TEXT NOT NULL,
+            data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
    
     # Tabela dos Conteudos da Coordenacao.
     # E o caminho pelo qual o Administrador (e o Professor) publicam material
